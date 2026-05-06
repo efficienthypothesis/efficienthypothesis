@@ -19,7 +19,7 @@ app = Flask(__name__, template_folder='templates', static_folder='static')
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "eh_replace_this_with_secure_key")
 
 # === Google OAuth config ===
-GOOGLE_CLIENT_ID = "126112207759-ini9m1s7p6to946m18q5664jgvrvfai7.apps.googleusercontent.com"
+GOOGLE_CLIENT_ID = "902463711334-g7pehqqis9eh4uq2d8a5mbijf0incu93.apps.googleusercontent.com"
 
 # === DynamoDB setup ===
 dynamodb = boto3.resource("dynamodb", region_name="us-east-2")
@@ -31,8 +31,7 @@ oauth_tokens_table = dynamodb.Table("OAuthTokens")
 
 # === S3 setup ===
 s3 = boto3.client("s3", region_name="us-east-2")
-PRODUCTIVITY_BUCKET = "efficienthypothesis.com"
-COMMON_BUCKET = "common-items"
+PRODUCTIVITY_BUCKET = "eh-app-data"
 DEFAULT_COLOR = "#000000"
 
 # === OAuth signing key ===
@@ -106,7 +105,7 @@ def _validate_date_range(date_str):
 @app.route('/favicon.svg')
 def favicon():
     from flask import Response
-    obj = s3.get_object(Bucket=COMMON_BUCKET, Key='favicons/circle_favicon.svg')
+    obj = s3.get_object(Bucket=PRODUCTIVITY_BUCKET, Key='assets/circle_favicon.svg')
     return Response(obj['Body'].read(), mimetype='image/svg+xml',
                     headers={'Cache-Control': 'public, max-age=86400'})
 
@@ -114,7 +113,7 @@ def favicon():
 @app.route('/logo.svg')
 def logo():
     from flask import Response
-    obj = s3.get_object(Bucket=COMMON_BUCKET, Key='logos/efficienthypothesis.svg')
+    obj = s3.get_object(Bucket=PRODUCTIVITY_BUCKET, Key='assets/efficienthypothesis.svg')
     return Response(obj['Body'].read(), mimetype='image/svg+xml',
                     headers={'Cache-Control': 'public, max-age=86400'})
 
