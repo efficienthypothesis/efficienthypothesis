@@ -1,0 +1,9 @@
+.top-navbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 24px; background: #fff; border-bottom: 1px solid #e0e0e0;
+}
+.top-navbar .logo-full img { height: 28px; }
+.top-navbar .nav-links a {
+  color: #1a73e8; text-decoration: none; font-size: 0.9rem; font-weight: 500;
+}
+.top-navbar .nav-links a:hover { text-decoration: underline; }

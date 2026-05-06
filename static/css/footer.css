@@ -1,0 +1,26 @@
+/* === FOOTER === */
+.footer {
+  padding: 24px 48px;
+  background: #f8f9fa;
+  border-top: 1px solid #e5e7eb;
+  text-align: center;
+  font-size: 0.82rem;
+  color: #5f6368;
+  font-family: 'Inter', 'Roboto', sans-serif;
+}
+
+.footer a {
+  color: #5f6368;
+  text-decoration: none;
+}
+
+.footer a:hover {
+  color: #202124;
+  text-decoration: underline;
+}
+
+@media (max-width: 768px) {
+  .footer {
+    padding: 20px;
+  }
+}

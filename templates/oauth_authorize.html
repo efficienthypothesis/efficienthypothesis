@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+
+{% block title %}Authorize — Efficient Hypothesis{% endblock %}
+
+{% block head %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}">
+  <style>
+    body { background: #f8f9fa; margin: 0; font-family: 'Google Sans', Roboto, Arial, sans-serif; }
+    .oauth-container {
+      max-width: 440px; margin: 80px auto; background: #fff;
+      border-radius: 12px; border: 1px solid #dadce0;
+      padding: 40px 36px; text-align: center;
+    }
+    .oauth-logo { height: 32px; margin-bottom: 24px; }
+    .oauth-title { font-size: 1.3rem; font-weight: 500; color: #202124; margin: 0 0 8px; }
+    .oauth-subtitle { font-size: 0.9rem; color: #5f6368; margin: 0 0 28px; }
+    .oauth-app-name { font-weight: 600; color: #1a73e8; }
+    .oauth-user { font-size: 0.85rem; color: #80868b; margin-bottom: 24px; }
+    .oauth-scopes {
+      text-align: left; background: #f8f9fa; border-radius: 8px;
+      padding: 16px 20px; margin-bottom: 28px;
+    }
+    .oauth-scopes-title { font-size: 0.8rem; font-weight: 600; color: #5f6368; margin: 0 0 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .oauth-scope-item {
+      font-size: 0.88rem; color: #202124; padding: 4px 0;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .oauth-scope-item::before { content: '\2713'; color: #1a73e8; font-weight: 600; }
+    .oauth-actions { display: flex; gap: 12px; justify-content: center; }
+    .oauth-btn {
+      padding: 10px 28px; border-radius: 20px; font-size: 0.9rem;
+      font-weight: 500; cursor: pointer; border: none; transition: background 0.15s;
+    }
+    .oauth-btn-allow { background: #1a73e8; color: #fff; }
+    .oauth-btn-allow:hover { background: #1557b0; }
+    .oauth-btn-deny { background: #f1f3f4; color: #5f6368; }
+    .oauth-btn-deny:hover { background: #e8eaed; }
+  </style>
+{% endblock %}
+
+{% block content %}
+  <div class="oauth-container">
+    <img src="/logo.svg" alt="Efficient Hypothesis" class="oauth-logo">
+    <h1 class="oauth-title">
+      <span class="oauth-app-name">{{ client_name }}</span> wants access
+    </h1>
+    <p class="oauth-subtitle">This application is requesting permission to access your Efficient Hypothesis account.</p>
+    <p class="oauth-user">Signed in as {{ user.email }}</p>
+
+    <div class="oauth-scopes">
+      <div class="oauth-scopes-title">Requested permissions</div>
+      <div class="oauth-scope-item">View and manage your tasks</div>
+      <div class="oauth-scope-item">View and manage your routines</div>
+      <div class="oauth-scope-item">View and manage your actions and schedules</div>
+      <div class="oauth-scope-item">View and manage your goals</div>
+    </div>
+
+    <form method="POST" action="/oauth/authorize">
+      <input type="hidden" name="client_id" value="{{ client_id }}">
+      <input type="hidden" name="redirect_uri" value="{{ redirect_uri }}">
+      <input type="hidden" name="state" value="{{ state }}">
+      <input type="hidden" name="scope" value="{{ scope }}">
+      <div class="oauth-actions">
+        <button type="submit" name="action" value="deny" class="oauth-btn oauth-btn-deny">Deny</button>
+        <button type="submit" name="action" value="allow" class="oauth-btn oauth-btn-allow">Allow</button>
+      </div>
+    </form>
+  </div>
+{% endblock %}

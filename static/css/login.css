@@ -1,0 +1,61 @@
+/* === LOGIN PAGE — SPLIT LAYOUT === */
+.login-container {
+  display: flex;
+  min-height: 100vh;
+}
+
+.login-left {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px;
+  background: #fff;
+}
+
+.login-left h1 {
+  font-size: 1.8rem;
+  font-weight: 600;
+  color: #202124;
+  margin-bottom: 8px;
+}
+
+.login-left p {
+  font-size: 0.95rem;
+  color: #5f6368;
+  margin-bottom: 32px;
+}
+
+#googleLoginBtn {
+  min-height: 44px;
+}
+
+.login-right {
+  flex: 1;
+  background: #f8f9fa;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.login-right img {
+  max-width: 280px;
+  width: 100%;
+  height: auto;
+  object-fit: contain;
+}
+
+@media (max-width: 768px) {
+  .login-container {
+    flex-direction: column;
+  }
+
+  .login-right {
+    display: none;
+  }
+
+  .login-left {
+    padding: 32px 20px;
+  }
+}

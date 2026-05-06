@@ -1,0 +1,32 @@
+/* === GLOBAL LAYOUT === */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Inter', 'Roboto', -apple-system, BlinkMacSystemFont, sans-serif;
+  color: #202124;
+  background: #fff;
+  min-height: 100vh;
+}
+
+main {
+  padding: 40px 48px;
+}
+
+a {
+  color: #1a73e8;
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+@media (max-width: 768px) {
+  main {
+    padding: 24px 20px;
+  }
+}

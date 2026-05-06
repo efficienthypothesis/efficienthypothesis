@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+
+{% block title %}Sign In — Efficient Hypothesis{% endblock %}
+
+{% block head %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/navbar.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/footer.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/login.css') }}">
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+{% endblock %}
+
+{% block navbar %}
+  {% include "navbar.html" %}
+{% endblock %}
+
+{% block content %}
+  <div class="login-container">
+    <div class="login-left">
+      <h1>Sign in</h1>
+      <p>Use your Google account to continue.</p>
+      <div id="googleLoginBtn"></div>
+    </div>
+    <div class="login-right">
+      <img src="/logo.svg" alt="Efficient Hypothesis">
+    </div>
+  </div>
+{% endblock %}
+
+{% block footer %}
+  {% include "footer.html" %}
+{% endblock %}
+
+{% block scripts %}
+  <script>var googleClientID = "{{ google_client_id }}";</script>
+  <script src="{{ url_for('static', filename='js/login.js') }}"></script>
+{% endblock %}

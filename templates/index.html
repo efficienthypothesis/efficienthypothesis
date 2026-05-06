@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+
+{% block title %}Efficient Hypothesis{% endblock %}
+
+{% block head %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/navbar.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/footer.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/index.css') }}">
+{% endblock %}
+
+{% block navbar %}
+  {% include "navbar.html" %}
+{% endblock %}
+
+{% block content %}
+  <section class="hero">
+    <h1>Efficient Hypothesis</h1>
+    <p>A personal productivity platform. Manage tasks and routines with time tracking, set goals, and view your work on weekly and monthly calendars.</p>
+    <a href="/login" class="hero-btn">Get Started</a>
+  </section>
+{% endblock %}
+
+{% block footer %}
+  {% include "footer.html" %}
+{% endblock %}
