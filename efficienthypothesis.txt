@@ -1,0 +1,858 @@
+================================================================================
+EFFICIENTHYPOTHESIS.COM — PRODUCTIVITY APP ARCHITECTURE REFERENCE
+Last updated: 2026-05-06
+================================================================================
+
+If you (Claude) are reading this after a context clear, this file is the source
+of truth for how the efficienthypothesis.com website works. Read it end-to-end
+before making changes. Cross-reference problemanalytics.txt for the separate
+LaTeX text-editor site. Cross-reference commit_history.txt for a dated log of
+all changes.
+
+--------------------------------------------------------------------------------
+OVERVIEW
+--------------------------------------------------------------------------------
+Website:      efficienthypothesis.com
+Purpose:      Personal productivity platform. Users log in with Google, manage
+              tasks (tasks and routines, formerly one-off and recurring) with time tracking, set goals with
+              daily data logging + chart visualization, and view weekly/monthly
+              calendars of completed work. All user data is per-account.
+Stack:        Python 3.13 + Flask + apig-wsgi (WSGI adapter for Lambda)
+              Lightweight — NO pdflatex, NO TeX Live, NO Asymptote.
+              ZIP-based Lambda (not container image). Deploys in ~10 seconds.
+Source:       Working copy lives at /tmp/claude-501/efficienthypothesis-src/
+              (may need to be restored from the deploy zip in S3 between
+              sessions — see DEPLOYMENT section).
+
+STATUS AS OF 2026-05-03:
+  Fully deployed and operational as an independent service. Split from the
+  original problemanalytics.com monolith. Shares the same DynamoDB Users
+  table and Google OAuth client ID with problemanalytics.com, but has its
+  own Lambda, API Gateway, S3 bucket, and domain.
+
+  The app is a Single-Page Application (SPA) — one HTML shell (app.html)
+  serves all authenticated routes. Tab navigation happens via JavaScript
+  with no page reload. Data is cached in JS memory for instant tab switches.
+
+  Sidebar order: Projects, Tasks, Weekly, Monthly, Dashboard, Settings.
+
+--------------------------------------------------------------------------------
+AWS ACCOUNT & REGION
+--------------------------------------------------------------------------------
+Account ID:     874851035546
+Primary region: us-east-2 (Ohio) — same as problemanalytics.com.
+
+--------------------------------------------------------------------------------
+AWS INFRASTRUCTURE
+--------------------------------------------------------------------------------
+Domain:
+  efficienthypothesis.com
+  Registered via Route 53 ($15/year, auto-renew enabled)
+  Hosted Zone: Z10368871VVMGIJY04CAI
+  DNS: A-record alias -> d-swxujsprdk.execute-api.us-east-2.amazonaws.com
+
+ACM Certificate:
+  ARN: arn:aws:acm:us-east-2:874851035546:certificate/e828de1c-bb96-47dd-9637-04f10c201f51
+  Domain: efficienthypothesis.com
+  Status: ISSUED
+
+Lambda Function (efficienthypothesis-backend):
+  PackageType:  Zip (NOT container image — no Docker/CodeBuild needed)
+  Runtime:      python3.13
+  Handler:      app.handler
+  Memory:       256 MB
+  Timeout:      30 seconds
+  Layers:       python-web-deps (Flask, apig-wsgi, boto3, google-auth, requests)
+                Shared with problemanalytics.com website-backend.
+  IAM Role:     efficienthypothesis-backend-role
+    - AWSLambdaBasicExecutionRole
+    - AmazonDynamoDBFullAccess
+    - S3ProductivityAccess (inline):
+        s3:GetObject/PutObject/DeleteObject/ListBucket on efficienthypothesis.com/*
+        s3:GetObject on common-items/*
+
+API Gateway (REST):
+  API ID:       955cy2hwu2
+  Name:         efficienthypothesis-api
+  Stage:        default
+  Resources:    / (ANY) and /{proxy+} (ANY) -> Lambda
+  Custom domain: efficienthypothesis.com (regional)
+  Regional target: d-swxujsprdk.execute-api.us-east-2.amazonaws.com
+
+S3 Buckets:
+  efficienthypothesis.com     Per-user productivity data + deploy zip
+    deploy/efficienthypothesis-build.zip   Lambda deploy package (~48 KB)
+    <email>/routines/tasks.json            Routine templates
+    <email>/schedules/actions.json         Schedule templates
+    <email>/goals/<goal_name>.json         Goal definitions
+    <email>/data/<goal_name>/<date>.json   Daily data entries
+
+  common-items                Shared assets across both sites
+    favicons/circle_favicon.svg            efficienthypothesis.com favicon
+    favicons/square_favicon.svg            problemanalytics.com favicon
+    logos/efficienthypothesis.svg           Full logo (circles + wordmark)
+    logos/problemanalytics.svg             Full logo (squares + wordmark)
+
+DynamoDB Tables (us-east-2):
+  Users    (SHARED with problemanalytics.com)
+    Partition key: user_id (String) — Google OAuth subject
+    Fields:        user_id, email, name, picture, created_at (ISO, set once),
+                   timezone (IANA string, e.g. "America/Los_Angeles")
+    Notes:         Same user row is shared across both sites (same Google
+                   account = same user_id). Timezone preference carries over.
+                   created_at is set on first login via if_not_exists.
+                   last_login field was removed.
+
+  Actions  (owned by efficienthypothesis.com)
+    Partition key: action_id (String) — UUID
+    Fields:        action_id, user (email), name, start_datetime (UTC ISO),
+                   end_datetime (UTC ISO), schedule_id, group, is_planned,
+                   created_at
+    Notes:         Time blocks for the weekly calendar. is_planned=true for
+                   schedule-generated planned actions, false for manifested/manual.
+
+  Tasks    (owned by efficienthypothesis.com)
+    Partition key: task_id (String) — UUID
+    Fields:
+      task_id, user (email), path, name, assign_datetime (UTC ISO with Z),
+      due_datetime (UTC ISO with Z), end_datetime (UTC ISO with Z or null),
+      time_log (List of {start, end} UTC ISO pairs), due_status,
+      routine_id, group, created_at
+    Notes:         All datetimes stored in UTC with 'Z' suffix.
+                   Frontend uses ensureUTC() helper to append 'Z' to bare
+                   ISO strings from legacy data. No draft records in this
+                   table — drafts live in the separate Drafts table.
+
+  Drafts   (owned by efficienthypothesis.com)
+    Partition key: draft_id (String) — UUID
+    Fields:
+      draft_id, user (email), is_routine_draft (Boolean),
+      name,
+      assign_datetime (task drafts), due_datetime (task drafts),
+      pattern (routine drafts), due_time (routine drafts),
+      assign_time (routine drafts), first_day (routine drafts),
+      max_instances (routine drafts), created_at
+    Notes:         Temporary work-in-progress items. Auto-saved on 2s
+                   debounce. On save: task drafts promote to Tasks table,
+                   routine drafts create S3 template — then draft is deleted.
+                   Empty drafts deleted on modal dismiss.
+
+--------------------------------------------------------------------------------
+AUTHENTICATION
+--------------------------------------------------------------------------------
+Method:       Google OAuth (Sign In with Google)
+Client ID:    126112207759-ini9m1s7p6to946m18q5664jgvrvfai7.apps.googleusercontent.com
+              Shared with problemanalytics.com. efficienthypothesis.com is added
+              to the authorized JavaScript origins (no redirect URI needed —
+              the flow is entirely client-side via Google Identity Services).
+Flow:         JS Google Sign-In -> POST /auth/callback with id_token ->
+              server verifies via google.oauth2.id_token ->
+              stores user in Flask session + upserts row in DynamoDB Users.
+Sessions:     Flask sessions, signed with FLASK_SECRET_KEY env var.
+              Default key: "eh_replace_this_with_secure_key".
+Access:       ALL authenticated users can use all features. No admin-only gating.
+
+After login, the user is redirected to /tasks.
+
+--------------------------------------------------------------------------------
+TIMEZONE HANDLING
+--------------------------------------------------------------------------------
+Auto-detect: On first authenticated page load, if the user has no timezone
+  set in DynamoDB, the browser's Intl.DateTimeFormat().resolvedOptions().timeZone
+  is auto-saved silently (no setup screen).
+
+Storage: UTC everywhere in the database with 'Z' suffix. The timezone field on
+  the Users table is used for display conversion only.
+
+CRITICAL: ensureUTC(iso) — Frontend helper that appends 'Z' to bare ISO
+  strings. Applied to all 5 parsing functions: utcToLocalDate, getLocalHourFrac,
+  formatTime, formatDateTime, toLocalDatetimeValue. Without this, JS Date()
+  treats bare ISO strings as local time, causing tasks to appear hours off.
+
+  TEST CASE: A task created at 8:30 PM Pacific (03:30 UTC) must render at
+  8:30 PM, not 3:30 AM the next day. If times are wrong by the UTC offset,
+  ensureUTC is not being applied.
+
+--------------------------------------------------------------------------------
+ROUTINE SYSTEM
+--------------------------------------------------------------------------------
+Two-part architecture: S3 templates + DynamoDB task instances.
+
+TEMPLATES (S3):
+  Stored at s3://efficienthypothesis.com/<email>/routines/tasks.json
+  Schema:
+    {
+      "id": "uuid",
+      "name": "Wake up",
+      "assign_time": "07:00",        // HH:MM — when task becomes visible
+      "due_time": "07:30",           // HH:MM — deadline
+      "first_day": "2026-05-01",     // YYYY-MM-DD — first instance date
+      "pattern": "interval:1",       // see PATTERN FORMAT below
+      "max_instances": 62,           // total instances before deactivation
+      "instances": 5,                // counter, incremented each materialization
+      "group": "group-path or null", // project group (set via drag-and-drop or creation)
+      "active": true,                // false when instances >= max_instances
+      "created_at": "2026-04-29T...Z"
+    }
+
+PATTERN FORMAT:
+  Two types, stored as strings:
+    "interval:N"    — every N days (N=1 for daily, max 30)
+    "set:0,1,3"     — specific weekdays (0=Mon, 1=Tue, ..., 6=Sun)
+
+  Conversions from natural language:
+    "daily"                 → interval:1
+    "weekdays"              → set:0,1,2,3,4
+    "weekends"              → set:5,6
+    "every 3 days"          → interval:3
+    "every monday"          → set:0
+    "every mon wed fri"     → set:0,2,4
+    All 7 days in a set     → interval:1 (auto-simplified)
+    N > 30                  → clamped to 30
+
+  Display format (patternToDisplay):
+    interval:1    → "Daily"
+    set:5,6       → "Weekends"
+    set:0,1,2,3,4 → "Weekdays"
+    set:0,2,4     → "{M, W, F}"
+    interval:3    → "Every 3 days"
+
+  Backend matcher (_pattern_matches_date):
+    interval: (check_date - first_day).days % N == 0
+    set: check_date.weekday() in days  (Python 0=Mon...6=Sun)
+
+  JS matcher (patternMatchesDateJS):
+    Same logic but converts JS getDay() (0=Sun...6=Sat) to Python convention.
+
+MATERIALIZATION (POST /api/routines/materialize):
+  Runs once on initApp(). For each active template:
+  1. Check instances < max_instances
+  2. Check today >= first_day
+  3. Check today matches pattern via _pattern_matches_date
+  4. Check no instance already exists for today (by routine_id + date)
+  5. Create DynamoDB task: assign_datetime = today+assign_time (UTC),
+     due_datetime = today+due_time (UTC), routine_id = template id
+  6. Increment instances counter on S3 template
+  7. If instances >= max_instances, set active=false
+  Also cleans stale incomplete routine instances from previous days.
+
+ACCESSIBLE DATE RANGE:
+  first_day must be: today or later, AND before the forward boundary.
+  Forward boundary = last day of (current_month + 2).
+    April → June 30, October → December 31, December → Feb 28/29
+  max_instances is auto-clamped to the maximum possible within this range.
+
+  TEST CASES:
+    4/5  → boundary 6/30
+    10/15 → boundary 12/31
+    12/31 → boundary 2/28 (or 2/29 leap year)
+    12/28 → boundary 2/28 (or 2/29 leap year)
+
+FIRST DAY AUTO-PUSH (set patterns):
+  If first_day doesn't match a day in the set, it's silently pushed forward
+  to the next matching day.
+  TEST CASE: pattern={R,F,S} (Thu,Fri,Sat), first=today (Wednesday 4/29)
+    → pushed to Thursday 4/30.
+  TEST CASE: pattern=every saturday, first=today (Tuesday 5/5)
+    → pushed to Saturday 5/9.
+
+INSTANCES (task instances in DynamoDB):
+  Created by materialization. Regular tasks with routine_id set.
+  Stale instances (incomplete from previous days) are deleted on each
+  materialization. Completed instances stay forever.
+
+--------------------------------------------------------------------------------
+TASKS (formerly "One-off Tasks")
+--------------------------------------------------------------------------------
+Same DynamoDB Tasks table, no routine_id. Schema:
+  task_id, user, name, path ("/"), assign_datetime (UTC), due_datetime (UTC),
+  end_datetime (UTC or null), time_log [{start, end}], due_status, created_at
+
+Time tracking: start/pause creates time_log entries. Starting auto-pauses any
+  other active task. Completing closes open time_log. Weekly calendar visualizes
+  these sessions as colored cards.
+
+Subtask nesting: path-based hierarchy. Root = "/". Subtask of "Parent" =
+  "/Parent/". Drag-and-drop on frontend. Backend just stores/retrieves path.
+
+DRAFTS:
+  Created server-side on modal open (Gmail-style). Stored in the dedicated
+  DynamoDB Drafts table (partition key: draft_id). Auto-save on 2s debounce.
+  All routine fields (assign_time, first_day, pattern, max_instances) persist
+  across sessions. Empty drafts (no name/input) are deleted on
+  dismiss. Saving a routine draft: POSTs new S3 template + deletes draft.
+  Saving a task draft: POSTs new task to Tasks table + deletes draft.
+
+  TEST CASE: Open routine modal, fill assign_time + pattern + first_day,
+    dismiss, reopen from Drafts section → all fields should be restored.
+
+--------------------------------------------------------------------------------
+ACTIONS & SCHEDULES
+--------------------------------------------------------------------------------
+Two new item types complementing Tasks and Routines:
+
+TYPE SYSTEM:
+  Base type + repeat:
+    Task      + repeat → Routine    (what you NEED to do)
+    Action    + repeat → Schedule   (what you DID / ARE DOING)
+
+  Actions track time blocks — they only have start_datetime and end_datetime.
+  No assign/due, no time_log, no due_status, no subtask nesting.
+  Actions appear ONLY on the weekly calendar, never on tasks page or monthly.
+
+ACTIONS (DynamoDB "Actions" table):
+  Partition key: action_id (String) — UUID
+  Fields:
+    action_id, user (email), name, start_datetime (UTC ISO with Z),
+    end_datetime (UTC ISO with Z), schedule_id (UUID or null),
+    group (path or null), is_planned (Boolean), created_at (UTC ISO with Z)
+
+  is_planned = true: dashed-outline card on weekly (from schedule materialization)
+  is_planned = false: solid card on weekly (manually created or manifested)
+
+SCHEDULES (S3 templates):
+  Stored at s3://efficienthypothesis.com/<email>/schedules/actions.json
+  Schema mirrors routines:
+    {
+      "id": "uuid",
+      "name": "Go to school",
+      "start_time": "08:00",       // HH:MM — when action starts
+      "end_time": "15:00",         // HH:MM — when action ends
+      "first_day": "2026-05-06",
+      "pattern": "set:0,1,2,3,4",  // same format as routines
+      "instances": 0,
+      "max_instances": 85,          // OR end_date (mode-based, same as routines)
+      "group": null,
+      "active": true,
+      "created_at": "2026-05-06T...Z"
+    }
+  Overnight actions: if end_time <= start_time, end is next day.
+
+MATERIALIZATION (POST /api/schedules/materialize):
+  Runs on initApp() alongside routine materialization.
+  Creates planned actions (is_planned=true) for today from active templates.
+  Also cleans expired planned actions: is_planned=true AND
+    end_datetime + 2 days < now → deleted.
+
+MANIFESTATION (POST /api/actions/<id>/manifest):
+  Converts a planned action to a real action (is_planned → false).
+  RESTRICTION: Can only manifest starting 5 minutes before start_datetime.
+  Before that window, returns 400 error.
+
+WEEKLY CALENDAR RENDERING:
+  Planned actions: dashed border, transparent background, group color for
+    border/text. Clickable → calls manifestAction(id).
+  Manifested/manual actions: solid background (same as task session cards).
+  Both positioned by start/end fracs using same HOUR_PX math as task sessions.
+
+CONTEXT MENU:
+  "QuickAdd" renamed to "Task" (icon: task_alt).
+  New "Action" entry (icon: schedule) opens the Action card.
+  Action card has same +/1/2 mode selector for creating Schedules.
+
+API ENDPOINTS:
+  GET/POST     /api/actions
+  PUT/DELETE   /api/actions/<id>
+  POST         /api/actions/<id>/manifest
+  GET/POST     /api/schedules
+  PUT/DELETE   /api/schedules/<id>
+  POST         /api/schedules/materialize
+
+JS STATE:
+  prodActions = []     // cached from /api/actions
+  prodSchedules = []   // cached from /api/schedules
+
+EXAMPLES:
+  Actions: watch tv, research competitors, quick nap, eat lunch
+  Schedules: go to school (weekdays 8am-3pm), sleep (daily 10pm-6am),
+    extracurricular (M/W/F 4pm-6pm)
+
+--------------------------------------------------------------------------------
+SMART INPUT PARSING
+--------------------------------------------------------------------------------
+The text modal in the task creation form parses comma-separated segments:
+
+  For BOTH tasks and routines:
+    'name with apostrophe's',  → name (closing quote + comma required)
+    Enter key on empty input   → triggers save
+
+  For TASKS (non-routine):
+    assign tomorrow,           → assign_datetime (default time 00:00)
+    assign thursday,           → this Thursday (or today if Thursday)
+    assign next friday,        → next week's Friday
+    assign next next monday,   → Monday two weeks out
+    assign tomorrow 5 pm,      → assign_datetime with specific time
+    assign 16:00,              → today at 4 PM (military time)
+    due sunday,                → due_datetime (default time 23:59)
+    due friday 10:00 am,       → due_datetime with specific time
+
+  For ROUTINES:
+    assign 7:00 am,            → assign_time (12hr format)
+    assign 16:00,              → assign_time (24hr/military)
+    due 10:00 pm,              → due_time
+    due 19:00,                 → due_time (military)
+    first today,               → first_day (auto-pushed for set patterns)
+    first tomorrow,            → first_day
+    first 5/5,                 → May 5 of current year
+    first 5/5/2026,            → explicit date
+    first thursday,            → next Thursday
+    first next monday,         → next week's Monday
+    daily,                     → pattern interval:1
+    weekdays,                  → pattern set:0,1,2,3,4
+    weekends,                  → pattern set:5,6
+    every mon wed fri,         → pattern set:0,2,4
+    every 3 days,              → pattern interval:3
+    every 31 days,             → clamped to interval:30
+    5 times,                   → max_instances (only if pattern is set)
+    n times,                   → auto-compute maximum instances
+    1 times,                   → clamped to 2 (minimum)
+    10000 times,               → clamped to max possible
+
+  Day name modifiers: {this, next, next next, null (same as this)}
+    "assign tuesday" on Wednesday = next Tuesday (6 days, not past)
+    "assign wednesday" on Wednesday = today
+
+  TEST CASES:
+    'shave my cat's hair',     → name: "shave my cat's hair" (apostrophe OK)
+    first today, (with pattern {S}) → pushed to Saturday (not today)
+    daily, first tomorrow, n times, → instances = ~62 (days to boundary)
+    every 5 days, 10000 times, → clamped to max within boundary
+
+--------------------------------------------------------------------------------
+SOURCE LAYOUT
+--------------------------------------------------------------------------------
+/tmp/claude-501/efficienthypothesis-src/
+  app.py                    Flask app + Lambda handler. All routes defined here.
+  requirements.txt          Reference only — packages provided by Lambda Layer.
+  templates/
+    base.html               Base layout: favicon, Material Symbols, block structure.
+                            Has {% block bodyattrs %} on <body> for data attributes.
+    app.html                SPA shell — THE main template. All authenticated routes
+                            serve this. Contains:
+                            - Sidebar (inlined, order: Tasks/Weekly/Monthly/Dashboard/Settings)
+                            - <div id="app-content"> target for JS rendering
+                            - All 4 modals (smart input, reschedule, goal, data log)
+                            - Flush layout CSS for tasks/weekly/monthly pages
+                            - Loads productivity.js + calls initApp('{{ initial_page }}')
+    index.html              Public home page
+    login.html              Google Sign-In page
+    navbar1.html            Top navbar for public pages (home, login)
+    footer.html             Footer for public pages
+  static/
+    css/
+      base.css              Global layout (body, main padding)
+      navbar1.css           Top navbar styles + .logo-full class
+      navbar2.css           Sidebar styles + .sidebar-logo-full class + outline:none
+      footer.css            Footer styles
+      login.css             Login page split layout
+      index.css             Home page styles
+      productivity.css      ALL productivity styles (see CSS section below)
+    js/
+      login.js              Google Sign-In button init + credential handler
+      productivity.js       ALL productivity JS — SPA core (see JS section below)
+
+--------------------------------------------------------------------------------
+ROUTES — FLASK (app.py)
+--------------------------------------------------------------------------------
+Public:
+  GET  /                    Home page (index.html)
+  GET  /login               Google sign-in (login.html). Redirects to /tasks.
+  POST /auth/callback       Verifies Google id_token, creates session.
+                            Sets created_at on first login (if_not_exists).
+  GET  /logout              Clears session, redirects to /.
+  GET  /favicon.svg         Serves circle_favicon.svg from common-items S3.
+  GET  /logo.svg            Serves efficienthypothesis.svg logo from common-items S3.
+  GET  /<page>              Catch-all for dynamic pages.
+
+Authenticated (all serve app.html with initial_page parameter):
+  GET  /projects            initial_page="projects"
+  GET  /tasks               initial_page="tasks"
+  GET  /weekly              initial_page="weekly"
+  GET  /monthly             initial_page="monthly"
+  GET  /dashboard           initial_page="dashboard"
+  GET  /settings            initial_page="settings"
+
+API (all require session["user"]):
+  GET/PUT  /api/user/timezone         Also returns created_at on GET
+  GET/POST /api/tasks
+  PUT/DELETE /api/tasks/<id>
+  POST /api/tasks/<id>/start|pause|complete|move
+  GET  /api/tasks/calendar?month=YYYY-MM
+  GET/POST /api/drafts
+  PUT/DELETE /api/drafts/<id>
+  GET/POST /api/routines
+  PUT/DELETE /api/routines/<id>
+  POST /api/routines/materialize
+  POST /api/routines/compute-max
+  GET/POST /api/actions
+  PUT/DELETE /api/actions/<id>
+  POST /api/actions/<id>/manifest
+  GET/POST /api/schedules
+  PUT/DELETE /api/schedules/<id>
+  POST /api/schedules/materialize
+  GET/POST /api/goals
+  PUT/DELETE /api/goals/<name>
+  GET/POST /api/goals/<name>/data
+
+--------------------------------------------------------------------------------
+SPA ARCHITECTURE
+--------------------------------------------------------------------------------
+All authenticated routes serve app.html. Tab navigation via JavaScript.
+
+Initialization: initApp() → initTimezone() → materialize + fetchAllData()
+  → navigateTo(initialPage). Error handling: catch blocks still navigate
+  even if data loading fails.
+
+Navigation: navigateTo() clears nowLineInterval, blurs active element,
+  toggles flush CSS for tasks/weekly/monthly, renders content, pushes URL,
+  updates sidebar active state, renders from cache.
+
+Caching: fetchAllData() loads tasks/drafts/routines/goals/calendar in
+  parallel. Tab switches render from cache (zero API calls). Mutations call
+  refreshData() which re-fetches and re-renders.
+
+Arrow keys: Left/Right = prev/next week (weekly) or month (monthly).
+  Up/Down = scroll weekly view. Only when not in input/textarea/select.
+  Sidebar links blur on navigation so arrow keys work immediately.
+
+--------------------------------------------------------------------------------
+PAGE LAYOUTS
+--------------------------------------------------------------------------------
+PROJECTS PAGE (/projects):
+  Standard padded layout. Shows all tasks (non-draft, non-routine-instance)
+  and all routine templates in a 3-column CSS grid. No table lines visible.
+  Items show icon (task_alt for tasks, repeat for routines) + name.
+  CSS: .projects-container, .projects-grid (grid-template-columns: repeat(3, 1fr)),
+  .project-item, .project-item-icon.
+
+TASKS PAGE (/tasks):
+  Flush layout. Three-column table: Today | Incomplete | Planned.
+  Each column independently scrollable. Task cards with start/pause/complete,
+  drag-and-drop nesting, action menu, cascading completion with undo toast.
+
+WEEKLY PAGE (/weekly):
+  Flush layout. CSS Grid: 8 columns (time + 7 days).
+  Sticky header row with day names. Settings button (+/-) in corner cell.
+
+  Grid model:
+    weekVisibleCells (default 12) = rows visible on screen
+    cellHeight = (viewport - header - 2*TICK_MARGIN) / visibleCells
+    HOUR_PX = cellHeight / weekIntervalHrs
+    TICK_MARGIN = 8px above first and below last tick label
+    weekScrollOffset = which row is at top (controlled by up/down arrows)
+    No native scrollbar — position controlled by JS
+
+  Settings dropdown (+ button in corner):
+    Format: 24/12 pill toggle (default 12hr AM/PM)
+    Interval: 30m / 1h / 2h pill toggle (default 2h)
+    Visible rows: number input (min 6, max = total intervals, auto-clamp)
+
+  Event rendering:
+    getLocalHourFrac(iso) for pixel-accurate positioning
+    Multi-session: separate cards, only first labeled
+    Sessions < 10 min: thin blue lines, grouped by 10-min bucket
+    Cards labeled only if tall enough (>= 14px)
+
+  Current-time line:
+    Black dashed line in today's column. z-index: 5.
+    Recursive setTimeout synced to minute boundaries:
+      delay = (60 - currentSeconds) * 1000
+    Day rollover triggers full re-render.
+    Cleared on tab navigation.
+
+  Due cards:
+    Non-completed tasks with future due_datetime shown as small grey tabs.
+    Bottom of card at due time, extends upward (10px wide, 16px tall).
+    Shape: flat left edge, rounded right corners (tab/index style).
+    On hover: expands right to show task name, darkens to #80868b.
+    Collision: if position overlaps a session card or other due card,
+      searches upward in 5-minute increments for free slot.
+    CSS: .wk-due-card (z-index 3, hover z-index 10), .wk-due-label
+      (display:none by default, display:block on hover).
+
+    TODO: Design a clean solution for edge cases where too many due cards
+      exist in a single week or day, causing cards to get pushed upward
+      off the visible grid. Need a way to cap or collapse excess due cards
+      to prevent messy/cluttered rendering.
+
+    TODO: Add a limit to the number of tasks that someone can have due
+      in a single day.
+
+    TODO: When placing due card bookmarks, ensure all are within bounds
+      of the weekly calendar. Consider an alternating sort strategy:
+      start from 12 PM, then 0 AM, then end, then beginning, repeat —
+      cycling outward until all bookmark positions are chosen. This
+      ensures beginning and end bounds of the grid are respected.
+
+    TODO: Make weekly time cards clickable. When clicked, allow the user
+      to drag the upper and lower bounds to resize the time session, or
+      simply type new time boundaries to adjust the start/end as desired.
+
+  Accessible date range:
+    Jan 1 of account creation year → Dec 31 of next year.
+    Inaccessible days: greyed out column, no header, no events.
+    Boundary weeks: partially accessible (some days greyed).
+    TEST CASE: Account created 2026 → range 2026-01-01 to 2027-12-31.
+    Week containing 12/29/2027: Mon-Wed accessible, Thu-Sun greyed (2028).
+
+MONTHLY PAGE (/monthly):
+  Flush layout. CSS Grid: 7 columns (Sun-Sat).
+  grid-template-rows: auto repeat(N, 1fr) where N = 4, 5, or 6.
+  Rows fill viewport exactly. No nav buttons (use arrow keys).
+  Double-click a day cell → navigates to weekly tab for that week.
+  Cells show all tasks that fit; overflow shows "+N more" indicator.
+  Accessible month range enforced (same as weekly).
+
+DASHBOARD PAGE (/dashboard):
+  Standard padded layout. Contains:
+    - Toolbar: "Dashboard" title
+    - Data Collection section: goal cards with Log/View/Delete buttons
+
+SETTINGS PAGE (/settings):
+  Standard padded layout. Contains:
+    - Timezone section: displays current timezone (auto-detected)
+    - Account section: Logout link
+
+RIGHT-CLICK CONTEXT MENU (all pages):
+  Custom context menu replaces browser default on right-click (two-finger click
+  on MacBook trackpad). Appears at cursor position on any authenticated page.
+  Not intercepted on input/textarea/select elements (allows normal right-click).
+  Items:
+    - QuickAdd: opens QuickAdd card (supports both tasks and routines via + button)
+    - Note: opens NoteAdd card
+    - Group: opens group creation modal
+    - Drafts: hover/click shows sub-popup listing all current drafts.
+      Clicking a draft calls resumeDraft(). Sub-popup flips left/up if near
+      screen edge. Shows "No drafts" if empty.
+  Dismissed by clicking outside, pressing Escape, or selecting an item.
+  CSS classes: .ctx-menu, .ctx-menu-item, .ctx-submenu, .ctx-submenu-item.
+  z-index: 2000 (menu), 2001 (submenu).
+
+  TODO: Add single letter keyboard shortcuts for the context menu buttons:
+    Note, Group, QuickAdd.
+
+NAMING CONVENTION (as of 2026-04-29):
+  "Task" = one-off task (formerly "One-off")
+  "Routine" = repeating task (formerly "Recurring")
+  Fully renamed end-to-end: UI labels, API routes (/api/routines),
+  S3 paths (<email>/routines/), DynamoDB fields (routine_id, is_routine_draft),
+  and JS variables (prodRoutines, smartIsRoutine, etc.).
+
+--------------------------------------------------------------------------------
+JAVASCRIPT — productivity.js
+--------------------------------------------------------------------------------
+Global state variables:
+  currentPage          'tasks' | 'weekly' | 'monthly' | 'dashboard' | 'settings'
+  prodUserTimezone     IANA timezone string
+  prodCalendarMonth    current calendar month "YYYY-MM"
+  prodAllTasks         cached non-draft tasks
+  prodRoutines         cached routine templates
+  prodDrafts           cached draft tasks
+  prodGoals            cached goal objects
+  prodCalendarData     cached calendar data {date: [tasks]}
+  weekCalStart         Date object for Monday of current week
+  use24HourTime        boolean, default false (12hr AM/PM)
+  weekIntervalHrs      2 (default), 1, or 0.5
+  weekVisibleCells     12 (default), range 6 to totalIntervals
+  weekScrollOffset     which row is at top of viewport
+  nowLineInterval      timeout ID for current-time line updates
+  accountCreatedYear   integer, from Users.created_at
+  accessibleStartDate  "YYYY-01-01" of creation year
+  accessibleEndDate    "YYYY-12-31" of next year
+  dataLoaded           boolean
+
+Key functions:
+  initApp(page)        Entry point
+  ensureUTC(iso)       Append 'Z' to bare ISO strings
+  getLocalHourFrac(iso) UTC ISO → fractional hours in user's timezone
+  resolveDayName(text) Parse "next thursday" etc. to date string
+  parseNaturalDate(text, defaultTime) Natural language → {date, time}
+  parseFirstDay(text)  Parse first day input with validation
+  parsePatternInput(text) Natural language → "interval:N" or "set:X,Y"
+  patternToDisplay(pattern) Pattern string → human-readable
+  patternMatchesDateJS(pattern, firstDay, checkDate) JS pattern matcher
+  computeMaxInstancesClientSide(firstDay, pattern) Count matching days to boundary
+  adjustFirstDayForPattern(firstDay, pattern) Push to next matching day for sets
+  autoComputeMaxIfReady() Auto-push first_day + recompute max instances
+  clampInstances()     Auto-clamp instances input on keystroke
+
+  renderWeekView()     Build weekly CSS Grid + current-time line
+  renderCalendar()     Build monthly CSS Grid + overflow detection
+
+  Smart input: keyup listener parses comma-separated segments
+  Enter on empty input: triggers saveSmartTask()
+
+--------------------------------------------------------------------------------
+CSS — productivity.css
+--------------------------------------------------------------------------------
+Key class groups:
+  .productivity-container    max-width 900px wrapper (non-flush pages)
+  .prod-section/header/body  card-style sections
+  .prod-toolbar              toolbar with title + buttons
+  .prod-add-btn              pill-shaped buttons (.primary blue, .secondary white)
+  .task-card                 draggable task card (flex, rounded, border)
+
+  .tasks-table/header/body/cell  Flush 3-column table for tasks page
+  #weekly-root               Flush weekly container (overflow: hidden)
+  .wk-grid                   CSS Grid (54px + repeat(7, 1fr))
+  .wk-corner/day-hdr/time-col/day-col/tick/gridline/event/line  Weekly internals
+  #wk-now-line               Current-time dashed line (position: absolute, z-index: 5)
+  .week-settings-btn/dropdown  Settings button and dropdown
+
+  #monthly-root              Flush monthly container
+  .mo-grid/day-hdr/cell/day-num/day-tasks/day-task  Monthly internals
+
+  .time-pill-toggle          24/12 and interval pill toggles
+  .page-flush-html/.page-flush  Flush layout overrides (tasks/weekly/monthly)
+  .prod-modal-overlay/modal  Modal dialogs
+  .smart-input/hint          Smart input field
+  .goal-card                 Goal display card
+  .undo-toast                Completion undo toast
+  .settings-*                Settings page styles
+
+--------------------------------------------------------------------------------
+DEPLOYMENT
+--------------------------------------------------------------------------------
+ZIP-based Lambda. No Docker, no CodeBuild. Deploys in ~10 seconds.
+Python packages are provided by the shared "python-web-deps" Lambda Layer
+(see problemanalytics.txt for layer details). The deploy ZIP contains ONLY
+app.py + templates/ + static/ (~48 KB).
+
+Deploy script:
+  bash website_layout/deploy_efficienthypothesis.sh
+
+  What it does: zips app.py + templates/ + static/ → uploads to S3 →
+  updates efficienthypothesis-backend Lambda code from S3 ZIP.
+
+WHEN TO USE WHICH SCRIPT:
+  Changed app.py, templates/, or static/?  → deploy_efficienthypothesis.sh
+  Changed requirements.txt (packages)?     → deploy_layer.sh (updates BOTH
+                                              website-backend AND
+                                              efficienthypothesis-backend)
+
+RESTORING SOURCE BETWEEN SESSIONS:
+  mkdir -p /tmp/claude-501/efficienthypothesis-src
+  aws s3 cp s3://efficienthypothesis.com/deploy/efficienthypothesis-build.zip \
+    /tmp/claude-501/efficienthypothesis-build.zip --region us-east-2
+  unzip -o /tmp/claude-501/efficienthypothesis-build.zip \
+    -d /tmp/claude-501/efficienthypothesis-src/
+
+NOTE: The deploy ZIP no longer contains bundled Python packages. Do NOT
+  pip install into the source directory — the Lambda Layer provides all
+  dependencies. If you need to add/update packages, use deploy_layer.sh.
+
+--------------------------------------------------------------------------------
+COMMON GOTCHAS / LESSONS LEARNED
+--------------------------------------------------------------------------------
+1. UTC TIMESTAMPS — All times UTC with 'Z' suffix in DB. Frontend uses
+   ensureUTC() to append 'Z' to bare ISO strings. Backend uses
+   datetime.utcnow().isoformat() + 'Z'. Without 'Z', JS Date() treats
+   strings as local time, causing hours-off display bugs.
+
+2. CONST/VAR CONFLICTS — In JS event listener functions, using const at
+   the top and var later in the same function causes SyntaxError (var hoists
+   to function scope, conflicting with const). Use var consistently inside
+   event listeners, or use unique variable names. This bug has crashed the
+   entire JS file multiple times — always check paren/brace balance.
+
+3. FLUSH LAYOUT — Tasks, Weekly, and Monthly pages use .page-flush class.
+   app.html inline <style> uses !important to override base.css/navbar2.css
+   padding. #app-content needs height:100% for flush pages. If adding a
+   new flush page, add to the condition in navigateTo().
+
+4. WEEKLY FIRST LOAD — renderWeekView() must call initWeekStart() at the
+   top. Without it, weekCalStart is null → new Date(null) = Jan 1 1970 →
+   all days marked inaccessible → grey grid with no headers.
+
+5. PATTERN FORMAT — Always "interval:N" or "set:X,Y,Z". No legacy string
+   formats. _normalize_pattern was removed. Python weekday: 0=Mon...6=Sun.
+   JS getDay: 0=Sun...6=Sat. Always convert between the two.
+
+6. DRAFTS TABLE — Drafts live in a separate DynamoDB "Drafts" table
+   (partition key: draft_id). The Tasks table has no draft records.
+   Frontend uses /api/drafts endpoints for all draft CRUD operations.
+
+7. DRAFT vs TEMPLATE — When resuming a routine draft and saving, the code
+   must POST (create new S3 template), not PUT (which tries to update a
+   non-existent template). Check: isEditingTemplate = editId && !draftId.
+
+8. PIP DEPENDENCIES — Python packages are provided by the shared
+   "python-web-deps" Lambda Layer. Do NOT pip install into the source
+   directory. If you need to add/update packages, edit requirements.txt
+   and run deploy_layer.sh. The old approach of bundling packages in
+   the ZIP caused it to balloon to ~22 MB and was fragile (macOS
+   binaries cause "invalid ELF header" on Lambda).
+
+9. SED DANGER — Never use sed to remove function calls with parentheses.
+   Greedy regex like [^)]*[)] matches through nested parens and destroys
+   surrounding code. Always use targeted Edit operations instead.
+
+10. SIDEBAR FOCUS — sidebar links have outline:none to prevent blue focus
+    ring. navigateTo() calls document.activeElement.blur() so arrow keys
+    work immediately after clicking a tab.
+
+11. NOW LINE — Uses recursive setTimeout (not setInterval) synced to minute
+    boundaries: delay = (60 - currentSeconds) * 1000. Self-corrects drift.
+    Must clearTimeout on tab navigation and re-render on day change.
+
+12. INSTANCES CLAMPING — Instances input auto-clamps on keystroke via
+    clampInstances(). Max is set by autoComputeMaxIfReady() which runs on
+    every pattern/first_day change. Input disabled until pattern is set.
+
+--------------------------------------------------------------------------------
+RESTRICTION SYSTEM (PLANNED)
+--------------------------------------------------------------------------------
+Some hardcoded limits should only apply to manual user entry, not to
+programmatic requests from chatbots (in-website chatbot or external MCP
+chatbot like GPT/Claude). The purpose is to force users not to overplan
+and focus on the present when manually entering data, while allowing
+chatbots full flexibility to manage data on the user's behalf.
+
+IMPLEMENTATION:
+  Programmatic requests include a flag in the request body:
+    { "_programmatic": true, ...other fields... }
+  Manual entry (QuickAdd, smart modal, NoteAdd) never includes this flag.
+  Both the in-website chatbot and external MCP server set it.
+
+  Backend helper:
+    def _is_manual_entry(data):
+        return not data.get("_programmatic", False)
+
+  Validation functions accept a strict parameter:
+    err = _validate_date_range(dt_str, strict=_is_manual_entry(data))
+
+  Security note: A savvy user could add _programmatic via dev tools to
+  bypass their own restrictions. This is acceptable — the restrictions
+  are for the user's own productivity benefit, not security enforcement.
+
+RESTRICTIONS — MANUAL-ONLY (skip for chatbots):
+  Routine interval range (1-30 days)   app.html:113, productivity.js
+  Forward boundary (+2 months)         app.py:928-936
+
+RESTRICTIONS — APPLY TO ALL (structural/system limits):
+  Max 100 groups                       app.py:1162
+  Default routine instances (85)       app.py:634, 809, 895
+  Min routine instances (2)            app.html:117
+  Date range (current + next year)     app.py:42-43
+  Calendar accessible range            productivity.js:36-42
+  Weekly view min cells (6)            productivity.js:208, 2380
+  Weekly view default cells (12)       productivity.js:15
+  Weekly grid interval (0.5/1/2 hrs)   productivity.js:15
+  Min card display time (10 min)       productivity.js:2050
+  Static asset cache (24 hrs)          app.py:54, 62
+
+NOTE DATE INPUT (PLANNED REDESIGN):
+  Current: MM/DD/YYYY segmented inputs with maxlength on each segment.
+  Planned: Smart auto-tabbing based on value, not character count.
+    - Month: if user types 3-9, auto-tab immediately (no two-digit month
+      starts with 3+). If user types 1, wait for second digit (10, 11, 12).
+      If user types 0, wait for second digit (01-09).
+    - Day: if user types 4-9, auto-tab immediately (no two-digit day
+      starts with 4+). If user types 1-3, wait for second digit.
+      If user types 0, wait for second digit (01-09).
+    - Year: only last two digits needed (20 prefix hardcoded). After two
+      digits entered, input is complete.
+    - Backend validates the resulting date is real (e.g., rejects Feb 30).
+    - Remove maxlength restrictions from inputs.
+
+================================================================================
