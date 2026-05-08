@@ -1293,3 +1293,12 @@
   opacity: 0.5;
 }
 .ai-widget-resize-grip:hover { opacity: 1; }
+.ai-confirm-wrap { margin-top: 8px; }
+.ai-confirm-btn {
+  background: #0e639c; color: #fff; border: none; border-radius: 3px;
+  padding: 4px 16px; font-size: 0.82rem; font-family: inherit; cursor: pointer;
+}
+.ai-confirm-btn:hover { background: #1177bb; }
+.ai-confirmed-label {
+  margin-top: 6px; color: #4ec9b0; font-size: 0.78rem; font-style: italic;
+}

@@ -2516,24 +2516,23 @@ def api_chat():
             messages.append({"role": role, "content": content})
     messages.append({"role": "user", "content": user_message})
 
-    # Call Bedrock
+    # Call Bedrock via Converse API
+    print(f"[CHAT] user={email}, msg_len={len(user_message)}, history_len={len(messages)-1}, system_len={len(full_system)}")
     try:
-        bedrock_body = json.dumps({
-            "anthropic_version": "bedrock-2023-10-08",
-            "max_tokens": 4096,
-            "system": full_system,
-            "messages": messages,
-        })
-        bedrock_resp = bedrock_runtime.invoke_model(
+        converse_messages = [
+            {"role": m["role"], "content": [{"text": m["content"]}]}
+            for m in messages
+        ]
+        bedrock_resp = bedrock_runtime.converse(
             modelId=CHAT_STRONG_MODEL,
-            contentType="application/json",
-            accept="application/json",
-            body=bedrock_body,
+            system=[{"text": full_system}],
+            messages=converse_messages,
+            inferenceConfig={"maxTokens": 4096},
         )
-        result = json.loads(bedrock_resp["body"].read())
-        assistant_text = result["content"][0]["text"]
+        assistant_text = bedrock_resp["output"]["message"]["content"][0]["text"]
         return jsonify({"response": assistant_text})
     except Exception as e:
+        print(f"[CHAT ERROR] {type(e).__name__}: {e}")
         return jsonify({"error": f"Chat failed: {str(e)}"}), 500
 
 

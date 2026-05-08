@@ -4344,36 +4344,129 @@ window.toggleAIWidgetMode = function(el) {
   }
 };
 
-function formatAIMessage(text) {
+function formatAIMessage(text, opts) {
+  opts = opts || {};
+  // Extract JSON plan before escaping (hidden from display, stored for confirm)
+  var jsonPlan = null;
+  var display = text.replace(/```json\n?([\s\S]*?)```/g, function(m, code) {
+    try { jsonPlan = JSON.parse(code.trim()); } catch(e) {}
+    return ''; // hide JSON from display
+  });
+  // Remove other code blocks too
+  display = display.replace(/```(\w*)\n?([\s\S]*?)```/g, '');
+  // Trim trailing whitespace/newlines left after removal
+  display = display.replace(/\n{3,}/g, '\n\n').trim();
   // Escape HTML
-  var s = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  // Render ```json ... ``` blocks
-  s = s.replace(/```json\n?([\s\S]*?)```/g, function(m, code) {
-    return '<div class="ai-json-block"><pre>' + code.trim() + '</pre></div>';
-  });
-  // Render other ``` blocks
-  s = s.replace(/```(\w*)\n?([\s\S]*?)```/g, function(m, lang, code) {
-    return '<div class="ai-code-block"><pre>' + code.trim() + '</pre></div>';
-  });
+  var s = display.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   // Render inline `code`
   s = s.replace(/`([^`]+)`/g, '<code class="ai-inline-code">$1</code>');
   // Render **bold**
   s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
   // Line breaks
   s = s.replace(/\n/g, '<br>');
+  if (opts.returnPlan) return { html: s, plan: jsonPlan };
   return s;
 }
 
 function renderShellMessages(shell) {
   var html = '';
-  shell.history.forEach(function(msg) {
+  shell.history.forEach(function(msg, idx) {
     if (msg.role === 'user') {
       html += '<div class="ai-msg ai-msg-user"><span class="ai-msg-prefix">&gt; </span>' + formatAIMessage(msg.content) + '</div>';
     } else {
-      html += '<div class="ai-msg ai-msg-assistant">' + formatAIMessage(msg.content) + '</div>';
+      var result = formatAIMessage(msg.content, { returnPlan: true });
+      html += '<div class="ai-msg ai-msg-assistant">' + result.html;
+      // Show Confirm button if there's a plan and this is the last assistant message and not yet confirmed
+      var isLast = true;
+      for (var j = idx + 1; j < shell.history.length; j++) {
+        if (shell.history[j].role === 'assistant') { isLast = false; break; }
+      }
+      if (result.plan && result.plan.length > 0 && isLast && !msg.confirmed) {
+        html += '<div class="ai-confirm-wrap"><button class="ai-confirm-btn" onclick="confirmAIPlan(' + shell.id + ',' + idx + ')">Confirm</button></div>';
+      }
+      if (msg.confirmed) {
+        html += '<div class="ai-confirmed-label">Confirmed</div>';
+      }
+      html += '</div>';
     }
   });
   return html;
+}
+
+function confirmAIPlan(shellId, msgIdx) {
+  var shell = aiShells.find(function(s) { return s.id === shellId; });
+  if (!shell) return;
+  var msg = shell.history[msgIdx];
+  if (!msg || msg.confirmed) return;
+
+  var result = formatAIMessage(msg.content, { returnPlan: true });
+  if (!result.plan || result.plan.length === 0) return;
+
+  msg.confirmed = true;
+
+  // Execute each operation in the plan
+  var promises = result.plan.map(function(op) {
+    var action = op.action || '';
+    var data = op.data || {};
+    var target = op.target || {};
+
+    if (action === 'create_task') {
+      return fetch('/api/tasks', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) });
+    } else if (action === 'update_task') {
+      return fetch('/api/tasks/' + target.id, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) });
+    } else if (action === 'delete_task') {
+      return fetch('/api/tasks/' + target.id, { method: 'DELETE' });
+    } else if (action === 'create_action') {
+      return fetch('/api/actions', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) });
+    } else if (action === 'update_action') {
+      return fetch('/api/actions/' + target.id, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) });
+    } else if (action === 'delete_action') {
+      return fetch('/api/actions/' + target.id, { method: 'DELETE' });
+    } else if (action === 'create_routine') {
+      return fetch('/api/routines', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) });
+    } else if (action === 'update_routine') {
+      return fetch('/api/routines/' + target.id, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) });
+    } else if (action === 'delete_routine') {
+      return fetch('/api/routines/' + target.id, { method: 'DELETE' });
+    } else if (action === 'create_schedule') {
+      return fetch('/api/schedules', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) });
+    } else if (action === 'update_schedule') {
+      return fetch('/api/schedules/' + target.id, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) });
+    } else if (action === 'delete_schedule') {
+      return fetch('/api/schedules/' + target.id, { method: 'DELETE' });
+    } else if (action === 'create_note') {
+      return fetch('/api/notes', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) });
+    } else if (action === 'update_note') {
+      return fetch('/api/notes/' + target.id, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) });
+    } else if (action === 'delete_note') {
+      return fetch('/api/notes/' + target.id, { method: 'DELETE' });
+    } else if (action === 'create_group') {
+      return fetch('/api/groups', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) });
+    } else if (action === 'update_group') {
+      return fetch('/api/groups', { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) });
+    } else if (action === 'delete_group') {
+      return fetch('/api/groups', { method: 'DELETE', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) });
+    } else if (action === 'create_goal') {
+      return fetch('/api/goals', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) });
+    } else if (action === 'log_goal') {
+      var goalName = data.name || target.name || '';
+      return fetch('/api/goals/' + encodeURIComponent(goalName) + '/data', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) });
+    }
+    return Promise.resolve();
+  });
+
+  Promise.all(promises).then(function() {
+    // Refresh data so calendar/tasks update
+    fetchAllData().then(function() {
+      renderCalendarFromCache();
+      if (currentPage === 'tasks') navigateTo('tasks', false);
+      if (currentPage === 'projects') navigateTo('projects', false);
+    });
+  });
+
+  // Re-render messages to show "Confirmed" label
+  var containerId = document.getElementById('ai-widget-content') ? 'ai-widget-content' : 'ai-terminal';
+  refreshAIMessages(containerId);
 }
 
 function buildTabBar(containerId) {
@@ -4455,7 +4548,8 @@ function sendAIMessage(text, containerId) {
   .then(function(data) {
     var loadingEl = document.getElementById(containerId + '-loading');
     if (loadingEl) loadingEl.remove();
-    shell.history.push({ role: 'assistant', content: data.response || 'No response.' });
+    var responseText = data.response || data.error || 'No response.';
+    shell.history.push({ role: 'assistant', content: responseText });
     refreshAIMessages(containerId);
     scrollToBottom(containerId);
   })
