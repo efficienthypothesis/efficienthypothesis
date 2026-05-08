@@ -182,6 +182,12 @@ def settings():
 
 # === LOGIN FLOW ===
 
+@app.route('/ai')
+def ai_app():
+    if "user" not in session:
+        return redirect(url_for('login_page'))
+    return render_template("app.html", user=session["user"], initial_page="ai")
+
 @app.route('/home')
 def home_app():
     if "user" not in session:

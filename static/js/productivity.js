@@ -28,6 +28,14 @@ let projectsShowCompleted = true; // toggle for showing completed items in proje
 let projectsShowNotes = true; // toggle for showing notes in projects
 let projectsShowEmptyGroups = true; // toggle for showing empty groups in projects
 let monthlyShowNotes = true; // toggle for showing notes on monthly calendar
+
+// AI Chat state
+let aiShells = [{ id: 1, name: 'Shell 1', history: [] }];
+let aiActiveShellId = 1;
+let aiNextShellId = 2;
+let aiWidgetMode = false;
+let aiWidgetVisible = false;
+let aiWidgetPos = null; // {x, y, w, h} for draggable widget
 let monthlyShowPlanned = false; // toggle for showing planned (incomplete) tasks on monthly calendar
 
 // --- Preferences persistence (localStorage) ---
@@ -592,7 +600,7 @@ function navigateTo(page, push) {
   var main = document.querySelector('main');
 
   // Toggle flush layout for tasks and weekly pages
-  var flush = (page === 'tasks' || page === 'weekly' || page === 'monthly' || page === 'home');
+  var flush = (page === 'tasks' || page === 'weekly' || page === 'monthly' || page === 'home' || page === 'ai');
   main.classList.toggle('page-flush', flush);
   document.documentElement.classList.toggle('page-flush-html', flush);
 
@@ -604,6 +612,7 @@ function navigateTo(page, push) {
   else if (page === 'weekly') content.innerHTML = renderWeeklyContent();
   else if (page === 'dashboard') content.innerHTML = renderDashboardContent();
   else if (page === 'settings') content.innerHTML = renderSettingsContent();
+  else if (page === 'ai') { content.innerHTML = ''; renderAIContent(content); }
 
   // Update URL
   if (push) history.pushState({ page: page }, '', '/' + page);
@@ -636,6 +645,9 @@ function navigateTo(page, push) {
   }
   if (page === 'weekly') {
     updateWeeklySubtab();
+  }
+  if (page === 'ai') {
+    updateAISubtab();
   }
 
   // Load data for this page
@@ -4300,4 +4312,384 @@ window.editNote = function(noteId) {
   var note = prodNotes.find(function(n) { return n.id === noteId; });
   if (note) openNoteAdd(note);
 };
+
+// ============================================================
+// AI CHAT - Full Terminal UI + Widget Mode
+// ============================================================
+
+function getActiveShell() {
+  return aiShells.find(function(s) { return s.id === aiActiveShellId; }) || aiShells[0];
+}
+
+function updateAISubtab() {
+  var subtabs = document.querySelector('.sidebar-subtabs[data-parent="ai"]');
+  if (!subtabs) return;
+  subtabs.innerHTML =
+    '<a class="sidebar-subtab' + (aiWidgetMode ? ' active' : '') + '" onclick="toggleAIWidgetMode(this)">' +
+    'Widget<span class="material-symbols-outlined subtab-check">' + (aiWidgetMode ? 'check_box' : 'check_box_outline_blank') + '</span></a>';
+  subtabs.classList.add('expanded');
+}
+
+window.toggleAIWidgetMode = function(el) {
+  aiWidgetMode = !aiWidgetMode;
+  if (aiWidgetMode) {
+    aiWidgetVisible = true;
+    renderAIWidget();
+    // Go to previous page (home) so terminal is behind widget
+    navigateTo('home');
+  } else {
+    removeAIWidget();
+    aiWidgetVisible = false;
+    navigateTo('ai');
+  }
+};
+
+function formatAIMessage(text) {
+  // Escape HTML
+  var s = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  // Render ```json ... ``` blocks
+  s = s.replace(/```json\n?([\s\S]*?)```/g, function(m, code) {
+    return '<div class="ai-json-block"><pre>' + code.trim() + '</pre></div>';
+  });
+  // Render other ``` blocks
+  s = s.replace(/```(\w*)\n?([\s\S]*?)```/g, function(m, lang, code) {
+    return '<div class="ai-code-block"><pre>' + code.trim() + '</pre></div>';
+  });
+  // Render inline `code`
+  s = s.replace(/`([^`]+)`/g, '<code class="ai-inline-code">$1</code>');
+  // Render **bold**
+  s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  // Line breaks
+  s = s.replace(/\n/g, '<br>');
+  return s;
+}
+
+function renderShellMessages(shell) {
+  var html = '';
+  shell.history.forEach(function(msg) {
+    if (msg.role === 'user') {
+      html += '<div class="ai-msg ai-msg-user"><span class="ai-msg-prefix">&gt; </span>' + formatAIMessage(msg.content) + '</div>';
+    } else {
+      html += '<div class="ai-msg ai-msg-assistant">' + formatAIMessage(msg.content) + '</div>';
+    }
+  });
+  return html;
+}
+
+function buildTabBar(containerId) {
+  var html = '<div class="ai-tab-bar">';
+  aiShells.forEach(function(shell) {
+    var active = shell.id === aiActiveShellId ? ' ai-shell-tab-active' : '';
+    html += '<div class="ai-shell-tab' + active + '" data-shell-id="' + shell.id + '" onclick="switchAIShell(' + shell.id + ', \'' + containerId + '\')">';
+    html += '<span class="ai-shell-tab-label">' + shell.name + '</span>';
+    if (aiShells.length > 1) {
+      html += '<span class="ai-shell-tab-close" onclick="event.stopPropagation();closeAIShell(' + shell.id + ', \'' + containerId + '\')">&times;</span>';
+    }
+    html += '</div>';
+  });
+  html += '<div class="ai-shell-tab ai-shell-tab-add" onclick="addAIShell(\'' + containerId + '\')">+</div>';
+  html += '</div>';
+  return html;
+}
+
+function buildMessages(containerId) {
+  var shell = getActiveShell();
+  return '<div class="ai-messages" id="' + containerId + '-messages">' + renderShellMessages(shell) + '</div>';
+}
+
+function buildInput(containerId) {
+  return '<div class="ai-input-area">' +
+    '<textarea class="ai-input" id="' + containerId + '-input" placeholder="Type a message..." rows="1"></textarea>' +
+    '</div>';
+}
+
+function attachInputHandler(containerId) {
+  var input = document.getElementById(containerId + '-input');
+  if (!input) return;
+  input.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      var msg = input.value.trim();
+      if (!msg) return;
+      sendAIMessage(msg, containerId);
+      input.value = '';
+      autoResizeInput(input);
+    }
+  });
+  input.addEventListener('input', function() { autoResizeInput(input); });
+  input.focus();
+}
+
+function autoResizeInput(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+}
+
+function scrollToBottom(containerId) {
+  var el = document.getElementById(containerId + '-messages');
+  if (el) el.scrollTop = el.scrollHeight;
+}
+
+function sendAIMessage(text, containerId) {
+  var shell = getActiveShell();
+  shell.history.push({ role: 'user', content: text });
+  refreshAIMessages(containerId);
+  scrollToBottom(containerId);
+
+  // Show loading
+  var messagesEl = document.getElementById(containerId + '-messages');
+  if (messagesEl) {
+    messagesEl.insertAdjacentHTML('beforeend', '<div class="ai-msg ai-msg-loading" id="' + containerId + '-loading"><span class="ai-loading-dots"><span>.</span><span>.</span><span>.</span></span></div>');
+    scrollToBottom(containerId);
+  }
+
+  // Build history for API (only role + content)
+  var apiHistory = shell.history.map(function(m) { return { role: m.role, content: m.content }; });
+
+  fetch('/api/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message: text, history: apiHistory.slice(0, -1) })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    var loadingEl = document.getElementById(containerId + '-loading');
+    if (loadingEl) loadingEl.remove();
+    shell.history.push({ role: 'assistant', content: data.response || 'No response.' });
+    refreshAIMessages(containerId);
+    scrollToBottom(containerId);
+  })
+  .catch(function() {
+    var loadingEl = document.getElementById(containerId + '-loading');
+    if (loadingEl) loadingEl.remove();
+    shell.history.push({ role: 'assistant', content: 'Error: Failed to get response.' });
+    refreshAIMessages(containerId);
+    scrollToBottom(containerId);
+  });
+}
+
+function refreshAIMessages(containerId) {
+  var messagesEl = document.getElementById(containerId + '-messages');
+  if (!messagesEl) return;
+  var shell = getActiveShell();
+  messagesEl.innerHTML = renderShellMessages(shell);
+}
+
+function refreshAITabs(containerId) {
+  var container = document.getElementById(containerId);
+  if (!container) return;
+  var tabBar = container.querySelector('.ai-tab-bar');
+  if (tabBar) tabBar.outerHTML = buildTabBar(containerId);
+  var tabsCol = container.querySelector('.ai-widget-tabs-col');
+  if (tabsCol) tabsCol.innerHTML = buildWidgetTabsCol();
+}
+
+window.switchAIShell = function(shellId, containerId) {
+  aiActiveShellId = shellId;
+  refreshAITabs(containerId);
+  refreshAIMessages(containerId);
+  scrollToBottom(containerId);
+  var input = document.getElementById(containerId + '-input');
+  if (input) input.focus();
+};
+
+window.addAIShell = function(containerId) {
+  var shell = { id: aiNextShellId++, name: 'Shell ' + (aiNextShellId - 1), history: [] };
+  aiShells.push(shell);
+  aiActiveShellId = shell.id;
+  refreshAITabs(containerId);
+  refreshAIMessages(containerId);
+  var input = document.getElementById(containerId + '-input');
+  if (input) input.focus();
+};
+
+window.closeAIShell = function(shellId, containerId) {
+  if (aiShells.length <= 1) return;
+  aiShells = aiShells.filter(function(s) { return s.id !== shellId; });
+  if (aiActiveShellId === shellId) aiActiveShellId = aiShells[0].id;
+  refreshAITabs(containerId);
+  refreshAIMessages(containerId);
+};
+
+// --- Full-screen terminal ---
+function renderAIContent(contentEl) {
+  if (aiWidgetMode) {
+    // If widget mode is on, show a message and ensure widget is visible
+    contentEl.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#5f6368;font-size:1rem;">AI chat is in widget mode. Uncheck Widget in the sidebar to return to full-screen.</div>';
+    aiWidgetVisible = true;
+    renderAIWidget();
+    return;
+  }
+  removeAIWidget();
+  var id = 'ai-terminal';
+  contentEl.innerHTML =
+    '<div class="ai-terminal" id="' + id + '">' +
+    buildTabBar(id) +
+    buildMessages(id) +
+    buildInput(id) +
+    '</div>';
+  attachInputHandler(id);
+  scrollToBottom(id);
+}
+
+// --- Widget ---
+function renderAIWidget() {
+  removeAIWidget();
+  if (!aiWidgetVisible) return;
+  var w = aiWidgetPos ? aiWidgetPos.w : 480;
+  var h = aiWidgetPos ? aiWidgetPos.h : 340;
+  var x = aiWidgetPos ? aiWidgetPos.x : Math.max(0, (window.innerWidth - w) / 2);
+  var y = aiWidgetPos ? aiWidgetPos.y : Math.max(0, window.innerHeight - h - 40);
+
+  var widget = document.createElement('div');
+  widget.id = 'ai-widget';
+  widget.className = 'ai-widget';
+  widget.style.left = x + 'px';
+  widget.style.top = y + 'px';
+  widget.style.width = w + 'px';
+  widget.style.height = h + 'px';
+
+  var id = 'ai-widget-content';
+  widget.innerHTML =
+    '<div class="ai-widget-header" id="ai-widget-header">' +
+    '<span class="ai-widget-title">AI Chat</span>' +
+    '<span class="ai-widget-close" onclick="hideAIWidget()">&times;</span>' +
+    '</div>' +
+    '<div class="ai-widget-body" id="' + id + '">' +
+    '<div class="ai-widget-tabs-col">' + buildWidgetTabsCol() + '</div>' +
+    '<div class="ai-widget-main">' +
+    buildMessages(id) +
+    buildInput(id) +
+    '</div>' +
+    '</div>';
+
+  document.body.appendChild(widget);
+  attachInputHandler(id);
+  scrollToBottom(id);
+  makeDraggable(widget, document.getElementById('ai-widget-header'));
+  makeResizable(widget);
+}
+
+function buildWidgetTabsCol() {
+  var html = '<div class="ai-widget-tab-add" onclick="addAIShell(\'ai-widget-content\')">+</div>';
+  aiShells.forEach(function(shell) {
+    var active = shell.id === aiActiveShellId ? ' ai-wtab-active' : '';
+    html += '<div class="ai-wtab' + active + '" onclick="switchAIShell(' + shell.id + ', \'ai-widget-content\')" title="' + shell.name + '">';
+    html += shell.name.charAt(0).toUpperCase();
+    if (aiShells.length > 1) {
+      html += '<span class="ai-wtab-close" onclick="event.stopPropagation();closeAIShell(' + shell.id + ', \'ai-widget-content\')">&times;</span>';
+    }
+    html += '</div>';
+  });
+  return html;
+}
+
+function removeAIWidget() {
+  var el = document.getElementById('ai-widget');
+  if (el) {
+    // Save position
+    aiWidgetPos = {
+      x: parseInt(el.style.left) || 0,
+      y: parseInt(el.style.top) || 0,
+      w: el.offsetWidth,
+      h: el.offsetHeight
+    };
+    el.remove();
+  }
+}
+
+window.hideAIWidget = function() {
+  aiWidgetVisible = false;
+  removeAIWidget();
+};
+
+function makeDraggable(el, handle) {
+  var startX, startY, origX, origY;
+  handle.addEventListener('mousedown', function(e) {
+    e.preventDefault();
+    startX = e.clientX; startY = e.clientY;
+    origX = parseInt(el.style.left) || 0;
+    origY = parseInt(el.style.top) || 0;
+    function onMove(e2) {
+      el.style.left = (origX + e2.clientX - startX) + 'px';
+      el.style.top = (origY + e2.clientY - startY) + 'px';
+    }
+    function onUp() {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    }
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+}
+
+function makeResizable(el) {
+  var grip = document.createElement('div');
+  grip.className = 'ai-widget-resize-grip';
+  el.appendChild(grip);
+  var startX, startY, startW, startH;
+  grip.addEventListener('mousedown', function(e) {
+    e.preventDefault(); e.stopPropagation();
+    startX = e.clientX; startY = e.clientY;
+    startW = el.offsetWidth; startH = el.offsetHeight;
+    function onMove(e2) {
+      el.style.width = Math.max(300, startW + e2.clientX - startX) + 'px';
+      el.style.height = Math.max(200, startH + e2.clientY - startY) + 'px';
+    }
+    function onUp() {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    }
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+}
+
+// --- Esc key handler ---
+document.addEventListener('keydown', function(e) {
+  if (e.key !== 'Escape') return;
+  var tag = (e.target.tagName || '').toLowerCase();
+
+  // If widget is visible and we're NOT on AI tab, hide widget
+  if (aiWidgetVisible && currentPage !== 'ai') {
+    hideAIWidget();
+    e.preventDefault();
+    return;
+  }
+  // On AI tab with widget mode on: turn off widget mode, show full terminal
+  if (currentPage === 'ai' && aiWidgetMode) {
+    aiWidgetMode = false;
+    aiWidgetVisible = false;
+    removeAIWidget();
+    navigateTo('ai');
+    e.preventDefault();
+    return;
+  }
+  // On AI tab without widget: go home
+  if (currentPage === 'ai' && !aiWidgetMode) {
+    navigateTo('home');
+    e.preventDefault();
+    return;
+  }
+});
+
+// --- "/" shortcut ---
+document.addEventListener('keydown', function(e) {
+  if (e.key !== '/') return;
+  var tag = (e.target.tagName || '').toLowerCase();
+  if (tag === 'input' || tag === 'textarea' || tag === 'select' || e.target.isContentEditable) return;
+  e.preventDefault();
+  if (aiWidgetMode) {
+    aiWidgetVisible = !aiWidgetVisible;
+    if (aiWidgetVisible) renderAIWidget();
+    else removeAIWidget();
+  } else {
+    navigateTo('ai');
+  }
+  // Focus the input
+  setTimeout(function() {
+    var input = document.getElementById('ai-terminal-input') || document.getElementById('ai-widget-content-input');
+    if (input) input.focus();
+  }, 50);
+});
 
