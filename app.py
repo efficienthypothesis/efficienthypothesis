@@ -13,6 +13,7 @@ import hashlib
 import base64
 import secrets
 import time
+import pathlib
 
 # === Initialize Flask app ===
 app = Flask(__name__, template_folder='templates', static_folder='static')
@@ -36,6 +37,12 @@ DEFAULT_COLOR = "#000000"
 
 # === OAuth signing key ===
 OAUTH_SIGNING_KEY = os.getenv("OAUTH_SIGNING_KEY", "CHANGE_ME_oauth_signing_key")
+
+# === Chat / Bedrock setup ===
+bedrock_runtime = boto3.client("bedrock-runtime", region_name="us-east-2")
+CHAT_STRONG_MODEL = os.getenv("CHAT_STRONG_MODEL", "us.anthropic.claude-sonnet-4-20250514-v1:0")
+_PROMPT_PATH = pathlib.Path(__file__).with_name("chatbot_system_prompt.txt")
+CHATBOT_SYSTEM_PROMPT = _PROMPT_PATH.read_text() if _PROMPT_PATH.exists() else ""
 
 
 # === OAuth token helpers ===
@@ -2378,6 +2385,150 @@ def oauth_revoke():
     except Exception:
         pass
     return jsonify({"ok": True})
+
+
+# === Chat API ===
+
+def _build_chat_context(email, timezone):
+    """Build the context block injected into the system prompt."""
+    from datetime import datetime as _dt
+    from zoneinfo import ZoneInfo
+
+    # Current time in user's timezone
+    try:
+        tz = ZoneInfo(timezone)
+        now_local = _dt.now(tz)
+    except Exception:
+        now_local = _dt.utcnow()
+
+    today_str = now_local.strftime("%Y-%m-%d")
+    day_of_week = now_local.strftime("%A")
+    current_time = now_local.strftime("%I:%M%p").lstrip("0").lower()
+
+    # Fetch existing groups
+    groups_data = _load_groups(email)
+    groups = groups_data.get("groups", [])
+
+    # Fetch existing items summary
+    items_summary = []
+
+    # Tasks
+    resp = tasks_table.scan(
+        FilterExpression="#u = :email",
+        ExpressionAttributeNames={"#u": "user"},
+        ExpressionAttributeValues={":email": email},
+    )
+    for t in resp.get("Items", []):
+        items_summary.append(
+            f"task `{t.get('name','')}` ID `{t.get('task_id','')}`, "
+            f"due {t.get('due_datetime','?')}"
+        )
+
+    # Actions
+    resp = actions_table.scan(
+        FilterExpression="#u = :email",
+        ExpressionAttributeNames={"#u": "user"},
+        ExpressionAttributeValues={":email": email},
+    )
+    for a in resp.get("Items", []):
+        items_summary.append(
+            f"action `{a.get('name','')}` ID `{a.get('action_id','')}`, "
+            f"{a.get('start_datetime','?')} to {a.get('end_datetime','?')}"
+        )
+
+    # Routines
+    key = _routines_s3_key(email)
+    try:
+        obj = s3.get_object(Bucket=PRODUCTIVITY_BUCKET, Key=key)
+        routines = json.loads(obj["Body"].read().decode("utf-8"))
+    except Exception:
+        routines = []
+    for r in routines:
+        items_summary.append(
+            f"routine `{r.get('name','')}` ID `{r.get('template_id','')}`, "
+            f"pattern {r.get('pattern','?')}"
+        )
+
+    # Schedules
+    key = _schedules_s3_key(email)
+    try:
+        obj = s3.get_object(Bucket=PRODUCTIVITY_BUCKET, Key=key)
+        schedules = json.loads(obj["Body"].read().decode("utf-8"))
+    except Exception:
+        schedules = []
+    for sc in schedules:
+        items_summary.append(
+            f"schedule `{sc.get('name','')}` ID `{sc.get('template_id','')}`, "
+            f"pattern {sc.get('pattern','?')} {sc.get('start_time','?')}-{sc.get('end_time','?')}"
+        )
+
+    # Build context string
+    ctx = f"\n\n=== CURRENT CONTEXT ===\n"
+    ctx += f"Today's date: {today_str} ({day_of_week})\n"
+    ctx += f"Current time: {current_time} local\n"
+    ctx += f"Timezone: {timezone}\n"
+    ctx += f"Existing groups: {json.dumps(groups)}\n"
+    if items_summary:
+        ctx += f"Existing items: {'; '.join(items_summary)}\n"
+    else:
+        ctx += "Existing items: none\n"
+
+    return ctx
+
+
+@app.route('/api/chat', methods=['POST'])
+def api_chat():
+    ctx, err = _require_auth()
+    if err:
+        return err
+    email = ctx["email"]
+    user_id = ctx["user_id"]
+
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "JSON body required"}), 400
+
+    user_message = data.get("message", "").strip()
+    conversation_history = data.get("history", [])
+    if not user_message:
+        return jsonify({"error": "message is required"}), 400
+
+    # Get user timezone
+    resp = user_table.get_item(Key={"user_id": user_id})
+    timezone = resp.get("Item", {}).get("timezone", "America/Los_Angeles")
+
+    # Build system prompt with context
+    chat_context = _build_chat_context(email, timezone)
+    full_system = CHATBOT_SYSTEM_PROMPT + chat_context
+
+    # Build messages array
+    messages = []
+    for msg in conversation_history:
+        role = msg.get("role", "user")
+        content = msg.get("content", "")
+        if role in ("user", "assistant") and content:
+            messages.append({"role": role, "content": content})
+    messages.append({"role": "user", "content": user_message})
+
+    # Call Bedrock
+    try:
+        bedrock_body = json.dumps({
+            "anthropic_version": "bedrock-2023-10-08",
+            "max_tokens": 4096,
+            "system": full_system,
+            "messages": messages,
+        })
+        bedrock_resp = bedrock_runtime.invoke_model(
+            modelId=CHAT_STRONG_MODEL,
+            contentType="application/json",
+            accept="application/json",
+            body=bedrock_body,
+        )
+        result = json.loads(bedrock_resp["body"].read())
+        assistant_text = result["content"][0]["text"]
+        return jsonify({"response": assistant_text})
+    except Exception as e:
+        return jsonify({"error": f"Chat failed: {str(e)}"}), 500
 
 
 # === Lambda handler ===
