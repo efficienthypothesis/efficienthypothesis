@@ -4679,16 +4679,19 @@ document.addEventListener('keydown', function(e) {
   var tag = (e.target.tagName || '').toLowerCase();
   if (tag === 'input' || tag === 'textarea' || tag === 'select' || e.target.isContentEditable) return;
   e.preventDefault();
-  if (aiWidgetMode) {
-    aiWidgetVisible = !aiWidgetVisible;
-    if (aiWidgetVisible) renderAIWidget();
-    else removeAIWidget();
+  // Always toggle widget on current page — don't navigate away
+  aiWidgetMode = true;
+  aiWidgetVisible = !aiWidgetVisible;
+  if (aiWidgetVisible) {
+    renderAIWidget();
   } else {
-    navigateTo('ai');
+    removeAIWidget();
   }
+  // Update subtab checkbox if on AI tab
+  if (currentPage === 'ai') updateAISubtab();
   // Focus the input
   setTimeout(function() {
-    var input = document.getElementById('ai-terminal-input') || document.getElementById('ai-widget-content-input');
+    var input = document.getElementById('ai-widget-content-input');
     if (input) input.focus();
   }, 50);
 });
