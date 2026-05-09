@@ -29,6 +29,7 @@ tasks_table = dynamodb.Table("Tasks")
 actions_table = dynamodb.Table("Actions")
 drafts_table = dynamodb.Table("Drafts")
 oauth_tokens_table = dynamodb.Table("OAuthTokens")
+timelogs_table = dynamodb.Table("TimeLogs")
 
 # === S3 setup ===
 s3 = boto3.client("s3", region_name="us-east-2")
@@ -372,7 +373,6 @@ def api_tasks_create():
         "assign_datetime": data.get("assign_datetime"),
         "due_datetime": data.get("due_datetime"),
         "end_datetime": None,
-        "time_log": data.get("time_log", []),
         "due_status": "pending",
         "routine_id": data.get("routine_id"),
         "group": data.get("group"),
@@ -398,7 +398,7 @@ def api_tasks_update(task_id):
                 return jsonify({"error": err}), 400
 
     allowed = ["name", "path", "assign_datetime", "due_datetime",
-               "end_datetime", "due_status", "time_log", "group"]
+               "end_datetime", "due_status", "group"]
     set_parts = []
     remove_parts = []
     attr_names = {}
@@ -442,31 +442,32 @@ def api_tasks_start(task_id):
     email = ctx["email"]
     now = datetime.datetime.utcnow().isoformat() + 'Z'
 
-    resp = tasks_table.scan(
-        FilterExpression="#u = :email",
-        ExpressionAttributeNames={"#u": "user"},
+    # Stop any other running timelog for this user
+    open_resp = timelogs_table.scan(
+        FilterExpression="#u = :email AND attribute_not_exists(#e)",
+        ExpressionAttributeNames={"#u": "user", "#e": "end"},
         ExpressionAttributeValues={":email": email},
     )
-    for task in resp.get("Items", []):
-        tl = task.get("time_log", [])
-        if tl and tl[-1].get("end") is None and task["task_id"] != task_id:
-            tl[-1]["end"] = now
-            tasks_table.update_item(
-                Key={"task_id": task["task_id"]},
-                UpdateExpression="SET time_log = :tl",
-                ExpressionAttributeValues={":tl": tl},
+    for log in open_resp.get("Items", []):
+        if log["parent_id"] != task_id:
+            timelogs_table.update_item(
+                Key={"log_id": log["log_id"]},
+                UpdateExpression="SET #e = :now",
+                ExpressionAttributeNames={"#e": "end"},
+                ExpressionAttributeValues={":now": now},
             )
 
-    task_resp = tasks_table.get_item(Key={"task_id": task_id})
-    task = task_resp.get("Item", {})
-    tl = task.get("time_log", [])
-    tl.append({"start": now, "end": None})
-    tasks_table.update_item(
-        Key={"task_id": task_id},
-        UpdateExpression="SET time_log = :tl",
-        ExpressionAttributeValues={":tl": tl},
-    )
-    return jsonify({"ok": True, "task_id": task_id})
+    # Create a new timelog entry
+    log_id = str(uuid.uuid4())
+    timelogs_table.put_item(Item={
+        "log_id": log_id,
+        "user": email,
+        "parent_id": task_id,
+        "parent_type": "task",
+        "start": now,
+        "created_at": now,
+    })
+    return jsonify({"ok": True, "task_id": task_id, "log_id": log_id})
 
 
 @app.route('/api/tasks/<task_id>/pause', methods=['POST'])
@@ -474,17 +475,21 @@ def api_tasks_pause(task_id):
     ctx, err = _require_auth()
     if err:
         return err
+    email = ctx["email"]
     now = datetime.datetime.utcnow().isoformat() + 'Z'
 
-    task_resp = tasks_table.get_item(Key={"task_id": task_id})
-    task = task_resp.get("Item", {})
-    tl = task.get("time_log", [])
-    if tl and tl[-1].get("end") is None:
-        tl[-1]["end"] = now
-        tasks_table.update_item(
-            Key={"task_id": task_id},
-            UpdateExpression="SET time_log = :tl",
-            ExpressionAttributeValues={":tl": tl},
+    # Close any open timelog for this task
+    open_resp = timelogs_table.scan(
+        FilterExpression="#u = :email AND parent_id = :pid AND attribute_not_exists(#e)",
+        ExpressionAttributeNames={"#u": "user", "#e": "end"},
+        ExpressionAttributeValues={":email": email, ":pid": task_id},
+    )
+    for log in open_resp.get("Items", []):
+        timelogs_table.update_item(
+            Key={"log_id": log["log_id"]},
+            UpdateExpression="SET #e = :now",
+            ExpressionAttributeNames={"#e": "end"},
+            ExpressionAttributeValues={":now": now},
         )
     return jsonify({"ok": True, "task_id": task_id})
 
@@ -494,19 +499,27 @@ def api_tasks_complete(task_id):
     ctx, err = _require_auth()
     if err:
         return err
+    email = ctx["email"]
     now = datetime.datetime.utcnow().isoformat() + 'Z'
 
-    task_resp = tasks_table.get_item(Key={"task_id": task_id})
-    task = task_resp.get("Item", {})
-    tl = task.get("time_log", [])
-    if tl and tl[-1].get("end") is None:
-        tl[-1]["end"] = now
+    # Close any open timelog for this task
+    open_resp = timelogs_table.scan(
+        FilterExpression="#u = :email AND parent_id = :pid AND attribute_not_exists(#e)",
+        ExpressionAttributeNames={"#u": "user", "#e": "end"},
+        ExpressionAttributeValues={":email": email, ":pid": task_id},
+    )
+    for log in open_resp.get("Items", []):
+        timelogs_table.update_item(
+            Key={"log_id": log["log_id"]},
+            UpdateExpression="SET #e = :now",
+            ExpressionAttributeNames={"#e": "end"},
+            ExpressionAttributeValues={":now": now},
+        )
 
     tasks_table.update_item(
         Key={"task_id": task_id},
-        UpdateExpression="SET time_log = :tl, end_datetime = :end, due_status = :ds",
+        UpdateExpression="SET end_datetime = :end, due_status = :ds",
         ExpressionAttributeValues={
-            ":tl": tl,
             ":end": now,
             ":ds": "met",
         },
@@ -519,7 +532,16 @@ def api_tasks_delete(task_id):
     ctx, err = _require_auth()
     if err:
         return err
+    email = ctx["email"]
     tasks_table.delete_item(Key={"task_id": task_id})
+    # Clean up associated timelogs
+    tl_resp = timelogs_table.scan(
+        FilterExpression="#u = :email AND parent_id = :pid",
+        ExpressionAttributeNames={"#u": "user"},
+        ExpressionAttributeValues={":email": email, ":pid": task_id},
+    )
+    for log in tl_resp.get("Items", []):
+        timelogs_table.delete_item(Key={"log_id": log["log_id"]})
     return jsonify({"ok": True})
 
 
@@ -586,6 +608,131 @@ def api_tasks_calendar():
                 "group": item.get("group"),
             })
     return jsonify(by_day)
+
+
+# === TimeLogs (DynamoDB-backed, separate time tracking) ===
+
+@app.route('/api/timelogs', methods=['GET'])
+def api_timelogs_list():
+    ctx, err = _require_auth()
+    if err:
+        return err
+    email = ctx["email"]
+    parent_id = request.args.get("parent_id")
+    parent_type = request.args.get("parent_type")
+    date_from = request.args.get("date_from")
+    date_to = request.args.get("date_to")
+
+    filter_expr = "#u = :email"
+    attr_names = {"#u": "user"}
+    attr_values = {":email": email}
+
+    if parent_id:
+        filter_expr += " AND parent_id = :pid"
+        attr_values[":pid"] = parent_id
+    if parent_type:
+        filter_expr += " AND parent_type = :pt"
+        attr_values[":pt"] = parent_type
+    if date_from:
+        filter_expr += " AND #s >= :dfrom"
+        attr_names["#s"] = "start"
+        attr_values[":dfrom"] = date_from
+    if date_to:
+        filter_expr += " AND #s <= :dto"
+        if "#s" not in attr_names:
+            attr_names["#s"] = "start"
+        attr_values[":dto"] = date_to
+
+    resp = timelogs_table.scan(
+        FilterExpression=filter_expr,
+        ExpressionAttributeNames=attr_names,
+        ExpressionAttributeValues=attr_values,
+    )
+    return jsonify(resp.get("Items", []))
+
+
+@app.route('/api/timelogs', methods=['POST'])
+def api_timelogs_create():
+    ctx, err = _require_auth()
+    if err:
+        return err
+    email = ctx["email"]
+    data = request.get_json()
+
+    parent_id = data.get("parent_id")
+    parent_type = data.get("parent_type", "task")
+    if not parent_id:
+        return jsonify({"error": "parent_id is required"}), 400
+    if parent_type not in ("task", "action"):
+        return jsonify({"error": "parent_type must be 'task' or 'action'"}), 400
+
+    log_id = data.get("log_id") or str(uuid.uuid4())
+    now = datetime.datetime.utcnow().isoformat() + 'Z'
+
+    item = {
+        "log_id": log_id,
+        "user": email,
+        "parent_id": parent_id,
+        "parent_type": parent_type,
+        "start": data.get("start", now),
+        "end": data.get("end"),
+        "created_at": now,
+    }
+    item = {k: v for k, v in item.items() if v is not None}
+    timelogs_table.put_item(Item=item)
+    return jsonify(item), 201
+
+
+@app.route('/api/timelogs/<log_id>', methods=['PUT'])
+def api_timelogs_update(log_id):
+    ctx, err = _require_auth()
+    if err:
+        return err
+    data = request.get_json()
+
+    allowed = ["start", "end", "parent_id", "parent_type"]
+    set_parts = []
+    remove_parts = []
+    attr_names = {}
+    attr_values = {}
+    for key in allowed:
+        if key in data:
+            placeholder = f"#f_{key}"
+            attr_names[placeholder] = key
+            if data[key] is None:
+                remove_parts.append(placeholder)
+            else:
+                value_ph = f":v_{key}"
+                set_parts.append(f"{placeholder} = {value_ph}")
+                attr_values[value_ph] = data[key]
+
+    if not set_parts and not remove_parts:
+        return jsonify({"error": "No fields to update"}), 400
+
+    expr = ""
+    if set_parts:
+        expr += "SET " + ", ".join(set_parts)
+    if remove_parts:
+        expr += (" " if expr else "") + "REMOVE " + ", ".join(remove_parts)
+
+    update_args = {
+        "Key": {"log_id": log_id},
+        "UpdateExpression": expr,
+        "ExpressionAttributeNames": attr_names,
+    }
+    if attr_values:
+        update_args["ExpressionAttributeValues"] = attr_values
+    timelogs_table.update_item(**update_args)
+    return jsonify({"ok": True, "log_id": log_id})
+
+
+@app.route('/api/timelogs/<log_id>', methods=['DELETE'])
+def api_timelogs_delete(log_id):
+    ctx, err = _require_auth()
+    if err:
+        return err
+    timelogs_table.delete_item(Key={"log_id": log_id})
+    return jsonify({"ok": True})
 
 
 # === Drafts (DynamoDB-backed, temporary work-in-progress) ===
@@ -1008,7 +1155,6 @@ def api_routines_materialize():
             "name": tpl.get("name", ""),
             "assign_datetime": utc_assign,
             "due_datetime": due_dt,
-            "time_log": [],
             "due_status": "pending",
             "routine_id": tpl_id,
             "created_at": datetime.datetime.utcnow().isoformat() + 'Z',

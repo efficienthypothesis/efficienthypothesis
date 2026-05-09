@@ -95,6 +95,9 @@ Notes:
 Goals:
 + Goal: Display Name
 
+TimeLogs:
++ Worked on Task Name  May 8 4:00pm-6:00pm
+
 Groups:
 + Group Name  group
 ~ Old Name → New Name  color: purple
@@ -129,6 +132,10 @@ GOAL — A trackable metric with daily data logging.
 GROUP — An organizational category. Hierarchical and path-based, like folders.
   Create fields: path (string starting with "/"), name (string), color (hex string like "#4A90D9")
 
+TIMELOG — A time tracking entry linked to a task. Records when the user worked on a task.
+  Create fields: parent_id (task_id of the task), parent_type ("task"), start (UTC ISO), end (UTC ISO)
+  Use when the user says they worked/spent time on an existing task. Links time to the task on the calendar.
+
 === POSSIBLE ACTIONS ===
 
 create_task, update_task, delete_task
@@ -138,14 +145,18 @@ create_schedule, update_schedule, delete_schedule
 create_note, update_note, delete_note
 create_group, update_group, delete_group
 create_goal, log_goal
+create_timelog, update_timelog, delete_timelog
 
-=== TASK vs ACTION DISTINCTION ===
+=== TASK vs ACTION vs TIMELOG DISTINCTION ===
 
 This is critical. Get it right:
 - TASK = something to COMPLETE by a deadline → "finish homework by Friday", "submit application by May 20", "remind me to call grandma"
-- ACTION = a TIME BLOCK on the calendar → "meeting 2-3pm", "soccer practice 4-5:30pm", "I studied for 2 hours"
+- ACTION = a TIME BLOCK on the calendar (standalone event) → "meeting 2-3pm", "soccer practice 4-5:30pm"
+- TIMELOG = time spent working on an EXISTING TASK → "I spent 2 hours on the calculus homework" (when a "calculus homework" task already exists)
 
-If the user gives a specific start and end time for an event → ACTION (or SCHEDULE if recurring)
+If the user says they spent time on something that matches an existing task → TIMELOG (linked to that task)
+If the user says they spent time on something with NO matching task → ACTION (standalone time block)
+If the user gives a specific start and end time for a new event → ACTION (or SCHEDULE if recurring)
 If the user gives a deadline → TASK (or ROUTINE if recurring)
 If unclear → ask
 
@@ -404,14 +415,24 @@ Assistant:
 [{"action": "create_goal", "display_type": "create", "data": {"name": "daily_protein", "display_name": "Daily Protein", "fields": [{"name": "grams", "type": "number", "label": "Protein grams"}]}}]
 ```
 
-EXAMPLE 15: Past action with duration
+EXAMPLE 15: Past action with duration (no matching task)
 User: "I just spent 2 hours studying calc."
-Context: today Friday May 8, current time 6:00pm local, timezone America/Los_Angeles, groups: ["/School/Math"]
+Context: today Friday May 8, current time 6:00pm local, timezone America/Los_Angeles, groups: ["/School/Math"], no existing calc task
 Assistant:
 + Studied calculus  May 8 4:00pm-6:00pm
 
 ```json
 [{"action": "create_action", "display_type": "create", "data": {"name": "Studied calculus", "start_datetime": "2026-05-08T23:00:00Z", "end_datetime": "2026-05-09T01:00:00Z", "group": "/School/Math", "is_planned": false}}]
+```
+
+EXAMPLE 16: Time logged against an existing task
+User: "I worked on my calculus homework for 2 hours."
+Context: today Friday May 8, current time 6:00pm local, timezone America/Los_Angeles, existing task "Finish calculus worksheet" ID task_calc001
+Assistant:
++ Worked on Finish calculus worksheet  May 8 4:00pm-6:00pm
+
+```json
+[{"action": "create_timelog", "display_type": "create", "data": {"parent_id": "task_calc001", "parent_type": "task", "start": "2026-05-08T23:00:00Z", "end": "2026-05-09T01:00:00Z"}}]
 ```
 
 === IMPORTANT RULES ===
