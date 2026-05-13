@@ -32,11 +32,7 @@ def api_homescreen_settings_get():
     try:
         s3.head_object(Bucket=PRODUCTIVITY_BUCKET, Key=img_key)
         settings["has_image"] = True
-        settings["image_url"] = s3.generate_presigned_url(
-            'get_object',
-            Params={'Bucket': PRODUCTIVITY_BUCKET, 'Key': img_key},
-            ExpiresIn=3600,
-        )
+        settings["image_url"] = "/api/homescreen/image"
     except Exception:
         settings["has_image"] = False
     return jsonify(settings)
