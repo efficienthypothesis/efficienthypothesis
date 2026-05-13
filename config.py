@@ -22,8 +22,7 @@ timelogs_table = dynamodb.Table("TimeLogs")
 oauth_tokens_table = dynamodb.Table("OAuthTokens")
 
 # === S3 setup ===
-s3 = boto3.client("s3", region_name="us-east-2",
-                   endpoint_url="https://s3.us-east-2.amazonaws.com")
+s3 = boto3.client("s3", region_name="us-east-2")
 PRODUCTIVITY_BUCKET = "eh-app-data"
 DEFAULT_COLOR = "#000000"
 

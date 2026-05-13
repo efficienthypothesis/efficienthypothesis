@@ -1,9 +1,7 @@
 from flask import Blueprint, request, jsonify, Response
 import json
-import logging
+import base64
 from config import s3, PRODUCTIVITY_BUCKET, _require_auth
-
-logger = logging.getLogger(__name__)
 
 homescreen_bp = Blueprint('homescreen', __name__)
 
@@ -30,19 +28,16 @@ def api_homescreen_settings_get():
         settings = json.loads(obj["Body"].read().decode("utf-8"))
     except Exception:
         settings = {"has_image": False}
-    # Check if image actually exists and generate presigned URL
+    # Check if image exists and return as base64 data URI
     img_key = _homescreen_image_key(email)
     try:
-        s3.head_object(Bucket=PRODUCTIVITY_BUCKET, Key=img_key)
+        obj = s3.get_object(Bucket=PRODUCTIVITY_BUCKET, Key=img_key)
+        img_bytes = obj["Body"].read()
+        content_type = obj.get("ContentType", "image/png")
+        b64 = base64.b64encode(img_bytes).decode("ascii")
         settings["has_image"] = True
-        settings["image_url"] = s3.generate_presigned_url(
-            'get_object',
-            Params={'Bucket': PRODUCTIVITY_BUCKET, 'Key': img_key},
-            ExpiresIn=3600,
-        )
-        print(f"HOMESCREEN_DEBUG: url_length={len(settings['image_url'])}, first200={settings['image_url'][:200]}")
-    except Exception as e:
-        print(f"HOMESCREEN_DEBUG: head_object failed: {e}")
+        settings["image_url"] = f"data:{content_type};base64,{b64}"
+    except Exception:
         settings["has_image"] = False
     return jsonify(settings)
 
