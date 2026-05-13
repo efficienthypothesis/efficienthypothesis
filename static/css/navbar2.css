@@ -169,6 +169,66 @@
   font-size: 0.82rem;
 }
 
+/* === Projects Rules Popup === */
+.projects-rules-popup {
+  position: fixed;
+  z-index: 1000;
+  background: #fff;
+  border: 1px solid #dadce0;
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+  min-width: 220px;
+  user-select: none;
+}
+.rules-popup-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px 8px 16px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #202124;
+  cursor: move;
+  border-bottom: 1px solid #e8eaed;
+}
+.rules-popup-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px;
+  color: #5f6368;
+  display: flex;
+  align-items: center;
+  border-radius: 50%;
+}
+.rules-popup-close:hover {
+  background: #f1f3f4;
+}
+.rules-popup-close .material-symbols-outlined {
+  font-size: 18px;
+}
+.rules-popup-body {
+  padding: 8px 16px 12px;
+}
+.rules-popup-rule {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0;
+  font-size: 0.85rem;
+  color: #3c4043;
+  cursor: pointer;
+}
+.rules-popup-rule + .rules-popup-rule {
+  border-top: 1px solid #f1f3f4;
+}
+.rules-popup-rule input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: #1a73e8;
+  cursor: pointer;
+}
+
 /* === ICON STYLE === */
 .material-symbols-outlined {
   font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;

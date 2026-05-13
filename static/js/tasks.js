@@ -158,26 +158,17 @@ function toggleProjectsCompleted(checked) {
   renderProjects();
 }
 function toggleProjectsCompletedSidebar(el) {
-  projectsShowCompleted = !projectsShowCompleted;
-  el.classList.toggle('active', projectsShowCompleted);
-  var icon = el.querySelector('.subtab-check');
-  if (icon) icon.textContent = projectsShowCompleted ? 'check_box' : 'check_box_outline_blank';
+  projectsShowCompleted = el.checked !== undefined ? el.checked : !projectsShowCompleted;
   savePreferences();
   renderProjects();
 }
 function toggleProjectsNotesSidebar(el) {
-  projectsShowNotes = !projectsShowNotes;
-  el.classList.toggle('active', projectsShowNotes);
-  var icon = el.querySelector('.subtab-check');
-  if (icon) icon.textContent = projectsShowNotes ? 'check_box' : 'check_box_outline_blank';
+  projectsShowNotes = el.checked !== undefined ? el.checked : !projectsShowNotes;
   savePreferences();
   renderProjects();
 }
 function toggleProjectsEmptyGroupsSidebar(el) {
-  projectsShowEmptyGroups = !projectsShowEmptyGroups;
-  el.classList.toggle('active', projectsShowEmptyGroups);
-  var icon = el.querySelector('.subtab-check');
-  if (icon) icon.textContent = projectsShowEmptyGroups ? 'check_box' : 'check_box_outline_blank';
+  projectsShowEmptyGroups = el.checked !== undefined ? el.checked : !projectsShowEmptyGroups;
   savePreferences();
   renderProjects();
 }

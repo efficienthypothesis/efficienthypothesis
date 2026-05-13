@@ -13,6 +13,8 @@ function navigateTo(page, push) {
   currentPage = page;
   // Clear now-line interval when leaving weekly
   if (nowLineInterval) { clearTimeout(nowLineInterval); nowLineInterval = null; }
+  // Close rules popup when leaving projects
+  closeProjectsRulesPopup();
   // Remove focus from sidebar link so arrow keys work immediately
   if (document.activeElement) document.activeElement.blur();
   var content = document.getElementById('app-content');
@@ -405,26 +407,96 @@ function updateProjectsSubtab() {
   html += '<a class="sidebar-subtab" onclick="' + (atRoot ? '' : 'projectsNavigateUp()') + '">' +
     escHtml(displayLabel) + '<span class="material-symbols-outlined subtab-check" style="' + arrowColor + '">arrow_back</span></a>';
 
-  // Visual Display toggle
-  html += '<a class="sidebar-subtab' + (projectsViewMode === 'visual' ? ' active' : '') + '" onclick="toggleProjectsVisualSidebar(this)">' +
-    'Visual Display<span class="material-symbols-outlined subtab-check">' + (projectsViewMode === 'visual' ? 'check_box' : 'check_box_outline_blank') + '</span></a>';
+  // Mode toggle
+  var modeLabel = projectsViewMode === 'visual' ? 'Visual Mode' : 'List Mode';
+  var modeIcon = projectsViewMode === 'visual' ? 'grid_view' : 'view_list';
+  html += '<a class="sidebar-subtab" onclick="toggleProjectsVisualSidebar(this)">' +
+    modeLabel + '<span class="material-symbols-outlined subtab-check" style="opacity:1">' + modeIcon + '</span></a>';
 
-  // Show Completed
-  html += '<a class="sidebar-subtab' + (projectsShowCompleted ? ' active' : '') + '" onclick="toggleProjectsCompletedSidebar(this)">' +
-    'Show Completed<span class="material-symbols-outlined subtab-check">' + (projectsShowCompleted ? 'check_box' : 'check_box_outline_blank') + '</span></a>';
-
-  // Show Notes
-  html += '<a class="sidebar-subtab' + (projectsShowNotes ? ' active' : '') + '" onclick="toggleProjectsNotesSidebar(this)">' +
-    'Show Notes<span class="material-symbols-outlined subtab-check">' + (projectsShowNotes ? 'check_box' : 'check_box_outline_blank') + '</span></a>';
-
-  // Show Empty Groups (visual mode only)
-  if (projectsViewMode === 'visual') {
-    html += '<a class="sidebar-subtab' + (projectsShowEmptyGroups ? ' active' : '') + '" onclick="toggleProjectsEmptyGroupsSidebar(this)">' +
-      'Show Empty Groups<span class="material-symbols-outlined subtab-check">' + (projectsShowEmptyGroups ? 'check_box' : 'check_box_outline_blank') + '</span></a>';
-  }
+  // Rules
+  html += '<a class="sidebar-subtab" onclick="toggleProjectsRulesPopup()">' +
+    'Rules<span class="material-symbols-outlined subtab-check" style="opacity:1">tune</span></a>';
 
   subtabs.innerHTML = html;
   subtabs.classList.add('expanded');
+}
+
+function toggleProjectsRulesPopup() {
+  var existing = document.getElementById('projects-rules-popup');
+  if (existing) { existing.remove(); return; }
+
+  var popup = document.createElement('div');
+  popup.id = 'projects-rules-popup';
+  popup.className = 'projects-rules-popup';
+  popup.innerHTML = buildProjectsRulesContent();
+
+  // Position near sidebar
+  popup.style.left = '180px';
+  popup.style.top = '120px';
+
+  // Dragging
+  var header = null;
+  popup.addEventListener('mousedown', function(e) {
+    if (e.target.closest('.rules-popup-header')) {
+      e.preventDefault();
+      var startX = e.clientX, startY = e.clientY;
+      var startLeft = popup.offsetLeft, startTop = popup.offsetTop;
+      function onMove(ev) {
+        popup.style.left = (startLeft + ev.clientX - startX) + 'px';
+        popup.style.top = (startTop + ev.clientY - startY) + 'px';
+      }
+      function onUp() {
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+      }
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    }
+  });
+
+  document.body.appendChild(popup);
+}
+
+function buildProjectsRulesContent() {
+  var html = '<div class="rules-popup-header">' +
+    '<span>Rules</span>' +
+    '<button class="rules-popup-close" onclick="closeProjectsRulesPopup()"><span class="material-symbols-outlined">close</span></button>' +
+    '</div><div class="rules-popup-body">';
+
+  html += '<label class="rules-popup-rule">' +
+    '<span>Show Completed</span>' +
+    '<input type="checkbox"' + (projectsShowCompleted ? ' checked' : '') + ' onchange="toggleProjectsCompletedSidebar(this)">' +
+    '</label>';
+
+  html += '<label class="rules-popup-rule">' +
+    '<span>Show Notes</span>' +
+    '<input type="checkbox"' + (projectsShowNotes ? ' checked' : '') + ' onchange="toggleProjectsNotesSidebar(this)">' +
+    '</label>';
+
+  html += '<label class="rules-popup-rule">' +
+    '<span>Show Empty Folders</span>' +
+    '<input type="checkbox"' + (projectsShowEmptyGroups ? ' checked' : '') + ' onchange="toggleProjectsEmptyGroupsSidebar(this)">' +
+    '</label>';
+
+  html += '</div>';
+  return html;
+}
+
+function closeProjectsRulesPopup() {
+  var popup = document.getElementById('projects-rules-popup');
+  if (popup) popup.remove();
+}
+
+function refreshProjectsRulesPopup() {
+  var popup = document.getElementById('projects-rules-popup');
+  if (!popup) return;
+  var body = popup.querySelector('.rules-popup-body');
+  if (body) {
+    // Rebuild just the body content
+    var tmp = document.createElement('div');
+    tmp.innerHTML = buildProjectsRulesContent();
+    body.innerHTML = tmp.querySelector('.rules-popup-body').innerHTML;
+  }
 }
 
 function toggleProjectsVisualSidebar(el) {
