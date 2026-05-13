@@ -70,9 +70,6 @@ function savePreferences() {
   } catch(e) {}
 }
 loadPreferences();
-let drawerExpanded = false;
-let drawerCurrentIndex = 0;
-
 // --- Timezone init (returns Promise) ---
 function initTimezone() {
   return fetch('/api/user/timezone')
@@ -213,10 +210,6 @@ function renderProjectsContent() {
     <div class="projects-whitespace-drop" id="projects-whitespace"
       ondragover="onProjectsWhitespaceDragOver(event)" ondragleave="onProjectsWhitespaceDragLeave(event)"
       ondrop="onProjectsWhitespaceDrop(event)">Drop here to unclassify</div>
-  </div>
-  <div class="card-drawer-tab" id="card-drawer" onclick="toggleDrawer(event)">
-    <span class="material-symbols-outlined drawer-icon">chevron_left</span>
-    <div class="card-drawer-content" id="drawer-content"></div>
   </div>`;
 }
 
@@ -1281,7 +1274,6 @@ function renderProjects() {
     var rootGroups = getRootGroups();
     el.innerHTML = '<div class="projects-groups-grid">' + rootGroups.map(renderGroupBox).join('') + '</div>';
   }
-  renderDrawerContent();
 }
 
 // --- Group box interactions ---
@@ -1322,59 +1314,9 @@ function editGroup(path) {
   openGroupModal(group);
 }
 
-// --- Drawer ---
-function toggleDrawer(e) {
-  // Don't toggle if clicking inside the content
-  if (e.target.closest('.card-drawer-content')) return;
-  var drawer = document.getElementById('card-drawer');
-  drawerExpanded = !drawerExpanded;
-  drawer.classList.toggle('expanded', drawerExpanded);
-  if (drawerExpanded) renderDrawerContent();
-}
-
-function renderDrawerContent() {
-  var el = document.getElementById('drawer-content'); if (!el) return;
-  var drawer = document.getElementById('card-drawer');
-  var items = getUngroupedItems();
-  if (items.length === 0) {
-    if (drawer) drawer.style.display = 'none';
-    return;
-  }
-  if (drawer) drawer.style.display = '';
-  // Show just the first ungrouped item
-  var item = items[0];
-  var icon = item.type === 'routine' ? 'repeat' : 'task_alt';
-  var dueHtml = item.due ? '<span class="drawer-card-due">' + formatDateTime(item.due) + '</span>' : '';
-  el.innerHTML = '<div class="card-drawer-card" draggable="true" data-item-id="' + item.id + '" data-item-type="' + item.type + '"' +
-    ' ondragstart="onDrawerCardDragStart(event)" ondragend="onDrawerCardDragEnd(event)">' +
-    '<span class="material-symbols-outlined drawer-card-icon">' + icon + '</span>' +
-    '<span class="drawer-card-name">' + escHtml(item.name) + '</span>' + dueHtml + '</div>';
-}
-
 // --- Drag and drop for groups ---
 var groupDraggedItemId = null;
 var groupDraggedItemType = null;
-
-function onDrawerCardDragStart(e) {
-  var card = e.target.closest('.card-drawer-card');
-  if (!card) return;
-  groupDraggedItemId = card.dataset.itemId;
-  groupDraggedItemType = card.dataset.itemType;
-  e.dataTransfer.effectAllowed = 'move';
-  e.dataTransfer.setData('text/plain', groupDraggedItemId);
-  // Show drop zones
-  document.querySelectorAll('.group-box').forEach(function(b) { b.style.outline = '2px dashed transparent'; });
-  var ws = document.getElementById('projects-whitespace');
-  if (ws) ws.classList.add('drag-active');
-}
-
-function onDrawerCardDragEnd(e) {
-  groupDraggedItemId = null;
-  groupDraggedItemType = null;
-  document.querySelectorAll('.group-box.drag-over-group').forEach(function(b) { b.classList.remove('drag-over-group'); });
-  var ws = document.getElementById('projects-whitespace');
-  if (ws) ws.classList.remove('drag-active', 'drag-over');
-}
 
 function onGroupItemDragStart(e) {
   var el = e.target.closest('.group-item');
