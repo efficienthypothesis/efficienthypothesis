@@ -24,19 +24,13 @@ let prodGroups = []; // group objects [{path, name, color}]
 let prodNotes = []; // note objects [{id, name, date, group, created_at}]
 let prodActions = []; // action objects [{action_id, name, start_datetime, end_datetime, ...}]
 let prodSchedules = []; // schedule template objects [{id, name, start_time, end_time, pattern, ...}]
-let prodTimelogs = []; // timelog objects [{log_id, parent_id, parent_type, start, end}]
 let projectsShowCompleted = true; // toggle for showing completed items in projects
 let projectsShowNotes = true; // toggle for showing notes in projects
 let projectsShowEmptyGroups = true; // toggle for showing empty groups in projects
+let projectsViewMode = 'visual'; // 'list' | 'visual'
+let projectsFocusPath = null; // null = root, or a group path like '/SCHOOL'
+let userEmail = null; // populated from session, used as root label
 let monthlyShowNotes = true; // toggle for showing notes on monthly calendar
-
-// AI Chat state
-let aiShells = [{ id: 1, name: 'Shell 1', history: [] }];
-let aiActiveShellId = 1;
-let aiNextShellId = 2;
-let aiWidgetMode = false;
-let aiWidgetVisible = false;
-let aiWidgetPos = null; // {x, y, w, h} for draggable widget
 let monthlyShowPlanned = false; // toggle for showing planned (incomplete) tasks on monthly calendar
 
 // --- Preferences persistence (localStorage) ---
@@ -48,6 +42,8 @@ function loadPreferences() {
     if (prefs.projectsShowCompleted !== undefined) projectsShowCompleted = prefs.projectsShowCompleted;
     if (prefs.projectsShowNotes !== undefined) projectsShowNotes = prefs.projectsShowNotes;
     if (prefs.projectsShowEmptyGroups !== undefined) projectsShowEmptyGroups = prefs.projectsShowEmptyGroups;
+    if (prefs.projectsViewMode !== undefined) projectsViewMode = prefs.projectsViewMode;
+    if (prefs.projectsFocusPath !== undefined) projectsFocusPath = prefs.projectsFocusPath;
     if (prefs.monthlyShowNotes !== undefined) monthlyShowNotes = prefs.monthlyShowNotes;
     if (prefs.monthlyShowPlanned !== undefined) monthlyShowPlanned = prefs.monthlyShowPlanned;
     if (prefs.use24HourTime !== undefined) use24HourTime = prefs.use24HourTime;
@@ -61,6 +57,8 @@ function savePreferences() {
       projectsShowCompleted: projectsShowCompleted,
       projectsShowNotes: projectsShowNotes,
       projectsShowEmptyGroups: projectsShowEmptyGroups,
+      projectsViewMode: projectsViewMode,
+      projectsFocusPath: projectsFocusPath,
       monthlyShowNotes: monthlyShowNotes,
       monthlyShowPlanned: monthlyShowPlanned,
       use24HourTime: use24HourTime,
@@ -162,7 +160,7 @@ function localInputToUTC(val) {
   const offsetMs = new Date(utcStr) - new Date(localStr);
   return new Date(fake.getTime() + offsetMs).toISOString();
 }
-function isTaskActive(t) { return (prodTimelogs || []).some(function(l) { return l.parent_id === t.task_id && !l.end; }); }
+function isTaskActive(t) { const tl = t.time_log || []; return tl.length > 0 && tl[tl.length - 1].end === null; }
 function getRootTasks(tasks) { return tasks.filter(t => (t.path || '/') === '/'); }
 function getVisibleRoots(tasks) {
   // Root tasks + subtasks whose parent isn't in this filtered list (orphans).
@@ -201,7 +199,6 @@ function formatHourLabel(h) {
   const h12 = h % 12 || 12;
   return h12 + ' ' + ampm;
 }
-
 // === SPA Page Rendering Functions ===
 
 function renderProjectsContent() {
@@ -316,7 +313,6 @@ function renderSettingsPrefs() {
     renderSettingsFromCache();
   }
 }
-
 // === Homescreen ===
 
 var homescreenSettings = null; // cached {has_image, scale, translateX, translateY}
@@ -572,7 +568,6 @@ function renderSettingsBgPreview() {
     container.innerHTML = '<p style="font-size:0.85rem;color:#9aa0a6;margin:0 0 12px">No background set</p>';
   }
 }
-
 // === SPA Navigation ===
 
 function sidebarNav(page) {
@@ -606,7 +601,10 @@ function navigateTo(page, push) {
   else if (page === 'weekly') content.innerHTML = renderWeeklyContent();
   else if (page === 'dashboard') content.innerHTML = renderDashboardContent();
   else if (page === 'settings') content.innerHTML = renderSettingsContent();
-  else if (page === 'ai') { content.innerHTML = ''; renderAIContent(content); }
+  else if (page === 'ai') {
+    if (chatHoverMode) { content.innerHTML = renderHomescreenContent(); }
+    else { content.innerHTML = ''; renderAITab(); }
+  }
 
   // Update URL
   if (push) history.pushState({ page: page }, '', '/' + page);
@@ -622,17 +620,7 @@ function navigateTo(page, push) {
     st.innerHTML = '';
   });
   if (page === 'projects') {
-    var subtabs = document.querySelector('.sidebar-subtabs[data-parent="projects"]');
-    if (subtabs) {
-      subtabs.innerHTML =
-        '<a class="sidebar-subtab' + (projectsShowCompleted ? ' active' : '') + '" onclick="toggleProjectsCompletedSidebar(this)">' +
-        'Show Completed<span class="material-symbols-outlined subtab-check">' + (projectsShowCompleted ? 'check_box' : 'check_box_outline_blank') + '</span></a>' +
-        '<a class="sidebar-subtab' + (projectsShowNotes ? ' active' : '') + '" onclick="toggleProjectsNotesSidebar(this)">' +
-        'Show Notes<span class="material-symbols-outlined subtab-check">' + (projectsShowNotes ? 'check_box' : 'check_box_outline_blank') + '</span></a>' +
-        '<a class="sidebar-subtab' + (projectsShowEmptyGroups ? ' active' : '') + '" onclick="toggleProjectsEmptyGroupsSidebar(this)">' +
-        'Show Empty Groups<span class="material-symbols-outlined subtab-check">' + (projectsShowEmptyGroups ? 'check_box' : 'check_box_outline_blank') + '</span></a>';
-      subtabs.classList.add('expanded');
-    }
+    updateProjectsSubtab();
   }
   if (page === 'monthly') {
     updateMonthlySubtab();
@@ -643,6 +631,9 @@ function navigateTo(page, push) {
   if (page === 'ai') {
     updateAISubtab();
   }
+
+  // If leaving AI tab and hover is off, nothing to do
+  // If hover is on, the widget persists (handled by chat.js)
 
   // Load data for this page
   loadPageData();
@@ -892,7 +883,6 @@ function fetchAllData() {
     fetch('/api/notes').then(function(r) { return r.json(); }).catch(function() { return {"notes": []}; }),
     fetch('/api/actions').then(function(r) { return r.json(); }).catch(function() { return []; }),
     fetch('/api/schedules').then(function(r) { return r.json(); }).catch(function() { return []; }),
-    fetch('/api/timelogs').then(function(r) { return r.json(); }).catch(function() { return []; }),
   ]).then(function(results) {
     prodAllTasks = Array.isArray(results[0]) ? results[0] : [];
     prodDrafts = Array.isArray(results[1]) ? results[1] : [];
@@ -905,7 +895,6 @@ function fetchAllData() {
     prodNotes = Array.isArray(notesResp.notes) ? notesResp.notes : [];
     prodActions = Array.isArray(results[7]) ? results[7] : [];
     prodSchedules = Array.isArray(results[8]) ? results[8] : [];
-    prodTimelogs = Array.isArray(results[9]) ? results[9] : [];
     prodCalendarMonth = prodCalendarMonth || defaultCalMonth();
     dataLoaded = true;
   });
@@ -953,8 +942,89 @@ document.addEventListener('keydown', function(e) {
   }
 });
 
+// === Projects subtab ===
+var _truncCtx = null;
+function truncateToFit(text, maxPx, font) {
+  if (!_truncCtx) { _truncCtx = document.createElement('canvas').getContext('2d'); }
+  _truncCtx.font = font;
+  if (_truncCtx.measureText(text).width <= maxPx) return text;
+  var ellipsis = '...';
+  var ellipsisW = _truncCtx.measureText(ellipsis).width;
+  for (var i = text.length - 1; i > 0; i--) {
+    if (_truncCtx.measureText(text.slice(0, i)).width + ellipsisW <= maxPx) return text.slice(0, i) + ellipsis;
+  }
+  return ellipsis;
+}
+
+function updateProjectsSubtab() {
+  var subtabs = document.querySelector('.sidebar-subtabs[data-parent="projects"]');
+  if (!subtabs) return;
+  var html = '';
+
+  // Current directory subtab with back arrow
+  var focusLabel = userEmail || 'Projects';
+  var atRoot = !projectsFocusPath;
+  if (!atRoot) {
+    var segments = projectsFocusPath.split('/').filter(Boolean);
+    focusLabel = segments[segments.length - 1];
+  }
+  var displayLabel = truncateToFit(focusLabel, 130, '500 0.88rem sans-serif');
+  var arrowColor = atRoot ? 'color:#bdc1c6' : '';
+  html += '<a class="sidebar-subtab" onclick="' + (atRoot ? '' : 'projectsNavigateUp()') + '">' +
+    escHtml(displayLabel) + '<span class="material-symbols-outlined subtab-check" style="' + arrowColor + '">arrow_back</span></a>';
+
+  // Visual Display toggle
+  html += '<a class="sidebar-subtab' + (projectsViewMode === 'visual' ? ' active' : '') + '" onclick="toggleProjectsVisualSidebar(this)">' +
+    'Visual Display<span class="material-symbols-outlined subtab-check">' + (projectsViewMode === 'visual' ? 'check_box' : 'check_box_outline_blank') + '</span></a>';
+
+  // Show Completed
+  html += '<a class="sidebar-subtab' + (projectsShowCompleted ? ' active' : '') + '" onclick="toggleProjectsCompletedSidebar(this)">' +
+    'Show Completed<span class="material-symbols-outlined subtab-check">' + (projectsShowCompleted ? 'check_box' : 'check_box_outline_blank') + '</span></a>';
+
+  // Show Notes
+  html += '<a class="sidebar-subtab' + (projectsShowNotes ? ' active' : '') + '" onclick="toggleProjectsNotesSidebar(this)">' +
+    'Show Notes<span class="material-symbols-outlined subtab-check">' + (projectsShowNotes ? 'check_box' : 'check_box_outline_blank') + '</span></a>';
+
+  // Show Empty Groups (visual mode only)
+  if (projectsViewMode === 'visual') {
+    html += '<a class="sidebar-subtab' + (projectsShowEmptyGroups ? ' active' : '') + '" onclick="toggleProjectsEmptyGroupsSidebar(this)">' +
+      'Show Empty Groups<span class="material-symbols-outlined subtab-check">' + (projectsShowEmptyGroups ? 'check_box' : 'check_box_outline_blank') + '</span></a>';
+  }
+
+  subtabs.innerHTML = html;
+  subtabs.classList.add('expanded');
+}
+
+function toggleProjectsVisualSidebar(el) {
+  projectsViewMode = projectsViewMode === 'visual' ? 'list' : 'visual';
+  savePreferences();
+  renderProjects();
+  updateProjectsSubtab();
+}
+
+function projectsNavigateUp() {
+  if (!projectsFocusPath) return;
+  var segments = projectsFocusPath.split('/').filter(Boolean);
+  if (segments.length <= 1) {
+    projectsFocusPath = null;
+  } else {
+    projectsFocusPath = '/' + segments.slice(0, -1).join('/');
+  }
+  savePreferences();
+  renderProjects();
+  updateProjectsSubtab();
+}
+
+function projectsZoomIn(groupPath) {
+  projectsFocusPath = groupPath;
+  savePreferences();
+  renderProjects();
+  updateProjectsSubtab();
+}
+
 // Called once from app.html's inline script
-function initApp(initialPage) {
+function initApp(initialPage, email) {
+  userEmail = email || null;
   prodCalendarMonth = defaultCalMonth();
   initTimezone().then(function() {
     return Promise.all([
@@ -972,7 +1042,6 @@ function initApp(initialPage) {
     history.replaceState({ page: initialPage }, '', '/' + initialPage);
   });
 }
-
 // --- (Data loading is now handled by fetchAllData/refreshData above) ---
 
 // --- Task Card HTML ---
@@ -1157,6 +1226,112 @@ function toggleProjectsEmptyGroupsSidebar(el) {
   renderProjects();
 }
 
+// --- Task actions ---
+function startTask(id) { fetch('/api/tasks/'+id+'/start',{method:'POST'}).then(r=>{if(!r.ok)throw 0;return r.json()}).then(()=>loadProductivityData()).catch(()=>alert('Failed.')); }
+function pauseTask(id) { fetch('/api/tasks/'+id+'/pause',{method:'POST'}).then(r=>{if(!r.ok)throw 0;return r.json()}).then(()=>loadProductivityData()).catch(()=>alert('Failed.')); }
+
+function completeTask(taskId) {
+  const task = prodAllTasks.find(t => t.task_id === taskId);
+  if (task) {
+    const taskPath = ((task.path || '/').replace(/\/$/, '') + '/' + task.name).replace(/\/+/g, '/');
+    const incompleteChildren = prodAllTasks.filter(c =>
+      c.task_id !== taskId && ((c.path || '/') === taskPath || (c.path || '/').startsWith(taskPath + '/')) && !c.end_datetime
+    );
+    if (incompleteChildren.length > 0) {
+      if (!confirm(`${incompleteChildren.length} subtask(s) are incomplete. Mark all as complete?`)) return;
+      const promises = incompleteChildren.map(c => fetch('/api/tasks/'+c.task_id+'/complete',{method:'POST'}));
+      promises.push(fetch('/api/tasks/'+taskId+'/complete',{method:'POST'}));
+      Promise.all(promises).then(()=>{showUndoToast(taskId,incompleteChildren.map(c=>c.task_id));loadProductivityData();}).catch(()=>alert('Failed.'));
+      return;
+    }
+  }
+  fetch('/api/tasks/'+taskId+'/complete',{method:'POST'}).then(r=>{if(!r.ok)throw 0;return r.json()}).then(()=>{showUndoToast(taskId);loadProductivityData();}).catch(()=>alert('Failed.'));
+}
+
+function undoComplete(taskId) {
+  fetch('/api/tasks/'+taskId,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({end_datetime:null,due_status:'pending'})})
+    .then(r=>{if(!r.ok)throw 0;return r.json()}).then(()=>loadProductivityData()).catch(()=>alert('Failed.'));
+}
+
+let undoToastTimer = null;
+function showUndoToast(taskId, childIds = []) {
+  document.querySelectorAll('.undo-toast').forEach(t => t.remove());
+  if (undoToastTimer) clearTimeout(undoToastTimer);
+  const toast = document.createElement('div');
+  toast.className = 'undo-toast';
+  const count = 1 + childIds.length;
+  toast.innerHTML = `Task${count > 1 ? 's' : ''} completed <button onclick="undoCompleteAll(['${taskId}'${childIds.map(c=>`,'${c}'`).join('')}]); this.parentElement.remove();">Undo</button>`;
+  document.body.appendChild(toast);
+  undoToastTimer = setTimeout(() => toast.remove(), 6000);
+}
+
+function undoCompleteAll(taskIds) {
+  Promise.all(taskIds.map(id => fetch('/api/tasks/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({end_datetime:null,due_status:'pending'})}))).then(()=>loadProductivityData());
+}
+
+function deleteTask(taskId) {
+  closeProdDropdowns();
+  if (!confirm('Delete this task?')) return;
+  fetch('/api/tasks/'+taskId,{method:'DELETE'}).then(r=>{if(!r.ok)throw 0;return r.json()}).then(()=>loadProductivityData()).catch(()=>alert('Failed.'));
+}
+
+function deleteRoutine(templateId) {
+  closeProdDropdowns();
+  if (!confirm('Delete this routine?')) return;
+  fetch('/api/routines/'+templateId,{method:'DELETE'}).then(r=>{if(!r.ok)throw 0;return r.json()}).then(()=>loadProductivityData()).catch(()=>alert('Failed.'));
+}
+
+function editRoutine(templateId) {
+  closeProdDropdowns();
+  fetch('/api/routines').then(r=>r.json()).then(templates => {
+    const t = templates.find(x => x.id === templateId); if (!t) return;
+    openSmartModal(true);
+    document.getElementById('sm-editing-id').value = templateId;
+    document.getElementById('sm-name').value = t.name || '';
+    document.getElementById('sm-assign-time').value = t.assign_time || '07:00';
+    if (t.due_time) { document.getElementById('sm-due').value = t.due_time; }
+    if (t.first_day) { document.getElementById('sm-first-day').value = t.first_day; }
+    // Set pattern using new format
+    var pattern = t.pattern || 'interval:1';
+    setPatternInModal(pattern);
+    document.getElementById('sm-max-instances').value = t.max_instances || 85;
+    document.getElementById('sm-max-instances').disabled = false;
+  });
+}
+
+function toggleProdDropdown(btn) { closeProdDropdowns(); const dd = btn.nextElementSibling; if (dd) { dd.classList.add('open'); prodOpenDropdownEl = dd; } }
+function closeProdDropdowns() { if (prodOpenDropdownEl) { prodOpenDropdownEl.classList.remove('open'); prodOpenDropdownEl = null; } }
+document.addEventListener('click', function(e) {
+  closeProdDropdowns();
+  // Close week settings dropdown if click is outside it and the button
+  var dd = document.getElementById('week-settings-dd');
+  if (dd && dd.classList.contains('open') && !e.target.closest('.week-settings-btn') && !e.target.closest('.week-settings-dropdown')) {
+    dd.classList.remove('open');
+    var btn = document.getElementById('week-settings-btn');
+    if (btn) { var icon = btn.querySelector('.material-symbols-outlined'); if (icon) icon.textContent = 'add'; }
+  }
+});
+
+// --- Drag and Drop ---
+let draggedTaskId = null;
+function onCardDragStart(e) { const c=e.target.closest('.task-card');if(!c)return;draggedTaskId=c.dataset.taskId;c.classList.add('dragging');e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',draggedTaskId);document.querySelectorAll('.prod-drop-toplevel').forEach(z=>z.classList.add('drag-active')); }
+function onCardDragEnd(e) { const c=e.target.closest('.task-card');if(c)c.classList.remove('dragging');draggedTaskId=null;document.querySelectorAll('.task-card.drag-over').forEach(c=>c.classList.remove('drag-over'));document.querySelectorAll('.prod-drop-toplevel').forEach(z=>{z.classList.remove('drag-active','drag-over');}); }
+function onCardDragOver(e) { e.preventDefault();const c=e.target.closest('.task-card');if(c&&c.dataset.taskId!==draggedTaskId)c.classList.add('drag-over'); }
+function onCardDragLeave(e) { const c=e.target.closest('.task-card');if(c)c.classList.remove('drag-over'); }
+function onCardDrop(e) { e.preventDefault();const tc=e.target.closest('.task-card');if(!tc||!draggedTaskId)return;tc.classList.remove('drag-over');const tid=tc.dataset.taskId;if(tid===draggedTaskId)return;const target=prodAllTasks.find(t=>t.task_id===tid);if(!target)return;const newPath=((target.path||'/').replace(/\/$/,'')+'/'+target.name).replace(/\/+/g,'/');moveTaskAndChildren(draggedTaskId,newPath); }
+function onTopDragOver(e) { e.preventDefault();e.target.classList.add('drag-over'); }
+function onTopDragLeave(e) { e.target.classList.remove('drag-over'); }
+function onTopDrop(e) { e.preventDefault();e.target.classList.remove('drag-over');if(draggedTaskId)moveTaskAndChildren(draggedTaskId,'/'); }
+
+function moveTaskAndChildren(taskId, newPath) {
+  const task=prodAllTasks.find(t=>t.task_id===taskId);if(!task)return;
+  const oldPath=(task.path||'/').replace(/\/$/,'')+'/'+task.name;
+  const children=prodAllTasks.filter(t=>{const tp=t.path||'/';return tp===oldPath||tp.startsWith(oldPath+'/');});
+  const promises=[fetch('/api/tasks/'+taskId+'/move',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:newPath})})];
+  const newParent=newPath.replace(/\/$/,'')+'/'+task.name;
+  children.forEach(c=>{const cp=c.path||'/';promises.push(fetch('/api/tasks/'+c.task_id+'/move',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:newParent+cp.slice(oldPath.length)})}));});
+  Promise.all(promises).then(()=>loadProductivityData()).catch(()=>alert('Failed.'));
+}
 function getGroupColor(groupPath) {
   // Returns the color of the deepest (most specific) group matching this path.
   // e.g. groupPath="/SCHOOL/CHINESE" → use color of /SCHOOL/CHINESE group
@@ -1207,16 +1382,10 @@ function renderGroupItemHtml(item) {
   } else if (item.due) {
     dueHtml = '<span class="group-item-due">' + formatDateTime(item.due) + '</span>';
   }
-  var actionsHtml = '';
-  if (item.type === 'note') {
-    actionsHtml = '<div class="group-item-actions" onclick="event.stopPropagation()">' +
-      '<button class="group-item-actions-btn" onclick="event.stopPropagation();toggleNoteDropdown(this,\'' + item.id + '\')">' +
-      '<span class="material-symbols-outlined">more_vert</span></button></div>';
-  }
   return '<div class="group-item' + doneClass + '" draggable="true" data-item-id="' + item.id + '" data-item-type="' + item.type + '"' +
     ' ondragstart="onGroupItemDragStart(event)" ondragend="onGroupItemDragEnd(event)">' +
     '<span class="material-symbols-outlined group-item-icon">' + icon + '</span>' +
-    '<span class="group-item-name">' + escHtml(item.name) + '</span>' + dueHtml + actionsHtml + '</div>';
+    '<span class="group-item-name">' + escHtml(item.name) + '</span>' + dueHtml + '</div>';
 }
 
 function getRootGroups() {
@@ -1237,43 +1406,418 @@ function getChildGroups(parentPath) {
   });
 }
 
-function renderGroupBox(group) {
-  var children = getChildGroups(group.path);
-  var items = getGroupItems(group.path);
-  var itemsHtml = items.map(renderGroupItemHtml).join('');
-  var childrenHtml = children.map(function(c) { return renderGroupBox(c); }).join('');
-  if (childrenHtml) childrenHtml = '<div class="group-box-nested">' + childrenHtml + '</div>';
+// === Layout Algorithm ===
+var LY_TOP_COLS = 4;
+var LY_EST_ITEM_H = 34;
+var LY_EST_HEADER_H = 36;
+var LY_GAP = 16;
+var projectsNeedsReorganize = false;
 
-  // Hide empty groups if toggle is off
+function getVisibleItems(groupPath) {
+  return getGroupItems(groupPath).filter(function(item) {
+    if (!projectsShowCompleted && item.done) return false;
+    if (!projectsShowNotes && item.type === 'note') return false;
+    return true;
+  });
+}
+
+function buildGroupTree() {
+  var nodeMap = {};
+  prodGroups.forEach(function(g) {
+    nodeMap[g.path] = { group: g, children: [], items: getVisibleItems(g.path) };
+  });
+  prodGroups.forEach(function(g) {
+    var segs = g.path.split('/').filter(Boolean);
+    if (segs.length > 1) {
+      var parentPath = '/' + segs.slice(0, -1).join('/');
+      if (nodeMap[parentPath]) nodeMap[parentPath].children.push(nodeMap[g.path]);
+    }
+  });
+  var roots = [];
+  prodGroups.forEach(function(g) {
+    var segs = g.path.split('/').filter(Boolean);
+    if (segs.length === 1) roots.push(nodeMap[g.path]);
+  });
   if (!projectsShowEmptyGroups) {
-    var hasVisibleItems = itemsHtml.trim() !== '';
-    var hasVisibleChildren = childrenHtml.trim() !== '';
-    if (!hasVisibleItems && !hasVisibleChildren) return '';
+    function hasContent(node) {
+      if (node.items.length > 0) return true;
+      for (var i = 0; i < node.children.length; i++) {
+        if (hasContent(node.children[i])) return true;
+      }
+      return false;
+    }
+    function prune(node) {
+      node.children = node.children.filter(function(child) {
+        prune(child);
+        return hasContent(child);
+      });
+    }
+    roots.forEach(prune);
+    roots = roots.filter(hasContent);
   }
+  return roots;
+}
 
-  return '<div class="group-box" data-group-path="' + escHtml(group.path) + '"' +
+function countAllItems(node) {
+  var count = node.items.length;
+  for (var i = 0; i < node.children.length; i++) count += countAllItems(node.children[i]);
+  return count;
+}
+
+// === Visual mode constants ===
+var VIS_MAX_DISPLAY_ITEMS = 5; // max items shown per card
+var VIS_D2_FIXED_H = LY_EST_HEADER_H + VIS_MAX_DISPLAY_ITEMS * LY_EST_ITEM_H + 20; // depth-2 card fixed height
+var VIS_CATCHALL_FIXED_H = VIS_MAX_DISPLAY_ITEMS * LY_EST_ITEM_H + 20; // catchall (no header)
+var VIS_BOX_PAD = 20; // body padding + border for depth-1 cards
+
+// === Tree helpers ===
+function findNodeByPath(nodes, path) {
+  for (var i = 0; i < nodes.length; i++) {
+    if (nodes[i].group.path === path) return nodes[i];
+    var found = findNodeByPath(nodes[i].children, path);
+    if (found) return found;
+  }
+  return null;
+}
+
+function buildFocusedTree(focusPath) {
+  var allRoots = buildGroupTree();
+  if (!focusPath) {
+    return { focusGroup: null, children: allRoots, directItems: getVisibleUngroupedItems() };
+  }
+  var focusNode = findNodeByPath(allRoots, focusPath);
+  if (!focusNode) {
+    projectsFocusPath = null;
+    return { focusGroup: null, children: allRoots, directItems: getVisibleUngroupedItems() };
+  }
+  return { focusGroup: focusNode.group, children: focusNode.children, directItems: focusNode.items };
+}
+
+function getVisibleUngroupedItems() {
+  return getUngroupedItems().filter(function(item) {
+    if (!projectsShowCompleted && item.done) return false;
+    if (!projectsShowNotes && item.type === 'note') return false;
+    return true;
+  });
+}
+
+// === Render items with limit (shows first N-1 + "+X more") ===
+function renderItemsWithLimit(items, subgroups, limit) {
+  // Merge subgroups (depth 3+) as item-like entries, then real items
+  var allEntries = [];
+  (subgroups || []).forEach(function(sg) {
+    allEntries.push({ _isSubgroup: true, group: sg.group, _totalItems: countAllItems(sg) });
+  });
+  items.forEach(function(item) { allEntries.push(item); });
+
+  var html = '';
+  var total = allEntries.length;
+  var showCount = total <= limit ? total : limit - 1;
+  for (var i = 0; i < showCount; i++) {
+    var entry = allEntries[i];
+    if (entry._isSubgroup) {
+      html += renderSubgroupAsItem(entry);
+    } else {
+      html += renderGroupItemHtml(entry);
+    }
+  }
+  if (total > limit) {
+    var remaining = total - showCount;
+    html += '<div class="group-item group-item-more" onclick="projectsZoomIn(\'' + escHtml((allEntries[0] && allEntries[0]._isSubgroup ? allEntries[0].group.path : '').replace(/\/[^\/]*$/, '')) + '\')">+' + remaining + ' more</div>';
+  }
+  return html;
+}
+
+function renderSubgroupAsItem(entry) {
+  var path = escHtml(entry.group.path);
+  return '<div class="group-item group-item-subgroup" ondblclick="projectsZoomIn(\'' + path + '\')">' +
+    '<span class="material-symbols-outlined group-item-icon">folder</span>' +
+    '<span class="group-item-name">' + escHtml(entry.group.name) + '</span>' +
+    '<span class="group-item-due" style="color:#80868b">' + entry._totalItems + '</span></div>';
+}
+
+// === Depth-2 card (small, fixed height, 1 col) ===
+function renderDepth2Card(node) {
+  var group = node.group;
+  var groupColor = escHtml(group.color || DEFAULT_COLOR);
+  // Depth-3+ children become items with folder icons
+  var depth3Groups = node.children || [];
+  var items = node.items || [];
+  var bodyHtml = renderItemsWithLimit(items, depth3Groups, VIS_MAX_DISPLAY_ITEMS);
+
+  return '<div class="group-box group-box-d2" data-group-path="' + escHtml(group.path) +
+    '" style="--group-color:' + groupColor + ';border-color:' + groupColor +
+    ';height:' + VIS_D2_FIXED_H + 'px"' +
+    ' ondblclick="projectsZoomIn(\'' + escHtml(group.path) + '\')"' +
     ' ondragover="onGroupBoxDragOver(event)" ondragleave="onGroupBoxDragLeave(event)" ondrop="onGroupBoxDrop(event)">' +
-    '<div class="group-box-header" onclick="toggleGroupCollapse(this)">' +
-    '<div class="group-box-color-stripe" style="background:' + escHtml(group.color || DEFAULT_COLOR) + '"></div>' +
+    '<div class="group-box-header">' +
     '<span class="group-box-name">' + escHtml(group.name) + '</span>' +
-    '<span class="material-symbols-outlined group-box-toggle">expand_more</span>' +
     '<div class="group-box-actions" onclick="event.stopPropagation()">' +
     '<button class="group-box-actions-btn" onclick="event.stopPropagation();toggleGroupDropdown(this)"><span class="material-symbols-outlined">more_vert</span></button>' +
     '<div class="group-box-dropdown">' +
     '<button class="group-box-dd-item" onclick="event.stopPropagation();editGroup(\'' + escHtml(group.path) + '\')"><span class="material-symbols-outlined">edit</span> Edit</button>' +
     '<button class="group-box-dd-item danger" onclick="event.stopPropagation();deleteGroup(\'' + escHtml(group.path) + '\')"><span class="material-symbols-outlined">delete</span> Delete</button>' +
     '</div></div></div>' +
-    '<div class="group-box-body">' + itemsHtml + childrenHtml + '</div></div>';
+    '<div class="group-box-body">' + bodyHtml + '</div></div>';
 }
 
+// === Catchall card (no header, for direct items) ===
+function renderCatchallCard(items, parentPath) {
+  var bodyHtml = renderItemsWithLimit(items, [], VIS_MAX_DISPLAY_ITEMS);
+  return '<div class="group-box-catchall" data-group-path="' + escHtml(parentPath || '') + '"' +
+    ' style="height:' + VIS_CATCHALL_FIXED_H + 'px"' +
+    ' ondragover="onGroupBoxDragOver(event)" ondragleave="onGroupBoxDragLeave(event)" ondrop="onGroupBoxDrop(event)">' +
+    '<div class="group-box-body">' + bodyHtml + '</div></div>';
+}
+
+// === Depth-1 card (large, contains depth-2 grid) ===
+function renderDepth1Card(node, directItems) {
+  var group = node.group;
+  var groupColor = escHtml(group.color || DEFAULT_COLOR);
+  var depth2Children = node.children || [];
+  var hasDirectItems = directItems && directItems.length > 0;
+  // Only use catchall card when there are BOTH subgroups and direct items
+  // Count depth-2 slots: subgroups + 1 for direct items if both exist
+  var hasMixedContent = hasDirectItems && depth2Children.length > 0;
+  var numD2 = depth2Children.length + (hasMixedContent ? 1 : 0);
+  var cols = Math.min(numD2, LY_TOP_COLS);
+  if (cols < 1) cols = 1;
+  node.layoutCols = cols;
+
+  // Height: always use depth-2 card row height (min 1 row so all depth-1 cards match)
+  var rows = Math.max(Math.ceil(numD2 / cols), 1);
+  var innerCardH = VIS_D2_FIXED_H;
+  var d1Height = LY_EST_HEADER_H + rows * (innerCardH + LY_GAP) - LY_GAP + VIS_BOX_PAD;
+
+  // Render inner content
+  var innerHtml = '';
+  if (depth2Children.length === 0 && hasDirectItems) {
+    // No subgroups — render items directly in body (no wrapper)
+    innerHtml = renderItemsWithLimit(directItems, [], VIS_MAX_DISPLAY_ITEMS);
+  } else {
+    depth2Children.forEach(function(child) {
+      innerHtml += renderDepth2Card(child);
+    });
+    if (hasMixedContent) {
+      // Direct items alongside subgroups — render without catchall styling
+      var catchallBody = renderItemsWithLimit(directItems, [], VIS_MAX_DISPLAY_ITEMS);
+      innerHtml += '<div style="height:' + VIS_D2_FIXED_H + 'px;overflow:hidden"' +
+        ' data-group-path="' + escHtml(group.path) + '"' +
+        ' ondragover="onGroupBoxDragOver(event)" ondragleave="onGroupBoxDragLeave(event)" ondrop="onGroupBoxDrop(event)">' +
+        '<div class="group-box-body">' + catchallBody + '</div></div>';
+    }
+  }
+
+  return '<div class="group-box" data-group-path="' + escHtml(group.path) +
+    '" style="--group-color:' + groupColor + ';border-color:' + groupColor + ';min-height:' + d1Height + 'px"' +
+    ' ondblclick="projectsZoomIn(\'' + escHtml(group.path) + '\')"' +
+    ' ondragover="onGroupBoxDragOver(event)" ondragleave="onGroupBoxDragLeave(event)" ondrop="onGroupBoxDrop(event)">' +
+    '<div class="group-box-header">' +
+    '<span class="group-box-name">' + escHtml(group.name) + '</span>' +
+    '<div class="group-box-actions" onclick="event.stopPropagation()">' +
+    '<button class="group-box-actions-btn" onclick="event.stopPropagation();toggleGroupDropdown(this)"><span class="material-symbols-outlined">more_vert</span></button>' +
+    '<div class="group-box-dropdown">' +
+    '<button class="group-box-dd-item" onclick="event.stopPropagation();editGroup(\'' + escHtml(group.path) + '\')"><span class="material-symbols-outlined">edit</span> Edit</button>' +
+    '<button class="group-box-dd-item danger" onclick="event.stopPropagation();deleteGroup(\'' + escHtml(group.path) + '\')"><span class="material-symbols-outlined">delete</span> Delete</button>' +
+    '</div></div></div>' +
+    '<div class="group-box-body layout-packed-body" style="grid-template-columns:repeat(' + cols + ',1fr)">' +
+    innerHtml + '</div></div>';
+}
+
+// === Visual mode masonry ===
+function estimateDepth1Height(node, directItems) {
+  var depth2Children = node.children || [];
+  var hasDirectItems = directItems && directItems.length > 0;
+  var hasMixedContent = hasDirectItems && depth2Children.length > 0;
+  var numD2 = depth2Children.length + (hasMixedContent ? 1 : 0);
+  var cols = Math.min(numD2, LY_TOP_COLS);
+  if (cols < 1) cols = 1;
+  var rows = Math.max(Math.ceil(numD2 / cols), 1);
+  var innerCardH = VIS_D2_FIXED_H;
+  return LY_EST_HEADER_H + rows * (innerCardH + LY_GAP) - LY_GAP + VIS_BOX_PAD;
+}
+
+function renderProjectsVisual() {
+  var el = document.getElementById('prod-projects'); if (!el) return;
+  var focused = buildFocusedTree(projectsFocusPath);
+  var depth1Nodes = focused.children;
+  var directItems = focused.directItems;
+
+  if (depth1Nodes.length === 0 && directItems.length === 0) {
+    el.innerHTML = '<p class="prod-empty">No groups here. Right-click and select "Group" to create one.</p>';
+    return;
+  }
+
+  // Build render list: each depth-1 node + catchall for root-level direct items
+  var renderItems = []; // { html, cols, height }
+  depth1Nodes.forEach(function(node) {
+    var nodeDirectItems = node.items || [];
+    var h = estimateDepth1Height(node, nodeDirectItems);
+    var hasDirectItems = nodeDirectItems.length > 0;
+    var hasCatchall = hasDirectItems && node.children.length > 0;
+    var numD2 = node.children.length + (hasCatchall ? 1 : 0);
+    // Items-only cards (no subgroups) take 1 column
+    var cols = numD2 > 0 ? Math.min(numD2, LY_TOP_COLS) : 1;
+    renderItems.push({ html: renderDepth1Card(node, nodeDirectItems), cols: cols, height: h });
+  });
+
+  // Root-level direct items: place individually into masonry (no wrapper)
+  directItems.forEach(function(item) {
+    var itemHtml = renderGroupItemHtml(item);
+    if (itemHtml) {
+      renderItems.push({ html: itemHtml, cols: 1, height: LY_EST_ITEM_H });
+    }
+  });
+
+  // Sort tallest first for better packing
+  renderItems.sort(function(a, b) { return b.height - a.height; });
+
+  // Absolute-positioned masonry
+  var colH = [0, 0, 0, 0];
+  var placements = [];
+
+  renderItems.forEach(function(item) {
+    var span = Math.min(item.cols, LY_TOP_COLS);
+    var bestStart = 0, bestY = Infinity;
+    for (var s = 0; s <= LY_TOP_COLS - span; s++) {
+      var maxY = 0;
+      for (var c = s; c < s + span; c++) {
+        if (colH[c] > maxY) maxY = colH[c];
+      }
+      if (maxY < bestY) { bestY = maxY; bestStart = s; }
+    }
+    placements.push({ html: item.html, col: bestStart, top: bestY, span: span });
+    var newH = bestY + item.height + LY_GAP;
+    for (var c = bestStart; c < bestStart + span; c++) colH[c] = newH;
+  });
+
+  var maxH = 0;
+  for (var i = 0; i < LY_TOP_COLS; i++) { if (colH[i] > maxH) maxH = colH[i]; }
+
+  var html = '<div style="position:relative;min-height:' + maxH + 'px">';
+  placements.forEach(function(p) {
+    var leftCalc = p.col === 0 ? '0' : 'calc(' + (p.col * 25) + '% + ' + (p.col * 2.5) + 'px)';
+    var widthCalc = p.span === LY_TOP_COLS ? '100%' : 'calc(' + (p.span * 25) + '% + ' + (p.span * 2.5 - 10) + 'px)';
+    html += '<div style="position:absolute;top:' + p.top + 'px;left:' + leftCalc + ';width:' + widthCalc + '">';
+    html += p.html;
+    html += '</div>';
+  });
+  html += '</div>';
+  el.innerHTML = html;
+}
+
+// === List mode ===
+function renderProjectsList() {
+  var el = document.getElementById('prod-projects'); if (!el) return;
+  var roots = buildGroupTree();
+  var ungrouped = getVisibleUngroupedItems();
+  var rootLabel = userEmail || 'Projects';
+
+  var html = '<div class="list-tree-node">';
+  // Root row (always expanded)
+  html += '<div class="list-tree-row" onclick="toggleListNode(this)">';
+  html += '<span class="list-tree-chevron expanded material-symbols-outlined">chevron_right</span>';
+  html += '<span class="list-tree-icon list-tree-icon-folder material-symbols-outlined">folder</span>';
+  html += '<span class="list-tree-name">' + escHtml(rootLabel) + '</span>';
+  html += '</div>';
+  html += '<div class="list-tree-children">';
+  roots.forEach(function(node) { html += renderListTreeNode(node, 1); });
+  ungrouped.forEach(function(item) { html += renderListTreeItem(item, 1); });
+  html += '</div></div>';
+
+  el.innerHTML = html;
+}
+
+function renderListTreeNode(node, depth) {
+  var group = node.group;
+  var items = node.items || [];
+  var children = node.children || [];
+  var totalItems = countAllItems(node);
+  var indent = depth * 20;
+  var hasChildren = children.length > 0 || items.length > 0;
+  var colorDot = (group.color && group.color !== '#000000' && group.color !== DEFAULT_COLOR)
+    ? '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + escHtml(group.color) + ';margin-right:2px;flex-shrink:0"></span>' : '';
+
+  var html = '<div class="list-tree-node" data-path="' + escHtml(group.path) + '"' +
+    ' ondragover="onListTreeDragOver(event)" ondragleave="onListTreeDragLeave(event)" ondrop="onListTreeDrop(event)">';
+  html += '<div class="list-tree-row" onclick="toggleListNode(this)" ondblclick="projectsZoomIn(\'' + escHtml(group.path) + '\')">';
+  html += '<span style="width:' + indent + 'px" class="list-tree-indent"></span>';
+  if (hasChildren) {
+    html += '<span class="list-tree-chevron material-symbols-outlined">chevron_right</span>';
+  } else {
+    html += '<span style="width:20px" class="list-tree-indent"></span>';
+  }
+  html += colorDot;
+  html += '<span class="list-tree-icon list-tree-icon-folder material-symbols-outlined">folder</span>';
+  html += '<span class="list-tree-name">' + escHtml(group.name) + '</span>';
+  if (totalItems > 0) html += '<span class="list-tree-count">(' + totalItems + ')</span>';
+  html += '</div>';
+
+  if (hasChildren) {
+    html += '<div class="list-tree-children" style="display:none">';
+    children.forEach(function(child) { html += renderListTreeNode(child, depth + 1); });
+    items.forEach(function(item) { html += renderListTreeItem(item, depth + 1); });
+    html += '</div>';
+  }
+  html += '</div>';
+  return html;
+}
+
+function renderListTreeItem(item, depth) {
+  if (!projectsShowCompleted && item.done) return '';
+  if (!projectsShowNotes && item.type === 'note') return '';
+  var indent = depth * 20 + 20; // extra 20 for no chevron
+  var icon = item.type === 'routine' ? 'repeat' : (item.type === 'note' ? 'note' : 'task_alt');
+  var doneClass = item.done ? ' group-item-done' : '';
+  return '<div class="list-tree-item' + doneClass + '" draggable="true" data-item-id="' + item.id + '" data-item-type="' + item.type + '"' +
+    ' ondragstart="onGroupItemDragStart(event)" ondragend="onGroupItemDragEnd(event)">' +
+    '<span style="width:' + indent + 'px" class="list-tree-indent"></span>' +
+    '<span class="list-tree-icon material-symbols-outlined">' + icon + '</span>' +
+    '<span class="list-tree-name">' + escHtml(item.name) + '</span></div>';
+}
+
+function toggleListNode(rowEl) {
+  var node = rowEl.closest('.list-tree-node');
+  if (!node) return;
+  var children = node.querySelector(':scope > .list-tree-children');
+  var chevron = rowEl.querySelector('.list-tree-chevron');
+  if (!children) return;
+  var isOpen = children.style.display !== 'none';
+  children.style.display = isOpen ? 'none' : '';
+  if (chevron) chevron.classList.toggle('expanded', !isOpen);
+}
+
+// List mode drag-drop on tree nodes
+function onListTreeDragOver(e) {
+  e.preventDefault();
+  var node = e.target.closest('.list-tree-node');
+  if (node) node.querySelector('.list-tree-row').style.background = '#e8f0fe';
+}
+function onListTreeDragLeave(e) {
+  var node = e.target.closest('.list-tree-node');
+  if (node && !node.contains(e.relatedTarget)) node.querySelector('.list-tree-row').style.background = '';
+}
+function onListTreeDrop(e) {
+  e.preventDefault(); e.stopPropagation();
+  var node = e.target.closest('.list-tree-node');
+  if (!node || !groupDraggedItemId) return;
+  node.querySelector('.list-tree-row').style.background = '';
+  var targetPath = node.dataset.path;
+  if (targetPath) assignItemGroup(groupDraggedItemId, groupDraggedItemType, targetPath);
+}
+
+// === Main render dispatcher ===
 function renderProjects() {
   var el = document.getElementById('prod-projects'); if (!el) return;
-  if (prodGroups.length === 0) {
-    el.innerHTML = '<p class="prod-empty">No groups yet. Right-click and select "Group" to create one.</p>';
+  if (projectsViewMode === 'list') {
+    renderProjectsList();
   } else {
-    var rootGroups = getRootGroups();
-    el.innerHTML = '<div class="projects-groups-grid">' + rootGroups.map(renderGroupBox).join('') + '</div>';
+    renderProjectsVisual();
   }
+}
+
+function renderProjectsInPlace() {
+  renderProjects();
 }
 
 // --- Group box interactions ---
@@ -1644,6 +2188,11 @@ function createGroupCard(existingGroup) {
 
       if (pathsToCreate.length === 0) { alert('Group already exists.'); return; }
 
+      // Enforce max 12 subgroups per parent
+      var parentPath = segments.length > 1 ? '/' + segments.slice(0, segments.length - 1).join('/') : null;
+      var siblings = parentPath ? getChildGroups(parentPath) : getRootGroups();
+      if (siblings.length >= 12) { alert('A group can have at most 12 subgroups.'); return; }
+
       var createNext = function(idx) {
         if (idx >= pathsToCreate.length) {
           if (draftId) fetch('/api/drafts/' + draftId, {method: 'DELETE'});
@@ -1674,118 +2223,6 @@ function openGroupModal(existingGroup) {
 function closeGroupModal() {
   CardStack.dismissTop();
 }
-
-// --- Task actions ---
-function startTask(id) { fetch('/api/tasks/'+id+'/start',{method:'POST'}).then(r=>{if(!r.ok)throw 0;return r.json()}).then(()=>loadProductivityData()).catch(()=>alert('Failed.')); }
-function pauseTask(id) { fetch('/api/tasks/'+id+'/pause',{method:'POST'}).then(r=>{if(!r.ok)throw 0;return r.json()}).then(()=>loadProductivityData()).catch(()=>alert('Failed.')); }
-
-function completeTask(taskId) {
-  const task = prodAllTasks.find(t => t.task_id === taskId);
-  if (task) {
-    const taskPath = ((task.path || '/').replace(/\/$/, '') + '/' + task.name).replace(/\/+/g, '/');
-    const incompleteChildren = prodAllTasks.filter(c =>
-      c.task_id !== taskId && ((c.path || '/') === taskPath || (c.path || '/').startsWith(taskPath + '/')) && !c.end_datetime
-    );
-    if (incompleteChildren.length > 0) {
-      if (!confirm(`${incompleteChildren.length} subtask(s) are incomplete. Mark all as complete?`)) return;
-      const promises = incompleteChildren.map(c => fetch('/api/tasks/'+c.task_id+'/complete',{method:'POST'}));
-      promises.push(fetch('/api/tasks/'+taskId+'/complete',{method:'POST'}));
-      Promise.all(promises).then(()=>{showUndoToast(taskId,incompleteChildren.map(c=>c.task_id));loadProductivityData();}).catch(()=>alert('Failed.'));
-      return;
-    }
-  }
-  fetch('/api/tasks/'+taskId+'/complete',{method:'POST'}).then(r=>{if(!r.ok)throw 0;return r.json()}).then(()=>{showUndoToast(taskId);loadProductivityData();}).catch(()=>alert('Failed.'));
-}
-
-function undoComplete(taskId) {
-  fetch('/api/tasks/'+taskId,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({end_datetime:null,due_status:'pending'})})
-    .then(r=>{if(!r.ok)throw 0;return r.json()}).then(()=>loadProductivityData()).catch(()=>alert('Failed.'));
-}
-
-let undoToastTimer = null;
-function showUndoToast(taskId, childIds = []) {
-  document.querySelectorAll('.undo-toast').forEach(t => t.remove());
-  if (undoToastTimer) clearTimeout(undoToastTimer);
-  const toast = document.createElement('div');
-  toast.className = 'undo-toast';
-  const count = 1 + childIds.length;
-  toast.innerHTML = `Task${count > 1 ? 's' : ''} completed <button onclick="undoCompleteAll(['${taskId}'${childIds.map(c=>`,'${c}'`).join('')}]); this.parentElement.remove();">Undo</button>`;
-  document.body.appendChild(toast);
-  undoToastTimer = setTimeout(() => toast.remove(), 6000);
-}
-
-function undoCompleteAll(taskIds) {
-  Promise.all(taskIds.map(id => fetch('/api/tasks/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({end_datetime:null,due_status:'pending'})}))).then(()=>loadProductivityData());
-}
-
-function deleteTask(taskId) {
-  closeProdDropdowns();
-  if (!confirm('Delete this task?')) return;
-  fetch('/api/tasks/'+taskId,{method:'DELETE'}).then(r=>{if(!r.ok)throw 0;return r.json()}).then(()=>loadProductivityData()).catch(()=>alert('Failed.'));
-}
-
-function deleteRoutine(templateId) {
-  closeProdDropdowns();
-  if (!confirm('Delete this routine?')) return;
-  fetch('/api/routines/'+templateId,{method:'DELETE'}).then(r=>{if(!r.ok)throw 0;return r.json()}).then(()=>loadProductivityData()).catch(()=>alert('Failed.'));
-}
-
-function editRoutine(templateId) {
-  closeProdDropdowns();
-  fetch('/api/routines').then(r=>r.json()).then(templates => {
-    const t = templates.find(x => x.id === templateId); if (!t) return;
-    openSmartModal(true);
-    document.getElementById('sm-editing-id').value = templateId;
-    document.getElementById('sm-name').value = t.name || '';
-    document.getElementById('sm-assign-time').value = t.assign_time || '07:00';
-    if (t.due_time) { document.getElementById('sm-due').value = t.due_time; }
-    if (t.first_day) { document.getElementById('sm-first-day').value = t.first_day; }
-    // Set pattern using new format
-    var pattern = t.pattern || 'interval:1';
-    setPatternInModal(pattern);
-    document.getElementById('sm-max-instances').value = t.max_instances || 85;
-    document.getElementById('sm-max-instances').disabled = false;
-  });
-}
-
-function toggleProdDropdown(btn) { closeProdDropdowns(); const dd = btn.nextElementSibling; if (dd) { dd.classList.add('open'); prodOpenDropdownEl = dd; } }
-function closeProdDropdowns() { if (prodOpenDropdownEl) { prodOpenDropdownEl.classList.remove('open'); prodOpenDropdownEl = null; } }
-document.addEventListener('click', function(e) {
-  closeProdDropdowns();
-  // Close week settings dropdown if click is outside it and the button
-  var dd = document.getElementById('week-settings-dd');
-  if (dd && dd.classList.contains('open') && !e.target.closest('.week-settings-btn') && !e.target.closest('.week-settings-dropdown')) {
-    dd.classList.remove('open');
-    var btn = document.getElementById('week-settings-btn');
-    if (btn) { var icon = btn.querySelector('.material-symbols-outlined'); if (icon) icon.textContent = 'add'; }
-  }
-});
-
-// --- Drag and Drop ---
-let draggedTaskId = null;
-function onCardDragStart(e) { const c=e.target.closest('.task-card');if(!c)return;draggedTaskId=c.dataset.taskId;c.classList.add('dragging');e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',draggedTaskId);document.querySelectorAll('.prod-drop-toplevel').forEach(z=>z.classList.add('drag-active')); }
-function onCardDragEnd(e) { const c=e.target.closest('.task-card');if(c)c.classList.remove('dragging');draggedTaskId=null;document.querySelectorAll('.task-card.drag-over').forEach(c=>c.classList.remove('drag-over'));document.querySelectorAll('.prod-drop-toplevel').forEach(z=>{z.classList.remove('drag-active','drag-over');}); }
-function onCardDragOver(e) { e.preventDefault();const c=e.target.closest('.task-card');if(c&&c.dataset.taskId!==draggedTaskId)c.classList.add('drag-over'); }
-function onCardDragLeave(e) { const c=e.target.closest('.task-card');if(c)c.classList.remove('drag-over'); }
-function onCardDrop(e) { e.preventDefault();const tc=e.target.closest('.task-card');if(!tc||!draggedTaskId)return;tc.classList.remove('drag-over');const tid=tc.dataset.taskId;if(tid===draggedTaskId)return;const target=prodAllTasks.find(t=>t.task_id===tid);if(!target)return;const newPath=((target.path||'/').replace(/\/$/,'')+'/'+target.name).replace(/\/+/g,'/');moveTaskAndChildren(draggedTaskId,newPath); }
-function onTopDragOver(e) { e.preventDefault();e.target.classList.add('drag-over'); }
-function onTopDragLeave(e) { e.target.classList.remove('drag-over'); }
-function onTopDrop(e) { e.preventDefault();e.target.classList.remove('drag-over');if(draggedTaskId)moveTaskAndChildren(draggedTaskId,'/'); }
-
-function moveTaskAndChildren(taskId, newPath) {
-  const task=prodAllTasks.find(t=>t.task_id===taskId);if(!task)return;
-  const oldPath=(task.path||'/').replace(/\/$/,'')+'/'+task.name;
-  const children=prodAllTasks.filter(t=>{const tp=t.path||'/';return tp===oldPath||tp.startsWith(oldPath+'/');});
-  const promises=[fetch('/api/tasks/'+taskId+'/move',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:newPath})})];
-  const newParent=newPath.replace(/\/$/,'')+'/'+task.name;
-  children.forEach(c=>{const cp=c.path||'/';promises.push(fetch('/api/tasks/'+c.task_id+'/move',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:newParent+cp.slice(oldPath.length)})}));});
-  Promise.all(promises).then(()=>loadProductivityData()).catch(()=>alert('Failed.'));
-}
-
-// --- Smart Input Modal ---
-let smartIsRoutine = false;
-let draftAutoSaveTimer = null;
-
 // --- Pattern helpers (new format: "set:0,1,3" or "interval:2") ---
 var PATTERN_DAY_LETTERS = ['M','T','W','R','F','S','U']; // index 0-6 = Mon-Sun
 
@@ -2033,6 +2470,126 @@ function adjustFirstDayForPattern(firstDay, pattern) {
   }
   return firstDay;
 }
+
+// --- Natural Date Parser ---
+// Resolve a day name with optional modifier to a date
+// modifier: null/"this" = this week (today if same day, else next occurrence)
+//           "next" = skip to next week's occurrence
+//           "next next" = skip to week after next
+function resolveDayName(text) {
+  var todayLocal = getTodayStr();
+  var parts = todayLocal.split('-').map(Number);
+  var ty = parts[0], tm = parts[1], td = parts[2];
+  var dayNames = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
+  var shortNames = {sun:0,mon:1,tue:2,wed:3,thu:4,fri:5,sat:6};
+
+  var modifier = 0; // 0 = this, 1 = next, 2 = next next
+  var cleaned = text.trim().toLowerCase();
+  if (cleaned.startsWith('next next ')) { modifier = 2; cleaned = cleaned.slice(10).trim(); }
+  else if (cleaned.startsWith('next ')) { modifier = 1; cleaned = cleaned.slice(5).trim(); }
+  else if (cleaned.startsWith('this ')) { modifier = 0; cleaned = cleaned.slice(5).trim(); }
+
+  var dayIdx = dayNames.indexOf(cleaned);
+  if (dayIdx < 0 && cleaned in shortNames) dayIdx = shortNames[cleaned];
+  if (dayIdx < 0) return null;
+
+  var todayObj = new Date(ty, tm-1, td);
+  var todayDay = todayObj.getDay(); // JS: 0=Sun...6=Sat
+  var diff = dayIdx - todayDay;
+  if (diff < 0) diff += 7; // next occurrence
+  // If diff === 0 and modifier === 0, use today
+  // If diff === 0 and modifier >= 1, jump ahead 7 * modifier
+  if (diff === 0 && modifier > 0) diff = 7 * modifier;
+  else diff += 7 * modifier;
+
+  var result = new Date(ty, tm-1, td + diff);
+  return fmtDate(result);
+}
+
+function parseNaturalDate(text, defaultTime) {
+  text = text.trim().toLowerCase();
+  var todayLocal = getTodayStr();
+  var tParts = todayLocal.split('-').map(Number);
+  var ty = tParts[0], tm = tParts[1], td = tParts[2];
+  var date = null, time = null;
+
+  // Extract trailing time if present
+  var timeAtEnd = text.match(/\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm)|\d{1,2}:\d{2})$/i);
+  if (timeAtEnd) { time = parseTimeStr(timeAtEnd[1]); text = text.slice(0, -timeAtEnd[0].length).trim(); }
+
+  // Named dates
+  if (text === 'today') date = todayLocal;
+  else if (text === 'tomorrow') { var d1 = new Date(ty, tm-1, td+1); date = fmtDate(d1); }
+  else if (text === 'day after tomorrow') { var d2 = new Date(ty, tm-1, td+2); date = fmtDate(d2); }
+  else {
+    var inDays = text.match(/^in\s+(\d+)\s+days?$/);
+    if (inDays) { var d3 = new Date(ty, tm-1, td+parseInt(inDays[1])); date = fmtDate(d3); }
+  }
+
+  // Day names with modifiers: "thursday", "this thursday", "next thursday", "next next friday"
+  if (!date) {
+    var resolved = resolveDayName(text);
+    if (resolved) date = resolved;
+  }
+
+  // "next week" = next Monday
+  if (!date && text === 'next week') {
+    var todayDay = new Date(ty, tm-1, td).getDay();
+    var diff = (8 - todayDay) % 7 || 7;
+    var d4 = new Date(ty, tm-1, td + diff);
+    date = fmtDate(d4);
+  }
+
+  // "5/6" or "5/6/2026" — M/D or M/D/YYYY format
+  if (!date) {
+    var slashMatch = text.match(/^(\d{1,2})\/(\d{1,2})(?:\/(\d{4}))?$/);
+    if (slashMatch) {
+      var sMonth = parseInt(slashMatch[1]), sDay = parseInt(slashMatch[2]);
+      var sYear = slashMatch[3] ? parseInt(slashMatch[3]) : ty;
+      date = sYear + '-' + String(sMonth).padStart(2,'0') + '-' + String(sDay).padStart(2,'0');
+    }
+  }
+
+  if (!date && !time) return null;
+  if (!date) date = todayLocal;
+  if (!time) time = defaultTime || '23:59';
+  return { date: date, time: time };
+}
+function fmtDate(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+
+function parseFirstDay(text) {
+  text = text.trim().toLowerCase();
+  var todayStr = getTodayStr();
+  var tParts = todayStr.split('-').map(Number);
+  var ty = tParts[0], tm = tParts[1], td = tParts[2];
+  var boundary = getForwardBoundary();
+  var result = null;
+  if (text === 'today') result = todayStr;
+  else if (text === 'tomorrow') { var d = new Date(ty, tm-1, td+1); result = fmtDate(d); }
+  else {
+    // "5/5" or "5/5/2026"
+    var slashMatch = text.match(/^(\d{1,2})\/(\d{1,2})(?:\/(\d{4}))?$/);
+    if (slashMatch) {
+      var month = parseInt(slashMatch[1]), day = parseInt(slashMatch[2]);
+      var year = slashMatch[3] ? parseInt(slashMatch[3]) : ty;
+      result = year + '-' + String(month).padStart(2,'0') + '-' + String(day).padStart(2,'0');
+    }
+  }
+  // Day names with modifiers: "thursday", "next friday", "next next monday"
+  if (!result) {
+    var resolved = resolveDayName(text);
+    if (resolved) result = resolved;
+  }
+  if (!result) return null;
+  // Validate: not in past, not beyond boundary
+  if (result < todayStr || result > boundary) return null;
+  return result;
+}
+function parseTimeStr(s){s=s.trim().toLowerCase();let m=s.match(/^(\d{1,2}):(\d{2})\s*(am|pm)$/i);if(m){let h=parseInt(m[1]);if(m[3]==='pm'&&h<12)h+=12;if(m[3]==='am'&&h===12)h=0;return String(h).padStart(2,'0')+':'+m[2];}m=s.match(/^(\d{1,2}):(\d{2})$/);if(m)return m[1].padStart(2,'0')+':'+m[2];m=s.match(/^(\d{1,2})\s*(am|pm)$/i);if(m){let h=parseInt(m[1]);if(m[2]==='pm'&&h<12)h+=12;if(m[2]==='am'&&h===12)h=0;return String(h).padStart(2,'0')+':00';}return null;}
+function dateTimeToLocal(dateStr, timeStr) { return dateStr + 'T' + timeStr; }
+// --- Smart Input Modal ---
+let smartIsRoutine = false;
+let draftAutoSaveTimer = null;
 
 function openSmartModal(isRoutine, editTask = null) {
   smartIsRoutine = isRoutine;
@@ -2297,124 +2854,6 @@ function saveSmartTask() {
 function openSnoozeTask(taskId) { closeProdDropdowns();const t=prodAllTasks.find(x=>x.task_id===taskId);if(!t)return;document.getElementById('psm-id').value=taskId;document.getElementById('psm-name-display').textContent=t.name;document.getElementById('psm-assign').value=t.assign_datetime?toLocalDatetimeValue(t.assign_datetime):'';document.getElementById('psm-due').value=t.due_datetime?toLocalDatetimeValue(t.due_datetime):'';document.getElementById('prod-snooze-modal').classList.add('open'); }
 function closeSnoozeModal() { document.getElementById('prod-snooze-modal').classList.remove('open'); }
 function saveSnooze() { const taskId=document.getElementById('psm-id').value;const data={assign_datetime:localInputToUTC(document.getElementById('psm-assign').value),due_datetime:localInputToUTC(document.getElementById('psm-due').value),due_status:'pending'};fetch('/api/tasks/'+taskId,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(r=>{if(!r.ok)throw 0;return r.json();}).then(()=>{closeSnoozeModal();loadProductivityData();}).catch(()=>alert('Failed.')); }
-
-// --- Natural Date Parser ---
-// Resolve a day name with optional modifier to a date
-// modifier: null/"this" = this week (today if same day, else next occurrence)
-//           "next" = skip to next week's occurrence
-//           "next next" = skip to week after next
-function resolveDayName(text) {
-  var todayLocal = getTodayStr();
-  var parts = todayLocal.split('-').map(Number);
-  var ty = parts[0], tm = parts[1], td = parts[2];
-  var dayNames = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
-  var shortNames = {sun:0,mon:1,tue:2,wed:3,thu:4,fri:5,sat:6};
-
-  var modifier = 0; // 0 = this, 1 = next, 2 = next next
-  var cleaned = text.trim().toLowerCase();
-  if (cleaned.startsWith('next next ')) { modifier = 2; cleaned = cleaned.slice(10).trim(); }
-  else if (cleaned.startsWith('next ')) { modifier = 1; cleaned = cleaned.slice(5).trim(); }
-  else if (cleaned.startsWith('this ')) { modifier = 0; cleaned = cleaned.slice(5).trim(); }
-
-  var dayIdx = dayNames.indexOf(cleaned);
-  if (dayIdx < 0 && cleaned in shortNames) dayIdx = shortNames[cleaned];
-  if (dayIdx < 0) return null;
-
-  var todayObj = new Date(ty, tm-1, td);
-  var todayDay = todayObj.getDay(); // JS: 0=Sun...6=Sat
-  var diff = dayIdx - todayDay;
-  if (diff < 0) diff += 7; // next occurrence
-  // If diff === 0 and modifier === 0, use today
-  // If diff === 0 and modifier >= 1, jump ahead 7 * modifier
-  if (diff === 0 && modifier > 0) diff = 7 * modifier;
-  else diff += 7 * modifier;
-
-  var result = new Date(ty, tm-1, td + diff);
-  return fmtDate(result);
-}
-
-function parseNaturalDate(text, defaultTime) {
-  text = text.trim().toLowerCase();
-  var todayLocal = getTodayStr();
-  var tParts = todayLocal.split('-').map(Number);
-  var ty = tParts[0], tm = tParts[1], td = tParts[2];
-  var date = null, time = null;
-
-  // Extract trailing time if present
-  var timeAtEnd = text.match(/\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm)|\d{1,2}:\d{2})$/i);
-  if (timeAtEnd) { time = parseTimeStr(timeAtEnd[1]); text = text.slice(0, -timeAtEnd[0].length).trim(); }
-
-  // Named dates
-  if (text === 'today') date = todayLocal;
-  else if (text === 'tomorrow') { var d1 = new Date(ty, tm-1, td+1); date = fmtDate(d1); }
-  else if (text === 'day after tomorrow') { var d2 = new Date(ty, tm-1, td+2); date = fmtDate(d2); }
-  else {
-    var inDays = text.match(/^in\s+(\d+)\s+days?$/);
-    if (inDays) { var d3 = new Date(ty, tm-1, td+parseInt(inDays[1])); date = fmtDate(d3); }
-  }
-
-  // Day names with modifiers: "thursday", "this thursday", "next thursday", "next next friday"
-  if (!date) {
-    var resolved = resolveDayName(text);
-    if (resolved) date = resolved;
-  }
-
-  // "next week" = next Monday
-  if (!date && text === 'next week') {
-    var todayDay = new Date(ty, tm-1, td).getDay();
-    var diff = (8 - todayDay) % 7 || 7;
-    var d4 = new Date(ty, tm-1, td + diff);
-    date = fmtDate(d4);
-  }
-
-  // "5/6" or "5/6/2026" — M/D or M/D/YYYY format
-  if (!date) {
-    var slashMatch = text.match(/^(\d{1,2})\/(\d{1,2})(?:\/(\d{4}))?$/);
-    if (slashMatch) {
-      var sMonth = parseInt(slashMatch[1]), sDay = parseInt(slashMatch[2]);
-      var sYear = slashMatch[3] ? parseInt(slashMatch[3]) : ty;
-      date = sYear + '-' + String(sMonth).padStart(2,'0') + '-' + String(sDay).padStart(2,'0');
-    }
-  }
-
-  if (!date && !time) return null;
-  if (!date) date = todayLocal;
-  if (!time) time = defaultTime || '23:59';
-  return { date: date, time: time };
-}
-function fmtDate(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
-
-function parseFirstDay(text) {
-  text = text.trim().toLowerCase();
-  var todayStr = getTodayStr();
-  var tParts = todayStr.split('-').map(Number);
-  var ty = tParts[0], tm = tParts[1], td = tParts[2];
-  var boundary = getForwardBoundary();
-  var result = null;
-  if (text === 'today') result = todayStr;
-  else if (text === 'tomorrow') { var d = new Date(ty, tm-1, td+1); result = fmtDate(d); }
-  else {
-    // "5/5" or "5/5/2026"
-    var slashMatch = text.match(/^(\d{1,2})\/(\d{1,2})(?:\/(\d{4}))?$/);
-    if (slashMatch) {
-      var month = parseInt(slashMatch[1]), day = parseInt(slashMatch[2]);
-      var year = slashMatch[3] ? parseInt(slashMatch[3]) : ty;
-      result = year + '-' + String(month).padStart(2,'0') + '-' + String(day).padStart(2,'0');
-    }
-  }
-  // Day names with modifiers: "thursday", "next friday", "next next monday"
-  if (!result) {
-    var resolved = resolveDayName(text);
-    if (resolved) result = resolved;
-  }
-  if (!result) return null;
-  // Validate: not in past, not beyond boundary
-  if (result < todayStr || result > boundary) return null;
-  return result;
-}
-function parseTimeStr(s){s=s.trim().toLowerCase();let m=s.match(/^(\d{1,2}):(\d{2})\s*(am|pm)$/i);if(m){let h=parseInt(m[1]);if(m[3]==='pm'&&h<12)h+=12;if(m[3]==='am'&&h===12)h=0;return String(h).padStart(2,'0')+':'+m[2];}m=s.match(/^(\d{1,2}):(\d{2})$/);if(m)return m[1].padStart(2,'0')+':'+m[2];m=s.match(/^(\d{1,2})\s*(am|pm)$/i);if(m){let h=parseInt(m[1]);if(m[2]==='pm'&&h<12)h+=12;if(m[2]==='am'&&h===12)h=0;return String(h).padStart(2,'0')+':00';}return null;}
-function dateTimeToLocal(dateStr, timeStr) { return dateStr + 'T' + timeStr; }
-
 // --- Goals & Data Collection ---
 // loadGoalsData — kept for backward compat from goal save/delete actions
 function loadGoalsData() { refreshData(); }
@@ -2475,7 +2914,6 @@ function renderGoalChart(area,displayName,unit,goalName,dailyData) {
   const statsHtml=`<div style="display:flex;gap:24px;margin-top:12px;font-size:0.85rem;color:#5f6368"><span><b>Min:</b> ${minVal.toFixed(1)} ${escHtml(unit)}</span><span><b>Max:</b> ${maxVal.toFixed(1)} ${escHtml(unit)}</span><span><b>Avg:</b> ${avgVal.toFixed(1)} ${escHtml(unit)}</span><span><b>Days:</b> ${n}</span></div>`;
   area.innerHTML=`<div class="productivity-container"><div class="prod-toolbar"><h2>${escHtml(displayName)}</h2><div class="prod-toolbar-btns"><button class="prod-add-btn secondary" onclick="openLogModal('${escHtml(goalName)}')"><span class="material-symbols-outlined">add</span> Log</button><button class="prod-add-btn secondary" onclick="loadProductivityData()"><span class="material-symbols-outlined">arrow_back</span> Back</button></div></div><div class="prod-section"><div class="prod-section-header"><span class="material-symbols-outlined">show_chart</span> ${escHtml(displayName)} over time${unit?' ('+escHtml(unit)+')':''}</div><div class="prod-section-body" style="overflow-x:auto"><svg width="${chartW}" height="${chartH}" style="display:block;max-width:100%">${yLabels}<path d="${pathD}" fill="none" stroke="#1a73e8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>${dots}${xLabels}<line x1="${padL}" x2="${chartW-padR}" y1="${padT+plotH}" y2="${padT+plotH}" stroke="#dadce0" stroke-width="1"/><line x1="${padL}" x2="${padL}" y1="${padT}" y2="${padT+plotH}" stroke="#dadce0" stroke-width="1"/></svg>${statsHtml}</div></div><div class="prod-section"><div class="prod-section-header"><span class="material-symbols-outlined">table_view</span> Recent Entries</div><div class="prod-section-body"><table class="users-table" style="font-size:0.85rem"><thead><tr><th>Date</th><th>Value${unit?' ('+escHtml(unit)+')':''}</th></tr></thead><tbody>${dailyData.slice().reverse().slice(0,30).map(d=>`<tr><td>${d.date}</td><td>${d.value}</td></tr>`).join('')}</tbody></table></div></div></div>`;
 }
-
 // --- Calendar ---
 function initWeekStart() {
   const todayParts=getTodayStr().split('-').map(Number);const d=new Date(todayParts[0],todayParts[1]-1,todayParts[2]);const day=d.getDay();weekCalStart=new Date(d);weekCalStart.setDate(weekCalStart.getDate()-day);
@@ -2690,18 +3128,20 @@ function renderWeekView() {
   const days = [];
   for (let i = 0; i < 7; i++) { const d = new Date(weekCalStart); d.setDate(d.getDate() + i); days.push(fmtDate(d)); }
 
-  // Build sessions from TimeLogs table
-  const weekLogs = (prodTimelogs || []).filter(l => l.parent_type === 'task' && l.start && days.includes(utcToLocalDate(l.start)));
+  const weekTasks = (prodAllTasks || []).filter(t => {
+    if (t.draft) return false;
+    const tl = t.time_log || [];
+    return tl.some(s => s.start && days.includes(utcToLocalDate(s.start)));
+  });
+
   const sessions = [];
-  // Group logs by parent_id to count total sessions per task
-  const logsByTask = {};
-  weekLogs.forEach(l => { if (!logsByTask[l.parent_id]) logsByTask[l.parent_id] = []; logsByTask[l.parent_id].push(l); });
-  Object.keys(logsByTask).forEach(taskId => {
-    const t = (prodAllTasks || []).find(x => x.task_id === taskId);
-    if (!t || t.draft) return;
-    const logs = logsByTask[taskId];
-    const totalSessions = logs.length;
-    logs.forEach((s, idx) => {
+  weekTasks.forEach(t => {
+    const tl = t.time_log || [];
+    const totalSessions = tl.length;
+    let sessionIndex = 0;
+    tl.forEach(s => {
+      if (!s.start) return;
+      sessionIndex++;
       const dayStr = utcToLocalDate(s.start);
       if (!days.includes(dayStr)) return;
       const startFrac = getLocalHourFrac(s.start);
@@ -2709,7 +3149,7 @@ function renderWeekView() {
       let endFrac = endIso ? getLocalHourFrac(endIso) : startFrac + 0.25;
       if (endFrac <= startFrac) endFrac = startFrac + (1/60);
       const durationMin = (endFrac - startFrac) * 60;
-      sessions.push({ taskId: t.task_id, taskName: t.name, path: t.path || '/', dayStr, startFrac, endFrac, durationMin, sessionIndex: idx + 1, totalSessions, color: getGroupColor(t.group) });
+      sessions.push({ taskId: t.task_id, taskName: t.name, path: t.path || '/', dayStr, startFrac, endFrac, durationMin, sessionIndex, totalSessions, color: getGroupColor(t.group) });
     });
   });
 
@@ -3159,7 +3599,6 @@ function changeWeek(delta) {
   if (currentPage === 'weekly') { renderWeekView(); updateWeeklySubtab(); }
   else if (currentPage !== 'dashboard') loadCalendar();
 }
-
 // === Right-click context menu ===
 (function() {
   var menu = null;
@@ -3275,7 +3714,6 @@ function changeWeek(delta) {
     if (e.key === 'Escape') closeCtxMenu();
   });
 })();
-
 // === Card Stack Manager ===
 var CardStack = {
   stack: [],
@@ -3351,7 +3789,6 @@ var CardStack = {
       this.reposition();
     }
   },
-
   reposition: function() {
     var total = this.stack.length;
     if (total === 0) return;
@@ -3408,7 +3845,6 @@ window.CardStack = CardStack;
 
 // Helper: scoped query inside a card element
 function _q(el, cls) { return el.querySelector('.' + cls); }
-
 // === QuickAdd Factory ===
 function createQuickAddCard() {
   var cardEl = document.createElement('div');
@@ -4255,487 +4691,766 @@ window.editNote = function(noteId) {
   var note = prodNotes.find(function(n) { return n.id === noteId; });
   if (note) openNoteAdd(note);
 };
+/* ============================================================
+   TIME EXPRESSION PREPROCESSOR
+   Converts natural language time expressions to UTC ISO strings
+   before sending to the LLM, saving tokens on simple calendar math.
+   ============================================================ */
 
-// ============================================================
-// AI CHAT - Full Terminal UI + Widget Mode
-// ============================================================
+/**
+ * Preprocess a user message, replacing recognized time expressions
+ * with UTC ISO datetime strings. Returns the modified message.
+ * Uses the user's timezone from prodUserTimezone global.
+ */
+function preprocessTimeExpressions(text) {
+  var tz = (typeof prodUserTimezone !== 'undefined' && prodUserTimezone) || 'UTC';
+  var now = new Date();
 
-function getActiveShell() {
-  return aiShells.find(function(s) { return s.id === aiActiveShellId; }) || aiShells[0];
+  // Build "today" in user's local perspective
+  var todayLocal = localDate(now, tz);
+
+  var replacements = [
+    // "today" / "today at 3pm"
+    { pattern: /\btoday(?:\s+at\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm)?))?/gi, fn: function(m, time) {
+      if (time) return toUTCISO(todayLocal, parseTimeStr(time), tz);
+      return '[today=' + todayLocal.toISOString().slice(0,10) + ']';
+    }},
+    // "tomorrow" / "tomorrow at 5pm"
+    { pattern: /\btomorrow(?:\s+at\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm)?))?/gi, fn: function(m, time) {
+      var d = addDays(todayLocal, 1);
+      if (time) return toUTCISO(d, parseTimeStr(time), tz);
+      return '[tomorrow=' + d.toISOString().slice(0,10) + ']';
+    }},
+    // "yesterday"
+    { pattern: /\byesterday\b/gi, fn: function() {
+      var d = addDays(todayLocal, -1);
+      return '[yesterday=' + d.toISOString().slice(0,10) + ']';
+    }},
+    // "next Monday" / "next Tuesday" etc
+    { pattern: /\bnext\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)(?:\s+at\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm)?))?/gi, fn: function(m, day, time) {
+      var d = nextWeekday(todayLocal, dayNameToNum(day));
+      if (time) return toUTCISO(d, parseTimeStr(time), tz);
+      return '[next ' + day + '=' + d.toISOString().slice(0,10) + ']';
+    }},
+    // "this Monday" / "this Friday" etc
+    { pattern: /\bthis\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)(?:\s+at\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm)?))?/gi, fn: function(m, day, time) {
+      var d = thisWeekday(todayLocal, dayNameToNum(day));
+      if (time) return toUTCISO(d, parseTimeStr(time), tz);
+      return '[this ' + day + '=' + d.toISOString().slice(0,10) + ']';
+    }},
+    // "in N hours"
+    { pattern: /\bin\s+(\d+)\s+hours?\b/gi, fn: function(m, n) {
+      var d = new Date(now.getTime() + parseInt(n) * 3600000);
+      return d.toISOString();
+    }},
+    // "in N minutes"
+    { pattern: /\bin\s+(\d+)\s+minutes?\b/gi, fn: function(m, n) {
+      var d = new Date(now.getTime() + parseInt(n) * 60000);
+      return d.toISOString();
+    }},
+    // "in N days"
+    { pattern: /\bin\s+(\d+)\s+days?\b/gi, fn: function(m, n) {
+      var d = addDays(todayLocal, parseInt(n));
+      return '[in ' + n + ' days=' + d.toISOString().slice(0,10) + ']';
+    }},
+    // Standalone time: "at 3pm", "at 14:30", "at 9:00 am"
+    { pattern: /\bat\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)\b/gi, fn: function(m, time) {
+      var parsed = parseTimeStr(time);
+      if (parsed !== null) return '[at ' + formatTime24(parsed) + ']';
+      return m;
+    }},
+  ];
+
+  for (var i = 0; i < replacements.length; i++) {
+    text = text.replace(replacements[i].pattern, replacements[i].fn);
+  }
+  return text;
+}
+
+// --- Helpers ---
+
+function parseTimeStr(str) {
+  // Parse "3pm", "3:30pm", "15:00", "9 am", "9:30 AM" → minutes since midnight
+  if (!str) return null;
+  str = str.trim().toLowerCase();
+  var pm = str.indexOf('pm') >= 0;
+  var am = str.indexOf('am') >= 0;
+  str = str.replace(/[ap]m/i, '').trim();
+
+  var parts = str.split(':');
+  var h = parseInt(parts[0]);
+  var m = parts.length > 1 ? parseInt(parts[1]) : 0;
+  if (isNaN(h)) return null;
+
+  if (pm && h < 12) h += 12;
+  if (am && h === 12) h = 0;
+
+  return h * 60 + m;
+}
+
+function formatTime24(minutes) {
+  var h = Math.floor(minutes / 60);
+  var m = minutes % 60;
+  return (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m;
+}
+
+function dayNameToNum(name) {
+  var map = { 'sunday': 0, 'monday': 1, 'tuesday': 2, 'wednesday': 3, 'thursday': 4, 'friday': 5, 'saturday': 6 };
+  return map[name.toLowerCase()] || 0;
+}
+
+function nextWeekday(fromDate, targetDay) {
+  // Returns the NEXT occurrence of targetDay (0=Sun, 1=Mon, ...) after fromDate
+  var d = new Date(fromDate);
+  var current = d.getDay();
+  var diff = targetDay - current;
+  if (diff <= 0) diff += 7;
+  d.setDate(d.getDate() + diff);
+  return d;
+}
+
+function thisWeekday(fromDate, targetDay) {
+  // Returns the occurrence of targetDay in the current week
+  var d = new Date(fromDate);
+  var current = d.getDay();
+  var diff = targetDay - current;
+  d.setDate(d.getDate() + diff);
+  return d;
+}
+
+function addDays(date, n) {
+  var d = new Date(date);
+  d.setDate(d.getDate() + n);
+  return d;
+}
+
+function localDate(date, tz) {
+  // Get "today" as a Date object in the user's timezone
+  try {
+    var str = date.toLocaleDateString('en-CA', { timeZone: tz }); // YYYY-MM-DD
+    return new Date(str + 'T00:00:00');
+  } catch (e) {
+    return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  }
+}
+
+function toUTCISO(dateObj, minutesSinceMidnight, tz) {
+  // Combine a date + time-of-day → UTC ISO string
+  if (minutesSinceMidnight === null) return dateObj.toISOString().slice(0,10);
+  var h = Math.floor(minutesSinceMidnight / 60);
+  var m = minutesSinceMidnight % 60;
+  // Create a date string in the user's timezone, then convert to UTC
+  var localStr = dateObj.toISOString().slice(0,10) + 'T' + formatTime24(minutesSinceMidnight) + ':00';
+  try {
+    // Use Intl to figure out the offset
+    var testDate = new Date(localStr + 'Z');
+    var formatter = new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: 'numeric', hour12: false, timeZoneName: 'shortOffset' });
+    // Approximate: just return the local string with a note for the LLM
+    return localStr + ' [' + tz + ']';
+  } catch (e) {
+    return localStr + 'Z';
+  }
+}
+/* ============================================================
+   AI TERMINAL — VS Code-style terminal for EfficientHypothesis
+   ============================================================ */
+
+var chatHoverMode = false;    // whether widget floats over other tabs
+var chatConversations = [{ id: 1, name: 'Terminal 1', messages: [], phase: 'input', plan: null }];
+var chatActiveConv = 0;       // index into chatConversations
+var chatNextId = 2;
+var chatWidgetDrag = null;    // drag state
+
+// --- Render AI as full tab ---
+
+function renderAITab() {
+  var content = document.getElementById('app-content');
+  content.innerHTML = '';
+  var terminal = buildTerminalElement('tab');
+  terminal.id = 'ai-terminal-tab';
+  terminal.style.width = '100%';
+  terminal.style.height = '100%';
+  content.appendChild(terminal);
+  focusChatInput();
+}
+
+// --- Render AI as floating widget ---
+
+function renderAIWidget() {
+  var existing = document.getElementById('ai-widget');
+  if (existing) existing.remove();
+
+  var widget = document.createElement('div');
+  widget.id = 'ai-widget';
+  widget.className = 'ai-widget';
+  // Default: bottom center, narrow
+  widget.style.width = '620px';
+  widget.style.height = '320px';
+  widget.style.left = 'calc(50% + 120px - 310px)'; // offset for sidebar
+  widget.style.bottom = '24px';
+
+  var terminal = buildTerminalElement('widget');
+  widget.appendChild(terminal);
+
+  // Resize handle
+  var resizer = document.createElement('div');
+  resizer.className = 'ai-widget-resizer';
+  resizer.addEventListener('mousedown', startResize);
+  widget.appendChild(resizer);
+
+  document.body.appendChild(widget);
+
+  // Make draggable via title bar
+  var titlebar = widget.querySelector('.ai-term-titlebar');
+  titlebar.addEventListener('mousedown', startDrag);
+
+  focusChatInput();
+}
+
+function removeAIWidget() {
+  var w = document.getElementById('ai-widget');
+  if (w) w.remove();
+}
+
+// --- Build terminal DOM ---
+
+function buildTerminalElement(mode) {
+  var conv = chatConversations[chatActiveConv];
+  var wrap = document.createElement('div');
+  wrap.className = 'ai-term';
+
+  // Title bar with tabs
+  var titlebar = document.createElement('div');
+  titlebar.className = 'ai-term-titlebar';
+
+  var tabs = document.createElement('div');
+  tabs.className = 'ai-term-tabs';
+  for (var i = 0; i < chatConversations.length; i++) {
+    var tab = document.createElement('div');
+    tab.className = 'ai-term-tab' + (i === chatActiveConv ? ' active' : '');
+    tab.dataset.idx = i;
+    tab.innerHTML = '<span class="ai-term-tab-name">' + escapeHtml(chatConversations[i].name) + '</span>';
+    if (chatConversations.length > 1) {
+      tab.innerHTML += '<span class="ai-term-tab-close" data-idx="' + i + '">x</span>';
+    }
+    tab.addEventListener('click', function(e) {
+      if (e.target.classList.contains('ai-term-tab-close')) {
+        closeConversation(parseInt(e.target.dataset.idx));
+      } else {
+        switchConversation(parseInt(this.dataset.idx));
+      }
+    });
+    tabs.appendChild(tab);
+  }
+  // + button for new conversation
+  if (chatConversations.length < 10) {
+    var addBtn = document.createElement('div');
+    addBtn.className = 'ai-term-tab-add';
+    addBtn.textContent = '+';
+    addBtn.title = 'New conversation';
+    addBtn.addEventListener('click', newConversation);
+    tabs.appendChild(addBtn);
+  }
+  titlebar.appendChild(tabs);
+
+  // Right side: audio button (placeholder) + minimize
+  var controls = document.createElement('div');
+  controls.className = 'ai-term-controls';
+  controls.innerHTML =
+    (mode === 'widget' ? '<button class="ai-term-ctrl-btn" onclick="toggleHoverMode()" title="Minimize"><span class="material-symbols-outlined" style="font-size:16px">minimize</span></button>' : '');
+  titlebar.appendChild(controls);
+  wrap.appendChild(titlebar);
+
+  // Messages area
+  var msgArea = document.createElement('div');
+  msgArea.className = 'ai-term-messages';
+  msgArea.id = 'ai-term-messages';
+  renderTermMessages(msgArea, conv);
+  wrap.appendChild(msgArea);
+
+  // Action buttons (shown during confirming phase)
+  var actionsBar = document.createElement('div');
+  actionsBar.className = 'ai-term-actions';
+  actionsBar.id = 'ai-term-actions';
+  wrap.appendChild(actionsBar);
+
+  // Input row
+  var inputRow = document.createElement('div');
+  inputRow.className = 'ai-term-input-row';
+  inputRow.innerHTML =
+    '<span class="ai-term-prompt">&gt;</span>' +
+    '<input type="text" class="ai-term-input" id="ai-term-input" autocomplete="off" ' +
+    'placeholder="I can help you manage your tasks, schedules, and more. Type a request or press / anytime." ' +
+    'onkeydown="chatInputKeydown(event)">' +
+    '<button class="ai-term-send ai-term-mic" title="Voice input (coming soon)" disabled><span class="material-symbols-outlined" style="font-size:18px">mic</span></button>' +
+    '<button class="ai-term-send" onclick="sendChatMessage()" title="Send"><span class="material-symbols-outlined" style="font-size:18px">send</span></button>';
+  wrap.appendChild(inputRow);
+
+  updateTermActions(actionsBar, conv);
+  return wrap;
+}
+
+// --- Render messages ---
+
+function renderTermMessages(container, conv) {
+  container.innerHTML = '';
+  for (var i = 0; i < conv.messages.length; i++) {
+    var msg = conv.messages[i];
+    var line = document.createElement('div');
+    line.className = 'ai-term-line';
+
+    if (msg.role === 'user') {
+      line.innerHTML = '<span class="ai-term-prompt">&gt;</span> <span class="ai-term-user-text">' + escapeHtml(msg.content) + '</span>';
+    } else {
+      line.innerHTML = formatTermOutput(msg.content);
+    }
+    container.appendChild(line);
+  }
+  // Loading indicator
+  var loading = document.createElement('div');
+  loading.id = 'ai-term-loading';
+  loading.className = 'ai-term-loading';
+  loading.style.display = 'none';
+  loading.innerHTML = '<span class="ai-term-prompt">&gt;</span> <span class="ai-term-dots">...</span>';
+  container.appendChild(loading);
+
+  container.scrollTop = container.scrollHeight;
+}
+
+function formatTermOutput(text) {
+  var lines = text.split('\n');
+  var result = [];
+  var inJson = false;
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i];
+    if (line.trim().startsWith('```json')) { inJson = true; continue; }
+    if (line.trim() === '```' && inJson) { inJson = false; continue; }
+    if (inJson) continue;
+
+    if (line.match(/^\+\s/)) {
+      result.push('<span class="ai-term-create">' + escapeHtml(line) + '</span>');
+    } else if (line.match(/^~\s/)) {
+      result.push('<span class="ai-term-update">' + escapeHtml(line) + '</span>');
+    } else if (line.match(/^x\s/)) {
+      result.push('<span class="ai-term-delete">' + escapeHtml(line) + '</span>');
+    } else if (line.match(/^\s+\.\.\s*[+~x]\s/)) {
+      var cls = line.indexOf('+ ') >= 0 ? 'ai-term-create' : line.indexOf('~ ') >= 0 ? 'ai-term-update' : 'ai-term-delete';
+      result.push('<span class="' + cls + '">' + escapeHtml(line) + '</span>');
+    } else {
+      result.push('<span class="ai-term-text">' + escapeHtml(line) + '</span>');
+    }
+  }
+  return result.join('<br>');
+}
+
+function escapeHtml(text) {
+  var d = document.createElement('div');
+  d.textContent = text;
+  return d.innerHTML;
+}
+
+// --- Actions bar ---
+
+function updateTermActions(container, conv) {
+  if (!container) container = document.getElementById('ai-term-actions');
+  if (!container) return;
+  if (!conv) conv = chatConversations[chatActiveConv];
+
+  if (conv.phase === 'confirming') {
+    container.innerHTML =
+      '<button class="ai-term-action-btn ai-term-btn-update" onclick="chatAction(\'update\')">update</button>' +
+      '<button class="ai-term-action-btn ai-term-btn-talk" onclick="chatAction(\'talk\')">talk</button>' +
+      '<button class="ai-term-action-btn ai-term-btn-continue" onclick="chatAction(\'continue\')">continue</button>';
+    container.style.display = 'flex';
+  } else if (conv.phase === 'done') {
+    container.innerHTML =
+      '<button class="ai-term-action-btn ai-term-btn-thumbsup" onclick="chatFeedback(true)"><span class="material-symbols-outlined" style="font-size:16px">thumb_up</span></button>' +
+      '<button class="ai-term-action-btn ai-term-btn-thumbsdown" onclick="chatFeedback(false)"><span class="material-symbols-outlined" style="font-size:16px">thumb_down</span></button>';
+    container.style.display = 'flex';
+  } else if (conv.phase === 'executing') {
+    container.innerHTML = '<span class="ai-term-text" style="padding:4px 8px">executing...</span>';
+    container.style.display = 'flex';
+  } else {
+    container.style.display = 'none';
+  }
+}
+
+// --- Send message ---
+
+function sendChatMessage() {
+  var input = document.getElementById('ai-term-input');
+  if (!input) return;
+  var text = input.value.trim();
+  if (!text) return;
+
+  var conv = chatConversations[chatActiveConv];
+  input.value = '';
+  conv.messages.push({ role: 'user', content: text });
+  conv.phase = 'planning';
+  refreshTerminal();
+  showTermLoading(true);
+
+  var processedMessages = conv.messages.map(function(msg) {
+    if (msg.role === 'user') {
+      return { role: msg.role, content: preprocessTimeExpressions(msg.content) };
+    }
+    return msg;
+  });
+
+  fetch('/api/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ messages: processedMessages, timezone: (typeof prodUserTimezone !== 'undefined' && prodUserTimezone) || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC' }),
+  })
+    .then(function(r) {
+      if (!r.ok) return r.json().then(function(d) { throw new Error(d.error || 'Chat failed'); });
+      return r.json();
+    })
+    .then(function(data) {
+      showTermLoading(false);
+      var response = data.response || '';
+      var jsonMatch = response.match(/```json\s*([\s\S]*?)```/);
+      if (jsonMatch) {
+        try {
+          conv.plan = JSON.parse(jsonMatch[1]);
+          conv.phase = 'confirming';
+        } catch (e) {
+          conv.plan = null;
+          conv.phase = 'input';
+        }
+      } else {
+        conv.phase = 'input';
+      }
+      conv.messages.push({ role: 'assistant', content: response });
+      refreshTerminal();
+    })
+    .catch(function(err) {
+      showTermLoading(false);
+      conv.messages.push({ role: 'assistant', content: 'Error: ' + err.message });
+      conv.phase = 'input';
+      refreshTerminal();
+    });
+}
+
+// --- Confirmation flow ---
+
+function chatAction(action) {
+  var conv = chatConversations[chatActiveConv];
+  var input = document.getElementById('ai-term-input');
+
+  if (action === 'continue') {
+    // continue = thumbs up
+    chatFeedbackSilent(true);
+    conv.phase = 'executing';
+    conv.messages.push({ role: 'user', content: '[continue]' });
+    refreshTerminal();
+    executeChatPlan();
+  } else if (action === 'update' || action === 'talk') {
+    // update/talk = thumbs down
+    chatFeedbackSilent(false);
+    var text = input ? input.value.trim() : '';
+    if (!text) { if (input) input.focus(); return; }
+    input.value = '';
+    if (action === 'talk') conv.plan = null;
+    conv.messages.push({ role: 'user', content: '[' + action + '] ' + text });
+    conv.phase = 'planning';
+    refreshTerminal();
+    showTermLoading(true);
+
+    var processedMessages = conv.messages.map(function(msg) {
+      if (msg.role === 'user') return { role: msg.role, content: preprocessTimeExpressions(msg.content) };
+      return msg;
+    });
+
+    fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages: processedMessages, timezone: (typeof prodUserTimezone !== 'undefined' && prodUserTimezone) || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC' }),
+    })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        showTermLoading(false);
+        var response = data.response || '';
+        var jsonMatch = response.match(/```json\s*([\s\S]*?)```/);
+        if (jsonMatch) {
+          try { conv.plan = JSON.parse(jsonMatch[1]); conv.phase = 'confirming'; }
+          catch (e) { conv.phase = 'input'; }
+        } else { conv.phase = 'input'; }
+        conv.messages.push({ role: 'assistant', content: response });
+        refreshTerminal();
+      })
+      .catch(function(err) {
+        showTermLoading(false);
+        conv.messages.push({ role: 'assistant', content: 'Error: ' + err.message });
+        conv.phase = 'input';
+        refreshTerminal();
+      });
+  }
+}
+
+function executeChatPlan() {
+  var conv = chatConversations[chatActiveConv];
+  if (!conv.plan) return;
+  fetch('/api/chat/execute', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ plan: conv.plan }),
+  })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.ok) {
+        conv.messages.push({ role: 'assistant', content: 'Done. ' + data.executed + ' operation(s) completed.' });
+      } else {
+        var errors = (data.results || []).filter(function(r) { return !r.ok; });
+        conv.messages.push({ role: 'assistant', content: 'Completed with ' + errors.length + ' error(s).' });
+      }
+      conv.plan = null;
+      conv.phase = 'done';
+      refreshTerminal();
+      if (typeof fetchAllData === 'function') fetchAllData();
+    })
+    .catch(function(err) {
+      conv.messages.push({ role: 'assistant', content: 'Execution failed: ' + err.message });
+      conv.phase = 'confirming';
+      refreshTerminal();
+    });
+}
+
+// --- Feedback ---
+
+function chatFeedback(positive) {
+  chatFeedbackSilent(positive);
+  // Visual: disable buttons
+  var btns = document.querySelectorAll('.ai-term-btn-thumbsup, .ai-term-btn-thumbsdown');
+  btns.forEach(function(b) { b.disabled = true; b.style.opacity = '0.4'; });
+  var conv = chatConversations[chatActiveConv];
+  conv.phase = 'input';
+  setTimeout(function() { refreshTerminal(); }, 600);
+}
+
+function chatFeedbackSilent(positive) {
+  var conv = chatConversations[chatActiveConv];
+  var lastAssistant = '';
+  for (var i = conv.messages.length - 1; i >= 0; i--) {
+    if (conv.messages[i].role === 'assistant') { lastAssistant = conv.messages[i].content; break; }
+  }
+  fetch('/api/chat/feedback', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ messages: conv.messages, response: lastAssistant, positive: positive }),
+  }).catch(function() {});
+}
+
+// --- Conversation management ---
+
+function newConversation() {
+  if (chatConversations.length >= 10) return;
+  chatConversations.push({ id: chatNextId++, name: 'Terminal ' + chatNextId, messages: [], phase: 'input', plan: null });
+  chatActiveConv = chatConversations.length - 1;
+  refreshTerminal();
+}
+
+function switchConversation(idx) {
+  if (idx < 0 || idx >= chatConversations.length) return;
+  chatActiveConv = idx;
+  refreshTerminal();
+}
+
+function closeConversation(idx) {
+  if (chatConversations.length <= 1) return;
+  chatConversations.splice(idx, 1);
+  if (chatActiveConv >= chatConversations.length) chatActiveConv = chatConversations.length - 1;
+  refreshTerminal();
+}
+
+// --- Hover mode ---
+
+function toggleHoverMode() {
+  chatHoverMode = !chatHoverMode;
+  if (chatHoverMode) {
+    // If on AI tab, show homescreen behind the widget
+    if (currentPage === 'ai') {
+      var content = document.getElementById('app-content');
+      if (content) content.innerHTML = renderHomescreenContent();
+    }
+    renderAIWidget();
+  } else {
+    removeAIWidget();
+    // If on AI tab, re-render as full terminal
+    if (currentPage === 'ai') {
+      renderAITab();
+    }
+  }
+  updateAISubtab();
 }
 
 function updateAISubtab() {
   var subtabs = document.querySelector('.sidebar-subtabs[data-parent="ai"]');
   if (!subtabs) return;
   subtabs.innerHTML =
-    '<a class="sidebar-subtab' + (aiWidgetMode ? ' active' : '') + '" onclick="toggleAIWidgetMode(this)">' +
-    'Widget<span class="material-symbols-outlined subtab-check">' + (aiWidgetMode ? 'check_box' : 'check_box_outline_blank') + '</span></a>';
+    '<a class="sidebar-subtab' + (chatHoverMode ? ' active' : '') + '" onclick="toggleHoverMode()">' +
+    'Hover<span class="material-symbols-outlined subtab-check">' + (chatHoverMode ? 'check_box' : 'check_box_outline_blank') + '</span></a>';
   subtabs.classList.add('expanded');
 }
 
-window.toggleAIWidgetMode = function(el) {
-  aiWidgetMode = !aiWidgetMode;
-  if (aiWidgetMode) {
-    aiWidgetVisible = true;
-    renderAIWidget();
-    // Go to previous page (home) so terminal is behind widget
-    navigateTo('home');
-  } else {
-    removeAIWidget();
-    aiWidgetVisible = false;
-    navigateTo('ai');
-  }
-};
+// --- Keyboard shortcuts ---
 
-function formatAIMessage(text, opts) {
-  opts = opts || {};
-  // Extract JSON plan before escaping (hidden from display, stored for confirm)
-  var jsonPlan = null;
-  var display = text.replace(/```json\n?([\s\S]*?)```/g, function(m, code) {
-    try { jsonPlan = JSON.parse(code.trim()); } catch(e) {}
-    return ''; // hide JSON from display
-  });
-  // Remove other code blocks too
-  display = display.replace(/```(\w*)\n?([\s\S]*?)```/g, '');
-  // Trim trailing whitespace/newlines left after removal
-  display = display.replace(/\n{3,}/g, '\n\n').trim();
-  // Escape HTML
-  var s = display.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  // Render inline `code`
-  s = s.replace(/`([^`]+)`/g, '<code class="ai-inline-code">$1</code>');
-  // Render **bold**
-  s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-  // Line breaks
-  s = s.replace(/\n/g, '<br>');
-  if (opts.returnPlan) return { html: s, plan: jsonPlan };
-  return s;
-}
-
-function renderShellMessages(shell) {
-  var html = '';
-  shell.history.forEach(function(msg, idx) {
-    if (msg.role === 'user') {
-      html += '<div class="ai-msg ai-msg-user"><span class="ai-msg-prefix">&gt; </span>' + formatAIMessage(msg.content) + '</div>';
-    } else {
-      var result = formatAIMessage(msg.content, { returnPlan: true });
-      html += '<div class="ai-msg ai-msg-assistant">' + result.html;
-      // Show Confirm button if there's a plan and this is the last assistant message and not yet confirmed
-      var isLast = true;
-      for (var j = idx + 1; j < shell.history.length; j++) {
-        if (shell.history[j].role === 'assistant') { isLast = false; break; }
-      }
-      if (result.plan && result.plan.length > 0 && isLast && !msg.confirmed) {
-        html += '<div class="ai-confirm-wrap"><button class="ai-confirm-btn" onclick="confirmAIPlan(' + shell.id + ',' + idx + ')">Confirm</button></div>';
-      }
-      if (msg.confirmed) {
-        html += '<div class="ai-confirmed-label">Confirmed</div>';
-      }
-      html += '</div>';
-    }
-  });
-  return html;
-}
-
-function confirmAIPlan(shellId, msgIdx) {
-  var shell = aiShells.find(function(s) { return s.id === shellId; });
-  if (!shell) return;
-  var msg = shell.history[msgIdx];
-  if (!msg || msg.confirmed) return;
-
-  var result = formatAIMessage(msg.content, { returnPlan: true });
-  if (!result.plan || result.plan.length === 0) return;
-
-  msg.confirmed = true;
-
-  // Execute each operation in the plan
-  var promises = result.plan.map(function(op) {
-    var action = op.action || '';
-    var data = op.data || {};
-    var target = op.target || {};
-
-    if (action === 'create_task') {
-      return fetch('/api/tasks', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) });
-    } else if (action === 'update_task') {
-      return fetch('/api/tasks/' + target.id, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) });
-    } else if (action === 'delete_task') {
-      return fetch('/api/tasks/' + target.id, { method: 'DELETE' });
-    } else if (action === 'create_action') {
-      return fetch('/api/actions', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) });
-    } else if (action === 'update_action') {
-      return fetch('/api/actions/' + target.id, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) });
-    } else if (action === 'delete_action') {
-      return fetch('/api/actions/' + target.id, { method: 'DELETE' });
-    } else if (action === 'create_routine') {
-      return fetch('/api/routines', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) });
-    } else if (action === 'update_routine') {
-      return fetch('/api/routines/' + target.id, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) });
-    } else if (action === 'delete_routine') {
-      return fetch('/api/routines/' + target.id, { method: 'DELETE' });
-    } else if (action === 'create_schedule') {
-      return fetch('/api/schedules', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) });
-    } else if (action === 'update_schedule') {
-      return fetch('/api/schedules/' + target.id, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) });
-    } else if (action === 'delete_schedule') {
-      return fetch('/api/schedules/' + target.id, { method: 'DELETE' });
-    } else if (action === 'create_note') {
-      return fetch('/api/notes', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) });
-    } else if (action === 'update_note') {
-      return fetch('/api/notes/' + target.id, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) });
-    } else if (action === 'delete_note') {
-      return fetch('/api/notes/' + target.id, { method: 'DELETE' });
-    } else if (action === 'create_group') {
-      return fetch('/api/groups', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) });
-    } else if (action === 'update_group') {
-      return fetch('/api/groups', { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) });
-    } else if (action === 'delete_group') {
-      return fetch('/api/groups', { method: 'DELETE', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) });
-    } else if (action === 'create_goal') {
-      return fetch('/api/goals', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) });
-    } else if (action === 'log_goal') {
-      var goalName = data.name || target.name || '';
-      return fetch('/api/goals/' + encodeURIComponent(goalName) + '/data', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) });
-    } else if (action === 'create_timelog') {
-      return fetch('/api/timelogs', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) });
-    } else if (action === 'update_timelog') {
-      return fetch('/api/timelogs/' + target.id, { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data) });
-    } else if (action === 'delete_timelog') {
-      return fetch('/api/timelogs/' + target.id, { method: 'DELETE' });
-    }
-    return Promise.resolve();
-  });
-
-  Promise.all(promises).then(function() {
-    // Refresh data so calendar/tasks update
-    fetchAllData().then(function() {
-      renderCalendarFromCache();
-      if (currentPage === 'tasks') navigateTo('tasks', false);
-      if (currentPage === 'projects') navigateTo('projects', false);
-    });
-  });
-
-  // Re-render messages to show "Confirmed" label
-  var containerId = document.getElementById('ai-widget-content') ? 'ai-widget-content' : 'ai-terminal';
-  refreshAIMessages(containerId);
-}
-
-function buildTabBar(containerId) {
-  var html = '<div class="ai-tab-bar">';
-  aiShells.forEach(function(shell) {
-    var active = shell.id === aiActiveShellId ? ' ai-shell-tab-active' : '';
-    html += '<div class="ai-shell-tab' + active + '" data-shell-id="' + shell.id + '" onclick="switchAIShell(' + shell.id + ', \'' + containerId + '\')">';
-    html += '<span class="ai-shell-tab-label">' + shell.name + '</span>';
-    if (aiShells.length > 1) {
-      html += '<span class="ai-shell-tab-close" onclick="event.stopPropagation();closeAIShell(' + shell.id + ', \'' + containerId + '\')">&times;</span>';
-    }
-    html += '</div>';
-  });
-  html += '<div class="ai-shell-tab ai-shell-tab-add" onclick="addAIShell(\'' + containerId + '\')">+</div>';
-  html += '</div>';
-  return html;
-}
-
-function buildMessages(containerId) {
-  var shell = getActiveShell();
-  return '<div class="ai-messages" id="' + containerId + '-messages">' + renderShellMessages(shell) + '</div>';
-}
-
-function buildInput(containerId) {
-  return '<div class="ai-input-area">' +
-    '<textarea class="ai-input" id="' + containerId + '-input" placeholder="Type a message..." rows="1"></textarea>' +
-    '</div>';
-}
-
-function attachInputHandler(containerId) {
-  var input = document.getElementById(containerId + '-input');
-  if (!input) return;
-  input.addEventListener('keydown', function(e) {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      var msg = input.value.trim();
-      if (!msg) return;
-      sendAIMessage(msg, containerId);
-      input.value = '';
-      autoResizeInput(input);
-    }
-  });
-  input.addEventListener('input', function() { autoResizeInput(input); });
-  input.focus();
-}
-
-function autoResizeInput(el) {
-  el.style.height = 'auto';
-  el.style.height = Math.min(el.scrollHeight, 120) + 'px';
-}
-
-function scrollToBottom(containerId) {
-  var el = document.getElementById(containerId + '-messages');
-  if (el) el.scrollTop = el.scrollHeight;
-}
-
-function sendAIMessage(text, containerId) {
-  var shell = getActiveShell();
-  shell.history.push({ role: 'user', content: text });
-  refreshAIMessages(containerId);
-  scrollToBottom(containerId);
-
-  // Show loading
-  var messagesEl = document.getElementById(containerId + '-messages');
-  if (messagesEl) {
-    messagesEl.insertAdjacentHTML('beforeend', '<div class="ai-msg ai-msg-loading" id="' + containerId + '-loading"><span class="ai-loading-dots"><span>.</span><span>.</span><span>.</span></span></div>');
-    scrollToBottom(containerId);
-  }
-
-  // Build history for API (only role + content)
-  var apiHistory = shell.history.map(function(m) { return { role: m.role, content: m.content }; });
-
-  fetch('/api/chat', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message: text, history: apiHistory.slice(0, -1) })
-  })
-  .then(function(r) { return r.json(); })
-  .then(function(data) {
-    var loadingEl = document.getElementById(containerId + '-loading');
-    if (loadingEl) loadingEl.remove();
-    var responseText = data.response || data.error || 'No response.';
-    shell.history.push({ role: 'assistant', content: responseText });
-    refreshAIMessages(containerId);
-    scrollToBottom(containerId);
-  })
-  .catch(function() {
-    var loadingEl = document.getElementById(containerId + '-loading');
-    if (loadingEl) loadingEl.remove();
-    shell.history.push({ role: 'assistant', content: 'Error: Failed to get response.' });
-    refreshAIMessages(containerId);
-    scrollToBottom(containerId);
-  });
-}
-
-function refreshAIMessages(containerId) {
-  var messagesEl = document.getElementById(containerId + '-messages');
-  if (!messagesEl) return;
-  var shell = getActiveShell();
-  messagesEl.innerHTML = renderShellMessages(shell);
-}
-
-function refreshAITabs(containerId) {
-  var container = document.getElementById(containerId);
-  if (!container) return;
-  var tabBar = container.querySelector('.ai-tab-bar');
-  if (tabBar) tabBar.outerHTML = buildTabBar(containerId);
-  var tabsCol = container.querySelector('.ai-widget-tabs-col');
-  if (tabsCol) tabsCol.innerHTML = buildWidgetTabsCol();
-}
-
-window.switchAIShell = function(shellId, containerId) {
-  aiActiveShellId = shellId;
-  refreshAITabs(containerId);
-  refreshAIMessages(containerId);
-  scrollToBottom(containerId);
-  var input = document.getElementById(containerId + '-input');
-  if (input) input.focus();
-};
-
-window.addAIShell = function(containerId) {
-  var shell = { id: aiNextShellId++, name: 'Shell ' + (aiNextShellId - 1), history: [] };
-  aiShells.push(shell);
-  aiActiveShellId = shell.id;
-  refreshAITabs(containerId);
-  refreshAIMessages(containerId);
-  var input = document.getElementById(containerId + '-input');
-  if (input) input.focus();
-};
-
-window.closeAIShell = function(shellId, containerId) {
-  if (aiShells.length <= 1) return;
-  aiShells = aiShells.filter(function(s) { return s.id !== shellId; });
-  if (aiActiveShellId === shellId) aiActiveShellId = aiShells[0].id;
-  refreshAITabs(containerId);
-  refreshAIMessages(containerId);
-};
-
-// --- Full-screen terminal ---
-function renderAIContent(contentEl) {
-  if (aiWidgetMode) {
-    // If widget mode is on, show a message and ensure widget is visible
-    contentEl.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#5f6368;font-size:1rem;">AI chat is in widget mode. Uncheck Widget in the sidebar to return to full-screen.</div>';
-    aiWidgetVisible = true;
-    renderAIWidget();
-    return;
-  }
-  removeAIWidget();
-  var id = 'ai-terminal';
-  contentEl.innerHTML =
-    '<div class="ai-terminal" id="' + id + '">' +
-    buildTabBar(id) +
-    buildMessages(id) +
-    buildInput(id) +
-    '</div>';
-  attachInputHandler(id);
-  scrollToBottom(id);
-}
-
-// --- Widget ---
-function renderAIWidget() {
-  removeAIWidget();
-  if (!aiWidgetVisible) return;
-  var w = aiWidgetPos ? aiWidgetPos.w : 480;
-  var h = aiWidgetPos ? aiWidgetPos.h : 340;
-  var x = aiWidgetPos ? aiWidgetPos.x : Math.max(0, (window.innerWidth - w) / 2);
-  var y = aiWidgetPos ? aiWidgetPos.y : Math.max(0, window.innerHeight - h - 40);
-
-  var widget = document.createElement('div');
-  widget.id = 'ai-widget';
-  widget.className = 'ai-widget';
-  widget.style.left = x + 'px';
-  widget.style.top = y + 'px';
-  widget.style.width = w + 'px';
-  widget.style.height = h + 'px';
-
-  var id = 'ai-widget-content';
-  widget.innerHTML =
-    '<div class="ai-widget-header" id="ai-widget-header">' +
-    '<span class="ai-widget-title">AI Chat</span>' +
-    '<span class="ai-widget-close" onclick="hideAIWidget()">&times;</span>' +
-    '</div>' +
-    '<div class="ai-widget-body" id="' + id + '">' +
-    '<div class="ai-widget-tabs-col">' + buildWidgetTabsCol() + '</div>' +
-    '<div class="ai-widget-main">' +
-    buildMessages(id) +
-    buildInput(id) +
-    '</div>' +
-    '</div>';
-
-  document.body.appendChild(widget);
-  attachInputHandler(id);
-  scrollToBottom(id);
-  makeDraggable(widget, document.getElementById('ai-widget-header'));
-  makeResizable(widget);
-}
-
-function buildWidgetTabsCol() {
-  var html = '<div class="ai-widget-tab-add" onclick="addAIShell(\'ai-widget-content\')">+</div>';
-  aiShells.forEach(function(shell) {
-    var active = shell.id === aiActiveShellId ? ' ai-wtab-active' : '';
-    html += '<div class="ai-wtab' + active + '" onclick="switchAIShell(' + shell.id + ', \'ai-widget-content\')" title="' + shell.name + '">';
-    html += shell.name.charAt(0).toUpperCase();
-    if (aiShells.length > 1) {
-      html += '<span class="ai-wtab-close" onclick="event.stopPropagation();closeAIShell(' + shell.id + ', \'ai-widget-content\')">&times;</span>';
-    }
-    html += '</div>';
-  });
-  return html;
-}
-
-function removeAIWidget() {
-  var el = document.getElementById('ai-widget');
-  if (el) {
-    // Save position
-    aiWidgetPos = {
-      x: parseInt(el.style.left) || 0,
-      y: parseInt(el.style.top) || 0,
-      w: el.offsetWidth,
-      h: el.offsetHeight
-    };
-    el.remove();
-  }
-}
-
-window.hideAIWidget = function() {
-  aiWidgetVisible = false;
-  removeAIWidget();
-};
-
-function makeDraggable(el, handle) {
-  var startX, startY, origX, origY;
-  handle.addEventListener('mousedown', function(e) {
-    e.preventDefault();
-    startX = e.clientX; startY = e.clientY;
-    origX = parseInt(el.style.left) || 0;
-    origY = parseInt(el.style.top) || 0;
-    function onMove(e2) {
-      el.style.left = (origX + e2.clientX - startX) + 'px';
-      el.style.top = (origY + e2.clientY - startY) + 'px';
-    }
-    function onUp() {
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
-    }
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
-  });
-}
-
-function makeResizable(el) {
-  var grip = document.createElement('div');
-  grip.className = 'ai-widget-resize-grip';
-  el.appendChild(grip);
-  var startX, startY, startW, startH;
-  grip.addEventListener('mousedown', function(e) {
-    e.preventDefault(); e.stopPropagation();
-    startX = e.clientX; startY = e.clientY;
-    startW = el.offsetWidth; startH = el.offsetHeight;
-    function onMove(e2) {
-      el.style.width = Math.max(300, startW + e2.clientX - startX) + 'px';
-      el.style.height = Math.max(200, startH + e2.clientY - startY) + 'px';
-    }
-    function onUp() {
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
-    }
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
-  });
-}
-
-// --- Esc key handler ---
 document.addEventListener('keydown', function(e) {
-  if (e.key !== 'Escape') return;
-  var tag = (e.target.tagName || '').toLowerCase();
-
-  // If widget is visible and we're NOT on AI tab, hide widget
-  if (aiWidgetVisible && currentPage !== 'ai') {
-    hideAIWidget();
+  if (e.key === '/' && !isInputFocused()) {
     e.preventDefault();
-    return;
+    if (chatHoverMode) {
+      focusChatInput();
+    } else {
+      // Activate hover mode on current tab instead of navigating away
+      chatHoverMode = true;
+      renderAIWidget();
+      updateAISubtab();
+    }
   }
-  // On AI tab with widget mode on: turn off widget mode, show full terminal
-  if (currentPage === 'ai' && aiWidgetMode) {
-    aiWidgetMode = false;
-    aiWidgetVisible = false;
-    removeAIWidget();
-    navigateTo('ai');
-    e.preventDefault();
-    return;
-  }
-  // On AI tab without widget: go home
-  if (currentPage === 'ai' && !aiWidgetMode) {
-    navigateTo('home');
-    e.preventDefault();
-    return;
+  if (e.key === 'Escape') {
+    var input = document.getElementById('ai-term-input');
+    if (input) input.blur();
+    if (chatHoverMode) {
+      // Close widget, stay on current page
+      chatHoverMode = false;
+      removeAIWidget();
+      updateAISubtab();
+      // If on AI tab, re-render as full terminal
+      if (currentPage === 'ai') {
+        renderAITab();
+      }
+    } else if (currentPage === 'ai') {
+      navigateTo('home');
+    }
   }
 });
 
-// --- "/" shortcut ---
-document.addEventListener('keydown', function(e) {
-  if (e.key !== '/') return;
-  var tag = (e.target.tagName || '').toLowerCase();
-  if (tag === 'input' || tag === 'textarea' || tag === 'select' || e.target.isContentEditable) return;
-  e.preventDefault();
-  // Always toggle widget on current page — don't navigate away
-  aiWidgetMode = true;
-  aiWidgetVisible = !aiWidgetVisible;
-  if (aiWidgetVisible) {
-    renderAIWidget();
-  } else {
-    removeAIWidget();
+function isInputFocused() {
+  var el = document.activeElement;
+  if (!el) return false;
+  var tag = el.tagName.toLowerCase();
+  return tag === 'input' || tag === 'textarea' || tag === 'select' || el.contentEditable === 'true';
+}
+
+function chatInputKeydown(e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    var conv = chatConversations[chatActiveConv];
+    if (conv.phase === 'confirming') {
+      if (document.getElementById('ai-term-input').value.trim()) {
+        chatAction('update');
+      }
+    } else if (conv.phase === 'input' || conv.phase === 'planning') {
+      sendChatMessage();
+    }
   }
-  // Update subtab checkbox if on AI tab
-  if (currentPage === 'ai') updateAISubtab();
-  // Focus the input
+}
+
+// --- Drag & Resize ---
+
+function startDrag(e) {
+  if (e.target.closest('.ai-term-tab') || e.target.closest('.ai-term-ctrl-btn') || e.target.closest('.ai-term-tab-add')) return;
+  var widget = document.getElementById('ai-widget');
+  if (!widget) return;
+  e.preventDefault();
+  var rect = widget.getBoundingClientRect();
+  chatWidgetDrag = { startX: e.clientX, startY: e.clientY, origLeft: rect.left, origTop: rect.top };
+  widget.style.bottom = 'auto';
+  widget.style.right = 'auto';
+  widget.style.left = rect.left + 'px';
+  widget.style.top = rect.top + 'px';
+
+  function onMove(ev) {
+    var dx = ev.clientX - chatWidgetDrag.startX;
+    var dy = ev.clientY - chatWidgetDrag.startY;
+    widget.style.left = (chatWidgetDrag.origLeft + dx) + 'px';
+    widget.style.top = (chatWidgetDrag.origTop + dy) + 'px';
+  }
+  function onUp() {
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+    chatWidgetDrag = null;
+  }
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', onUp);
+}
+
+function startResize(e) {
+  var widget = document.getElementById('ai-widget');
+  if (!widget) return;
+  e.preventDefault();
+  var startW = widget.offsetWidth;
+  var startH = widget.offsetHeight;
+  var startX = e.clientX;
+  var startY = e.clientY;
+
+  function onMove(ev) {
+    var newW = Math.max(400, startW + (ev.clientX - startX));
+    var newH = Math.max(200, startH + (ev.clientY - startY));
+    widget.style.width = newW + 'px';
+    widget.style.height = newH + 'px';
+  }
+  function onUp() {
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+  }
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', onUp);
+}
+
+// --- Helpers ---
+
+function refreshTerminal() {
+  // Re-render wherever the terminal is displayed
+  if (chatHoverMode) {
+    var widget = document.getElementById('ai-widget');
+    if (widget) {
+      // Preserve position and size
+      var savedStyle = {
+        width: widget.style.width,
+        height: widget.style.height,
+        left: widget.style.left,
+        top: widget.style.top,
+        bottom: widget.style.bottom,
+        right: widget.style.right
+      };
+      var oldTerm = widget.querySelector('.ai-term');
+      if (oldTerm) oldTerm.remove();
+      var terminal = buildTerminalElement('widget');
+      widget.insertBefore(terminal, widget.querySelector('.ai-widget-resizer'));
+      // Restore position and size
+      widget.style.width = savedStyle.width;
+      widget.style.height = savedStyle.height;
+      widget.style.left = savedStyle.left;
+      widget.style.top = savedStyle.top;
+      widget.style.bottom = savedStyle.bottom;
+      widget.style.right = savedStyle.right;
+      // Re-attach drag handler
+      var titlebar = widget.querySelector('.ai-term-titlebar');
+      if (titlebar) titlebar.addEventListener('mousedown', startDrag);
+      focusChatInput();
+    }
+  } else if (currentPage === 'ai') {
+    renderAITab();
+  }
+}
+
+function focusChatInput() {
   setTimeout(function() {
-    var input = document.getElementById('ai-widget-content-input');
+    var input = document.getElementById('ai-term-input');
     if (input) input.focus();
   }, 50);
-});
+}
 
+function showTermLoading(show) {
+  var el = document.getElementById('ai-term-loading');
+  if (el) el.style.display = show ? 'flex' : 'none';
+}
+
+function resetChat() {
+  var conv = chatConversations[chatActiveConv];
+  conv.messages = [];
+  conv.plan = null;
+  conv.phase = 'input';
+  refreshTerminal();
+}

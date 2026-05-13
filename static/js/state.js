@@ -1,0 +1,70 @@
+const DEFAULT_COLOR = getComputedStyle(document.documentElement).getPropertyValue('--default-color').trim() || '#000000';
+let currentPage = 'tasks';
+
+let prodUserTimezone = null;
+let prodCalendarMonth = null;
+let prodAllTasks = [];
+let prodRoutines = [];
+let prodDrafts = [];
+let prodGoals = [];
+let prodCalendarData = {};
+let prodOpenDropdownEl = null;
+let weekCalStart = null;
+let showWeekView = false;
+let use24HourTime = false; // default to 12hr (am/pm)
+let weekIntervalHrs = 2; // hours per grid interval (0.5, 1, or 2)
+let weekVisibleCells = 12; // how many interval rows visible on screen (6–48)
+let weekScrollOffset = 0; // which interval row is at the top of the viewport
+let dataLoaded = false;
+let accountCreatedYear = null; // year of account creation (integer)
+let accessibleStartDate = null; // "YYYY-01-01" of creation year
+let accessibleEndDate = null; // "YYYY-12-31" of next year
+let nowLineInterval = null; // interval ID for updating the current-time line
+let prodGroups = []; // group objects [{path, name, color}]
+let prodNotes = []; // note objects [{id, name, date, group, created_at}]
+let prodActions = []; // action objects [{action_id, name, start_datetime, end_datetime, ...}]
+let prodSchedules = []; // schedule template objects [{id, name, start_time, end_time, pattern, ...}]
+let projectsShowCompleted = true; // toggle for showing completed items in projects
+let projectsShowNotes = true; // toggle for showing notes in projects
+let projectsShowEmptyGroups = true; // toggle for showing empty groups in projects
+let projectsViewMode = 'visual'; // 'list' | 'visual'
+let projectsFocusPath = null; // null = root, or a group path like '/SCHOOL'
+let userEmail = null; // populated from session, used as root label
+let monthlyShowNotes = true; // toggle for showing notes on monthly calendar
+let monthlyShowPlanned = false; // toggle for showing planned (incomplete) tasks on monthly calendar
+
+// --- Preferences persistence (localStorage) ---
+function loadPreferences() {
+  try {
+    var saved = localStorage.getItem('eh_preferences');
+    if (!saved) return;
+    var prefs = JSON.parse(saved);
+    if (prefs.projectsShowCompleted !== undefined) projectsShowCompleted = prefs.projectsShowCompleted;
+    if (prefs.projectsShowNotes !== undefined) projectsShowNotes = prefs.projectsShowNotes;
+    if (prefs.projectsShowEmptyGroups !== undefined) projectsShowEmptyGroups = prefs.projectsShowEmptyGroups;
+    if (prefs.projectsViewMode !== undefined) projectsViewMode = prefs.projectsViewMode;
+    if (prefs.projectsFocusPath !== undefined) projectsFocusPath = prefs.projectsFocusPath;
+    if (prefs.monthlyShowNotes !== undefined) monthlyShowNotes = prefs.monthlyShowNotes;
+    if (prefs.monthlyShowPlanned !== undefined) monthlyShowPlanned = prefs.monthlyShowPlanned;
+    if (prefs.use24HourTime !== undefined) use24HourTime = prefs.use24HourTime;
+    if (prefs.weekIntervalHrs !== undefined) weekIntervalHrs = prefs.weekIntervalHrs;
+    if (prefs.weekVisibleCells !== undefined) weekVisibleCells = prefs.weekVisibleCells;
+  } catch(e) {}
+}
+function savePreferences() {
+  try {
+    localStorage.setItem('eh_preferences', JSON.stringify({
+      projectsShowCompleted: projectsShowCompleted,
+      projectsShowNotes: projectsShowNotes,
+      projectsShowEmptyGroups: projectsShowEmptyGroups,
+      projectsViewMode: projectsViewMode,
+      projectsFocusPath: projectsFocusPath,
+      monthlyShowNotes: monthlyShowNotes,
+      monthlyShowPlanned: monthlyShowPlanned,
+      use24HourTime: use24HourTime,
+      weekIntervalHrs: weekIntervalHrs,
+      weekVisibleCells: weekVisibleCells
+    }));
+  } catch(e) {}
+}
+loadPreferences();

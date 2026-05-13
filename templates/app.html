@@ -57,7 +57,7 @@
       </div>
       <div class="sidebar-tab-group">
         <a href="/ai" class="sidebar-btn" data-page="ai" onclick="sidebarNav('ai');return false;">
-          <span class="material-symbols-outlined">smart_toy</span> AI
+          <span class="material-symbols-outlined">terminal</span> AI
         </a>
         <div class="sidebar-subtabs" data-parent="ai"></div>
       </div>
@@ -186,6 +186,6 @@
 
   <!-- Group Modal: dynamically created by createGroupCard() -->
 
-<script src="{{ url_for('static', filename='js/productivity.js') }}"></script>
-<script>initApp('{{ initial_page }}');</script>
+<script src="{{ url_for('static', filename='js/bundle.js') }}"></script>
+<script>initApp('{{ initial_page }}', '{{ user.email }}');</script>
 {% endblock %}
