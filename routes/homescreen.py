@@ -1,6 +1,9 @@
 from flask import Blueprint, request, jsonify, Response
 import json
+import logging
 from config import s3, PRODUCTIVITY_BUCKET, _require_auth
+
+logger = logging.getLogger(__name__)
 
 homescreen_bp = Blueprint('homescreen', __name__)
 
@@ -32,8 +35,14 @@ def api_homescreen_settings_get():
     try:
         s3.head_object(Bucket=PRODUCTIVITY_BUCKET, Key=img_key)
         settings["has_image"] = True
-        settings["image_url"] = "/api/homescreen/image"
-    except Exception:
+        settings["image_url"] = s3.generate_presigned_url(
+            'get_object',
+            Params={'Bucket': PRODUCTIVITY_BUCKET, 'Key': img_key},
+            ExpiresIn=3600,
+        )
+        logger.info("Presigned URL generated, length=%d, first100=%s", len(settings["image_url"]), settings["image_url"][:100])
+    except Exception as e:
+        logger.error("head_object failed: %s", e)
         settings["has_image"] = False
     return jsonify(settings)
 
