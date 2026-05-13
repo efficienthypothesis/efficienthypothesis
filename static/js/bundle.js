@@ -1000,6 +1000,7 @@ function updateProjectsSubtab() {
 
 function toggleProjectsVisualSidebar(el) {
   projectsViewMode = projectsViewMode === 'visual' ? 'list' : 'visual';
+  if (projectsViewMode === 'visual') projectsFocusPath = null;
   savePreferences();
   renderProjects();
   updateProjectsSubtab();
