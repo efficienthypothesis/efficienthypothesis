@@ -276,13 +276,13 @@ function renderSettingsContent() {
       </div></div>
     <div class="settings-section"><div class="settings-section-header"><span class="material-symbols-outlined">folder</span> Projects</div>
       <div class="settings-section-body">
-        <div class="settings-row"><span class="settings-label">Show Completed</span><span class="settings-value"><label class="settings-toggle"><input type="checkbox" ${projectsShowCompleted ? 'checked' : ''} onchange="toggleProjectsCompleted(this.checked);renderSettingsPrefs()"><span class="settings-toggle-slider"></span></label></span></div>
-        <div class="settings-row"><span class="settings-label">Show Notes</span><span class="settings-value"><label class="settings-toggle"><input type="checkbox" ${projectsShowNotes ? 'checked' : ''} onchange="projectsShowNotes=this.checked;savePreferences();renderProjects();renderSettingsPrefs()"><span class="settings-toggle-slider"></span></label></span></div>
+        <div class="settings-row"><span class="settings-label">Completed</span><span class="settings-value"><label class="settings-toggle"><input type="checkbox" ${projectsShowCompleted ? 'checked' : ''} onchange="toggleProjectsCompleted(this.checked);renderSettingsPrefs()"><span class="settings-toggle-slider"></span></label></span></div>
+        <div class="settings-row"><span class="settings-label">Notes</span><span class="settings-value"><label class="settings-toggle"><input type="checkbox" ${projectsShowNotes ? 'checked' : ''} onchange="projectsShowNotes=this.checked;savePreferences();renderProjects();renderSettingsPrefs()"><span class="settings-toggle-slider"></span></label></span></div>
         <div class="settings-row"><span class="settings-label">Show Empty Groups</span><span class="settings-value"><label class="settings-toggle"><input type="checkbox" ${projectsShowEmptyGroups ? 'checked' : ''} onchange="projectsShowEmptyGroups=this.checked;savePreferences();renderProjects();renderSettingsPrefs()"><span class="settings-toggle-slider"></span></label></span></div>
       </div></div>
     <div class="settings-section"><div class="settings-section-header"><span class="material-symbols-outlined">calendar_month</span> Monthly View</div>
       <div class="settings-section-body">
-        <div class="settings-row"><span class="settings-label">Show Notes</span><span class="settings-value"><label class="settings-toggle"><input type="checkbox" ${monthlyShowNotes ? 'checked' : ''} onchange="monthlyShowNotes=this.checked;savePreferences();renderCalendarFromCache();renderSettingsPrefs()"><span class="settings-toggle-slider"></span></label></span></div>
+        <div class="settings-row"><span class="settings-label">Notes</span><span class="settings-value"><label class="settings-toggle"><input type="checkbox" ${monthlyShowNotes ? 'checked' : ''} onchange="monthlyShowNotes=this.checked;savePreferences();renderCalendarFromCache();renderSettingsPrefs()"><span class="settings-toggle-slider"></span></label></span></div>
         <div class="settings-row"><span class="settings-label">Show Planned</span><span class="settings-value"><label class="settings-toggle"><input type="checkbox" ${monthlyShowPlanned ? 'checked' : ''} onchange="monthlyShowPlanned=this.checked;savePreferences();renderCalendarFromCache();renderSettingsPrefs()"><span class="settings-toggle-slider"></span></label></span></div>
       </div></div>
     <div class="settings-section"><div class="settings-section-header"><span class="material-symbols-outlined">wallpaper</span> Homescreen Background</div>
@@ -687,7 +687,7 @@ function updateMonthlySubtab() {
   var label = MONTH_NAMES[parts[1] - 1] + ' ' + parts[0];
   subtabs.innerHTML = '<span class="sidebar-subtab sidebar-subtab-info">' + label + '</span>' +
     '<a class="sidebar-subtab' + (monthlyShowNotes ? ' active' : '') + '" onclick="toggleMonthlyNotesSidebar(this)">' +
-    'Show Notes<span class="material-symbols-outlined subtab-check">' + (monthlyShowNotes ? 'check_box' : 'check_box_outline_blank') + '</span></a>' +
+    'Notes<span class="material-symbols-outlined subtab-check">' + (monthlyShowNotes ? 'check_box' : 'check_box_outline_blank') + '</span></a>' +
     '<a class="sidebar-subtab' + (monthlyShowPlanned ? ' active' : '') + '" onclick="toggleMonthlyPlannedSidebar(this)">' +
     'Show Planned<span class="material-symbols-outlined subtab-check">' + (monthlyShowPlanned ? 'check_box' : 'check_box_outline_blank') + '</span></a>';
   subtabs.classList.add('expanded');
@@ -1032,17 +1032,17 @@ function buildProjectsRulesContent() {
     '</div><div class="rules-popup-body">';
 
   html += '<label class="rules-popup-rule">' +
-    '<span>Show Completed</span>' +
+    '<span>Completed</span>' +
     '<input type="checkbox"' + (projectsShowCompleted ? ' checked' : '') + ' onchange="toggleProjectsCompletedSidebar(this)">' +
     '</label>';
 
   html += '<label class="rules-popup-rule">' +
-    '<span>Show Notes</span>' +
+    '<span>Notes</span>' +
     '<input type="checkbox"' + (projectsShowNotes ? ' checked' : '') + ' onchange="toggleProjectsNotesSidebar(this)">' +
     '</label>';
 
   html += '<label class="rules-popup-rule">' +
-    '<span>Show Empty Folders</span>' +
+    '<span>Empty Folders</span>' +
     '<input type="checkbox"' + (projectsShowEmptyGroups ? ' checked' : '') + ' onchange="toggleProjectsEmptyGroupsSidebar(this)">' +
     '</label>';
 

@@ -116,7 +116,7 @@ function updateMonthlySubtab() {
   var label = MONTH_NAMES[parts[1] - 1] + ' ' + parts[0];
   subtabs.innerHTML = '<span class="sidebar-subtab sidebar-subtab-info">' + label + '</span>' +
     '<a class="sidebar-subtab' + (monthlyShowNotes ? ' active' : '') + '" onclick="toggleMonthlyNotesSidebar(this)">' +
-    'Show Notes<span class="material-symbols-outlined subtab-check">' + (monthlyShowNotes ? 'check_box' : 'check_box_outline_blank') + '</span></a>' +
+    'Notes<span class="material-symbols-outlined subtab-check">' + (monthlyShowNotes ? 'check_box' : 'check_box_outline_blank') + '</span></a>' +
     '<a class="sidebar-subtab' + (monthlyShowPlanned ? ' active' : '') + '" onclick="toggleMonthlyPlannedSidebar(this)">' +
     'Show Planned<span class="material-symbols-outlined subtab-check">' + (monthlyShowPlanned ? 'check_box' : 'check_box_outline_blank') + '</span></a>';
   subtabs.classList.add('expanded');
@@ -464,17 +464,17 @@ function buildProjectsRulesContent() {
     '</div><div class="rules-popup-body">';
 
   html += '<label class="rules-popup-rule">' +
-    '<span>Show Completed</span>' +
+    '<span>Completed</span>' +
     '<input type="checkbox"' + (projectsShowCompleted ? ' checked' : '') + ' onchange="toggleProjectsCompletedSidebar(this)">' +
     '</label>';
 
   html += '<label class="rules-popup-rule">' +
-    '<span>Show Notes</span>' +
+    '<span>Notes</span>' +
     '<input type="checkbox"' + (projectsShowNotes ? ' checked' : '') + ' onchange="toggleProjectsNotesSidebar(this)">' +
     '</label>';
 
   html += '<label class="rules-popup-rule">' +
-    '<span>Show Empty Folders</span>' +
+    '<span>Empty Folders</span>' +
     '<input type="checkbox"' + (projectsShowEmptyGroups ? ' checked' : '') + ' onchange="toggleProjectsEmptyGroupsSidebar(this)">' +
     '</label>';
 
