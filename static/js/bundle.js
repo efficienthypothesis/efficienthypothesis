@@ -1533,7 +1533,7 @@ function renderItemsWithLimit(items, subgroups, limit) {
 
 function renderSubgroupAsItem(entry) {
   var path = escHtml(entry.group.path);
-  return '<div class="group-item group-item-subgroup" ondblclick="projectsZoomIn(\'' + path + '\')">' +
+  return '<div class="group-item group-item-subgroup" ondblclick="event.stopPropagation();projectsZoomIn(\'' + path + '\')">' +
     '<span class="material-symbols-outlined group-item-icon">folder</span>' +
     '<span class="group-item-name">' + escHtml(entry.group.name) + '</span>' +
     '<span class="group-item-due" style="color:#80868b">' + entry._totalItems + '</span></div>';
@@ -1551,7 +1551,7 @@ function renderDepth2Card(node) {
   return '<div class="group-box group-box-d2" data-group-path="' + escHtml(group.path) +
     '" style="--group-color:' + groupColor + ';border-color:' + groupColor +
     ';height:' + VIS_D2_FIXED_H + 'px"' +
-    ' ondblclick="projectsZoomIn(\'' + escHtml(group.path) + '\')"' +
+    ' ondblclick="event.stopPropagation();projectsZoomIn(\'' + escHtml(group.path) + '\')"' +
     ' ondragover="onGroupBoxDragOver(event)" ondragleave="onGroupBoxDragLeave(event)" ondrop="onGroupBoxDrop(event)">' +
     '<div class="group-box-header">' +
     '<span class="group-box-name">' + escHtml(group.name) + '</span>' +
