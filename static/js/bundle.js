@@ -321,38 +321,10 @@ var homescreenSettings = null; // cached {has_image, scale, translateX, translat
 function renderHomescreenContent() {
   // Kick off async load of homescreen settings + image
   if (!homescreenSettings) {
-    fetch('/api/homescreen/settings', { cache: 'no-store' })
-      .then(function(r) {
-        console.log('settings status', r.status);
-        console.log('settings content-type', r.headers.get('content-type'));
-        return r.text();
-      })
-      .then(function(text) {
-        console.log('settings raw length', text.length);
-        console.log('settings raw first 200', text.slice(0, 200));
-        console.log('settings raw last 200', text.slice(-200));
-        var data = JSON.parse(text);
-        homescreenSettings = data;
-        console.log('has_image', data.has_image);
-        console.log('image_url type', typeof data.image_url);
-        console.log('image_url length', data.image_url ? data.image_url.length : null);
-        console.log('image_url first 80', data.image_url ? data.image_url.slice(0, 80) : null);
-        console.log('image_url last 80', data.image_url ? data.image_url.slice(-80) : null);
-        console.log('_debug_image_bytes', data._debug_image_bytes);
-        console.log('_debug_b64_len', data._debug_b64_len);
-        console.log('_debug_sha256', data._debug_sha256);
-        if (data.image_url) {
-          var testImg = new Image();
-          testImg.onload = function() { console.log('test image loaded OK', testImg.naturalWidth, testImg.naturalHeight); };
-          testImg.onerror = function(e) { console.error('test image FAILED to load', e); };
-          testImg.src = data.image_url;
-        }
-        if (currentPage === 'home') applyHomescreenBackground();
-      })
-      .catch(function(err) {
-        console.error('settings fetch/parse failed', err);
-        homescreenSettings = { has_image: false };
-      });
+    fetch('/api/homescreen/settings').then(function(r) { return r.json(); }).then(function(data) {
+      homescreenSettings = data;
+      if (currentPage === 'home') applyHomescreenBackground();
+    }).catch(function() { homescreenSettings = { has_image: false }; });
   } else {
     setTimeout(applyHomescreenBackground, 0);
   }
