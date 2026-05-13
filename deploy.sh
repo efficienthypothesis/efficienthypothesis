@@ -17,7 +17,7 @@ REGION="us-east-2"
 echo "=== Building zip ==="
 rm -f "$ZIP_FILE"
 cd "$SCRIPT_DIR"
-zip -r "$ZIP_FILE" app.py chatbot_system_prompt.txt templates/ static/ -x '*.pyc' '__pycache__/*' '.git/*' '*.sh' '*.md' -q
+zip -r "$ZIP_FILE" app.py config.py chatbot_system_prompt.txt routes/ templates/ static/ -x '*.pyc' '__pycache__/*' '.git/*' '*.sh' '*.md' -q
 echo "Zip size: $(du -h "$ZIP_FILE" | cut -f1)"
 
 echo "=== Uploading to S3 ==="
