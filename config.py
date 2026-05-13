@@ -18,6 +18,7 @@ user_table = dynamodb.Table("Users")
 tasks_table = dynamodb.Table("Tasks")
 actions_table = dynamodb.Table("Actions")
 drafts_table = dynamodb.Table("Drafts")
+timelogs_table = dynamodb.Table("TimeLogs")
 oauth_tokens_table = dynamodb.Table("OAuthTokens")
 
 # === S3 setup ===

@@ -312,7 +312,6 @@ def api_routines_materialize():
                 "name": tpl.get("name", ""),
                 "assign_datetime": utc_assign,
                 "due_datetime": due_dt,
-                "time_log": [],
                 "due_status": "pending",
                 "routine_id": tpl_id,
                 "created_at": datetime.datetime.utcnow().isoformat() + 'Z',

@@ -90,7 +90,7 @@ function localInputToUTC(val) {
   const offsetMs = new Date(utcStr) - new Date(localStr);
   return new Date(fake.getTime() + offsetMs).toISOString();
 }
-function isTaskActive(t) { const tl = t.time_log || []; return tl.length > 0 && tl[tl.length - 1].end === null; }
+function isTaskActive(t) { return (prodTimelogs || []).some(function(l) { return l.parent_id === t.task_id && !l.end; }); }
 function getRootTasks(tasks) { return tasks.filter(t => (t.path || '/') === '/'); }
 function getVisibleRoots(tasks) {
   // Root tasks + subtasks whose parent isn't in this filtered list (orphans).

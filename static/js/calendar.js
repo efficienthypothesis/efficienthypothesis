@@ -212,20 +212,18 @@ function renderWeekView() {
   const days = [];
   for (let i = 0; i < 7; i++) { const d = new Date(weekCalStart); d.setDate(d.getDate() + i); days.push(fmtDate(d)); }
 
-  const weekTasks = (prodAllTasks || []).filter(t => {
-    if (t.draft) return false;
-    const tl = t.time_log || [];
-    return tl.some(s => s.start && days.includes(utcToLocalDate(s.start)));
-  });
-
+  // Build sessions from TimeLogs table
+  const weekLogs = (prodTimelogs || []).filter(l => l.parent_type === 'task' && l.start && days.includes(utcToLocalDate(l.start)));
   const sessions = [];
-  weekTasks.forEach(t => {
-    const tl = t.time_log || [];
-    const totalSessions = tl.length;
-    let sessionIndex = 0;
-    tl.forEach(s => {
-      if (!s.start) return;
-      sessionIndex++;
+  // Group logs by parent_id to count total sessions per task
+  const logsByTask = {};
+  weekLogs.forEach(l => { if (!logsByTask[l.parent_id]) logsByTask[l.parent_id] = []; logsByTask[l.parent_id].push(l); });
+  Object.keys(logsByTask).forEach(taskId => {
+    const t = (prodAllTasks || []).find(x => x.task_id === taskId);
+    if (!t || t.draft) return;
+    const logs = logsByTask[taskId];
+    const totalSessions = logs.length;
+    logs.forEach((s, idx) => {
       const dayStr = utcToLocalDate(s.start);
       if (!days.includes(dayStr)) return;
       const startFrac = getLocalHourFrac(s.start);
@@ -233,7 +231,7 @@ function renderWeekView() {
       let endFrac = endIso ? getLocalHourFrac(endIso) : startFrac + 0.25;
       if (endFrac <= startFrac) endFrac = startFrac + (1/60);
       const durationMin = (endFrac - startFrac) * 60;
-      sessions.push({ taskId: t.task_id, taskName: t.name, path: t.path || '/', dayStr, startFrac, endFrac, durationMin, sessionIndex, totalSessions, color: getGroupColor(t.group) });
+      sessions.push({ taskId: t.task_id, taskName: t.name, path: t.path || '/', dayStr, startFrac, endFrac, durationMin, sessionIndex: idx + 1, totalSessions, color: getGroupColor(t.group) });
     });
   });
 

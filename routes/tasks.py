@@ -1,7 +1,7 @@
 from flask import Blueprint, request, jsonify
 import datetime
 import uuid
-from config import tasks_table, user_table, _require_auth, _validate_date_range
+from config import tasks_table, timelogs_table, user_table, _require_auth, _validate_date_range
 
 tasks_bp = Blueprint('tasks', __name__)
 
@@ -68,7 +68,6 @@ def api_tasks_create():
         "assign_datetime": data.get("assign_datetime"),
         "due_datetime": data.get("due_datetime"),
         "end_datetime": None,
-        "time_log": data.get("time_log", []),
         "due_status": "pending",
         "routine_id": data.get("routine_id"),
         "group": data.get("group"),
@@ -100,7 +99,7 @@ def api_tasks_update(task_id):
                 return jsonify({"error": err}), 400
 
     allowed = ["name", "path", "assign_datetime", "due_datetime",
-               "end_datetime", "due_status", "time_log", "group",
+               "end_datetime", "due_status", "group",
                "ai_draft", "ai_draft_type", "ttl"]
     set_parts = []
     remove_parts = []
@@ -145,31 +144,32 @@ def api_tasks_start(task_id):
     email = ctx["email"]
     now = datetime.datetime.utcnow().isoformat() + 'Z'
 
-    resp = tasks_table.scan(
-        FilterExpression="#u = :email",
-        ExpressionAttributeNames={"#u": "user"},
+    # Stop any other running timelog for this user
+    open_resp = timelogs_table.scan(
+        FilterExpression="#u = :email AND attribute_not_exists(#e)",
+        ExpressionAttributeNames={"#u": "user", "#e": "end"},
         ExpressionAttributeValues={":email": email},
     )
-    for task in resp.get("Items", []):
-        tl = task.get("time_log", [])
-        if tl and tl[-1].get("end") is None and task["task_id"] != task_id:
-            tl[-1]["end"] = now
-            tasks_table.update_item(
-                Key={"task_id": task["task_id"]},
-                UpdateExpression="SET time_log = :tl",
-                ExpressionAttributeValues={":tl": tl},
+    for log in open_resp.get("Items", []):
+        if log["parent_id"] != task_id:
+            timelogs_table.update_item(
+                Key={"log_id": log["log_id"]},
+                UpdateExpression="SET #e = :now",
+                ExpressionAttributeNames={"#e": "end"},
+                ExpressionAttributeValues={":now": now},
             )
 
-    task_resp = tasks_table.get_item(Key={"task_id": task_id})
-    task = task_resp.get("Item", {})
-    tl = task.get("time_log", [])
-    tl.append({"start": now, "end": None})
-    tasks_table.update_item(
-        Key={"task_id": task_id},
-        UpdateExpression="SET time_log = :tl",
-        ExpressionAttributeValues={":tl": tl},
-    )
-    return jsonify({"ok": True, "task_id": task_id})
+    # Create a new timelog entry
+    log_id = str(uuid.uuid4())
+    timelogs_table.put_item(Item={
+        "log_id": log_id,
+        "user": email,
+        "parent_id": task_id,
+        "parent_type": "task",
+        "start": now,
+        "created_at": now,
+    })
+    return jsonify({"ok": True, "task_id": task_id, "log_id": log_id})
 
 
 @tasks_bp.route('/api/tasks/<task_id>/pause', methods=['POST'])
@@ -177,17 +177,21 @@ def api_tasks_pause(task_id):
     ctx, err = _require_auth()
     if err:
         return err
+    email = ctx["email"]
     now = datetime.datetime.utcnow().isoformat() + 'Z'
 
-    task_resp = tasks_table.get_item(Key={"task_id": task_id})
-    task = task_resp.get("Item", {})
-    tl = task.get("time_log", [])
-    if tl and tl[-1].get("end") is None:
-        tl[-1]["end"] = now
-        tasks_table.update_item(
-            Key={"task_id": task_id},
-            UpdateExpression="SET time_log = :tl",
-            ExpressionAttributeValues={":tl": tl},
+    # Close any open timelog for this task
+    open_resp = timelogs_table.scan(
+        FilterExpression="#u = :email AND parent_id = :pid AND attribute_not_exists(#e)",
+        ExpressionAttributeNames={"#u": "user", "#e": "end"},
+        ExpressionAttributeValues={":email": email, ":pid": task_id},
+    )
+    for log in open_resp.get("Items", []):
+        timelogs_table.update_item(
+            Key={"log_id": log["log_id"]},
+            UpdateExpression="SET #e = :now",
+            ExpressionAttributeNames={"#e": "end"},
+            ExpressionAttributeValues={":now": now},
         )
     return jsonify({"ok": True, "task_id": task_id})
 
@@ -197,19 +201,27 @@ def api_tasks_complete(task_id):
     ctx, err = _require_auth()
     if err:
         return err
+    email = ctx["email"]
     now = datetime.datetime.utcnow().isoformat() + 'Z'
 
-    task_resp = tasks_table.get_item(Key={"task_id": task_id})
-    task = task_resp.get("Item", {})
-    tl = task.get("time_log", [])
-    if tl and tl[-1].get("end") is None:
-        tl[-1]["end"] = now
+    # Close any open timelog for this task
+    open_resp = timelogs_table.scan(
+        FilterExpression="#u = :email AND parent_id = :pid AND attribute_not_exists(#e)",
+        ExpressionAttributeNames={"#u": "user", "#e": "end"},
+        ExpressionAttributeValues={":email": email, ":pid": task_id},
+    )
+    for log in open_resp.get("Items", []):
+        timelogs_table.update_item(
+            Key={"log_id": log["log_id"]},
+            UpdateExpression="SET #e = :now",
+            ExpressionAttributeNames={"#e": "end"},
+            ExpressionAttributeValues={":now": now},
+        )
 
     tasks_table.update_item(
         Key={"task_id": task_id},
-        UpdateExpression="SET time_log = :tl, end_datetime = :end, due_status = :ds",
+        UpdateExpression="SET end_datetime = :end, due_status = :ds",
         ExpressionAttributeValues={
-            ":tl": tl,
             ":end": now,
             ":ds": "met",
         },
@@ -222,7 +234,16 @@ def api_tasks_delete(task_id):
     ctx, err = _require_auth()
     if err:
         return err
+    email = ctx["email"]
     tasks_table.delete_item(Key={"task_id": task_id})
+    # Clean up associated timelogs
+    tl_resp = timelogs_table.scan(
+        FilterExpression="#u = :email AND parent_id = :pid",
+        ExpressionAttributeNames={"#u": "user"},
+        ExpressionAttributeValues={":email": email, ":pid": task_id},
+    )
+    for log in tl_resp.get("Items", []):
+        timelogs_table.delete_item(Key={"log_id": log["log_id"]})
     return jsonify({"ok": True})
 
 

@@ -24,6 +24,7 @@ let prodGroups = []; // group objects [{path, name, color}]
 let prodNotes = []; // note objects [{id, name, date, group, created_at}]
 let prodActions = []; // action objects [{action_id, name, start_datetime, end_datetime, ...}]
 let prodSchedules = []; // schedule template objects [{id, name, start_time, end_time, pattern, ...}]
+let prodTimelogs = []; // timelog objects [{log_id, parent_id, parent_type, start, end}]
 let projectsShowCompleted = true; // toggle for showing completed items in projects
 let projectsShowNotes = true; // toggle for showing notes in projects
 let projectsShowEmptyGroups = true; // toggle for showing empty groups in projects
@@ -160,7 +161,7 @@ function localInputToUTC(val) {
   const offsetMs = new Date(utcStr) - new Date(localStr);
   return new Date(fake.getTime() + offsetMs).toISOString();
 }
-function isTaskActive(t) { const tl = t.time_log || []; return tl.length > 0 && tl[tl.length - 1].end === null; }
+function isTaskActive(t) { return (prodTimelogs || []).some(function(l) { return l.parent_id === t.task_id && !l.end; }); }
 function getRootTasks(tasks) { return tasks.filter(t => (t.path || '/') === '/'); }
 function getVisibleRoots(tasks) {
   // Root tasks + subtasks whose parent isn't in this filtered list (orphans).
@@ -883,6 +884,7 @@ function fetchAllData() {
     fetch('/api/notes').then(function(r) { return r.json(); }).catch(function() { return {"notes": []}; }),
     fetch('/api/actions').then(function(r) { return r.json(); }).catch(function() { return []; }),
     fetch('/api/schedules').then(function(r) { return r.json(); }).catch(function() { return []; }),
+    fetch('/api/timelogs').then(function(r) { return r.json(); }).catch(function() { return []; }),
   ]).then(function(results) {
     prodAllTasks = Array.isArray(results[0]) ? results[0] : [];
     prodDrafts = Array.isArray(results[1]) ? results[1] : [];
@@ -895,6 +897,7 @@ function fetchAllData() {
     prodNotes = Array.isArray(notesResp.notes) ? notesResp.notes : [];
     prodActions = Array.isArray(results[7]) ? results[7] : [];
     prodSchedules = Array.isArray(results[8]) ? results[8] : [];
+    prodTimelogs = Array.isArray(results[9]) ? results[9] : [];
     prodCalendarMonth = prodCalendarMonth || defaultCalMonth();
     dataLoaded = true;
   });
@@ -3128,20 +3131,18 @@ function renderWeekView() {
   const days = [];
   for (let i = 0; i < 7; i++) { const d = new Date(weekCalStart); d.setDate(d.getDate() + i); days.push(fmtDate(d)); }
 
-  const weekTasks = (prodAllTasks || []).filter(t => {
-    if (t.draft) return false;
-    const tl = t.time_log || [];
-    return tl.some(s => s.start && days.includes(utcToLocalDate(s.start)));
-  });
-
+  // Build sessions from TimeLogs table
+  const weekLogs = (prodTimelogs || []).filter(l => l.parent_type === 'task' && l.start && days.includes(utcToLocalDate(l.start)));
   const sessions = [];
-  weekTasks.forEach(t => {
-    const tl = t.time_log || [];
-    const totalSessions = tl.length;
-    let sessionIndex = 0;
-    tl.forEach(s => {
-      if (!s.start) return;
-      sessionIndex++;
+  // Group logs by parent_id to count total sessions per task
+  const logsByTask = {};
+  weekLogs.forEach(l => { if (!logsByTask[l.parent_id]) logsByTask[l.parent_id] = []; logsByTask[l.parent_id].push(l); });
+  Object.keys(logsByTask).forEach(taskId => {
+    const t = (prodAllTasks || []).find(x => x.task_id === taskId);
+    if (!t || t.draft) return;
+    const logs = logsByTask[taskId];
+    const totalSessions = logs.length;
+    logs.forEach((s, idx) => {
       const dayStr = utcToLocalDate(s.start);
       if (!days.includes(dayStr)) return;
       const startFrac = getLocalHourFrac(s.start);
@@ -3149,7 +3150,7 @@ function renderWeekView() {
       let endFrac = endIso ? getLocalHourFrac(endIso) : startFrac + 0.25;
       if (endFrac <= startFrac) endFrac = startFrac + (1/60);
       const durationMin = (endFrac - startFrac) * 60;
-      sessions.push({ taskId: t.task_id, taskName: t.name, path: t.path || '/', dayStr, startFrac, endFrac, durationMin, sessionIndex, totalSessions, color: getGroupColor(t.group) });
+      sessions.push({ taskId: t.task_id, taskName: t.name, path: t.path || '/', dayStr, startFrac, endFrac, durationMin, sessionIndex: idx + 1, totalSessions, color: getGroupColor(t.group) });
     });
   });
 

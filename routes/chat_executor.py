@@ -82,7 +82,6 @@ def _create_task(email, data):
         "name": data.get("name", ""),
         "assign_datetime": data.get("assign_datetime"),
         "due_datetime": data.get("due_datetime"),
-        "time_log": [],
         "due_status": "pending",
         "routine_id": data.get("routine_id"),
         "group": data.get("group"),

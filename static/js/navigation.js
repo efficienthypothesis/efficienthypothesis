@@ -313,6 +313,7 @@ function fetchAllData() {
     fetch('/api/notes').then(function(r) { return r.json(); }).catch(function() { return {"notes": []}; }),
     fetch('/api/actions').then(function(r) { return r.json(); }).catch(function() { return []; }),
     fetch('/api/schedules').then(function(r) { return r.json(); }).catch(function() { return []; }),
+    fetch('/api/timelogs').then(function(r) { return r.json(); }).catch(function() { return []; }),
   ]).then(function(results) {
     prodAllTasks = Array.isArray(results[0]) ? results[0] : [];
     prodDrafts = Array.isArray(results[1]) ? results[1] : [];
@@ -325,6 +326,7 @@ function fetchAllData() {
     prodNotes = Array.isArray(notesResp.notes) ? notesResp.notes : [];
     prodActions = Array.isArray(results[7]) ? results[7] : [];
     prodSchedules = Array.isArray(results[8]) ? results[8] : [];
+    prodTimelogs = Array.isArray(results[9]) ? results[9] : [];
     prodCalendarMonth = prodCalendarMonth || defaultCalMonth();
     dataLoaded = true;
   });

@@ -20,6 +20,7 @@ from routes.schedules import schedules_bp
 from routes.homescreen import homescreen_bp
 from routes.oauth import oauth_bp
 from routes.chat import chat_bp
+from routes.timelogs import timelogs_bp
 
 app.register_blueprint(pages_bp)
 app.register_blueprint(auth_bp)
@@ -34,6 +35,7 @@ app.register_blueprint(schedules_bp)
 app.register_blueprint(homescreen_bp)
 app.register_blueprint(oauth_bp)
 app.register_blueprint(chat_bp)
+app.register_blueprint(timelogs_bp)
 
 handler = make_lambda_handler(app)
 
