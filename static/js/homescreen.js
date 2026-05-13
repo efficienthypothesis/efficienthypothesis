@@ -34,7 +34,7 @@ function applyHomescreenBackground() {
     var s = homescreenSettings.scale || 1;
     var tx = homescreenSettings.translateX || 0;
     var ty = homescreenSettings.translateY || 0;
-    bg.style.backgroundImage = 'url(' + homescreenSettings.image_url + ')';
+    bg.style.backgroundImage = 'url("' + homescreenSettings.image_url + '")';
     bg.style.backgroundSize = (s * 100) + '%';
     bg.style.backgroundPosition = (50 + tx) + '% ' + (50 + ty) + '%';
     bg.style.display = 'block';
