@@ -40,9 +40,9 @@ def api_homescreen_settings_get():
             Params={'Bucket': PRODUCTIVITY_BUCKET, 'Key': img_key},
             ExpiresIn=3600,
         )
-        logger.info("Presigned URL generated, length=%d, first100=%s", len(settings["image_url"]), settings["image_url"][:100])
+        print(f"HOMESCREEN_DEBUG: url_length={len(settings['image_url'])}, first200={settings['image_url'][:200]}")
     except Exception as e:
-        logger.error("head_object failed: %s", e)
+        print(f"HOMESCREEN_DEBUG: head_object failed: {e}")
         settings["has_image"] = False
     return jsonify(settings)
 
