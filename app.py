@@ -37,7 +37,7 @@ app.register_blueprint(oauth_bp)
 app.register_blueprint(chat_bp)
 app.register_blueprint(timelogs_bp)
 
-handler = make_lambda_handler(app)
+handler = make_lambda_handler(app, binary_support=True)
 
 if __name__ == "__main__":
     app.run(debug=True)
