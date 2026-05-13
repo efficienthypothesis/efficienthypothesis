@@ -20,21 +20,21 @@ let accountCreatedYear = null; // year of account creation (integer)
 let accessibleStartDate = null; // "YYYY-01-01" of creation year
 let accessibleEndDate = null; // "YYYY-12-31" of next year
 let nowLineInterval = null; // interval ID for updating the current-time line
-let prodGroups = []; // group objects [{path, name, color}]
-let prodNotes = []; // note objects [{id, name, date, group, created_at}]
+let prodFolders = []; // folder objects [{path, name, color}]
+let prodNotes = []; // note objects [{id, name, date, folder, created_at}]
 let prodActions = []; // action objects [{action_id, name, start_datetime, end_datetime, ...}]
 let prodSchedules = []; // schedule template objects [{id, name, start_time, end_time, pattern, ...}]
 let prodTimelogs = []; // timelog objects [{log_id, parent_id, parent_type, start, end}]
 let projectsShowCompleted = true; // toggle for showing completed items in projects
 let projectsShowNotes = true; // toggle for showing notes in projects
-let projectsShowEmptyGroups = true; // toggle for showing empty groups in projects
+let projectsShowEmptyFolders = true; // toggle for showing empty groups in projects
 let projectsTimeFilter = {
   completed: { past: true, present: true, future: true },
   notes: { past: true, present: true, future: true },
   empty: { past: true, present: true, future: true }
 };
 let projectsViewMode = 'visual'; // 'list' | 'visual'
-let projectsFocusPath = null; // null = root, or a group path like '/SCHOOL'
+let projectsFocusPath = null; // null = root, or a folder path like '/SCHOOL'
 let userEmail = null; // populated from session, used as root label
 let monthlyShowNotes = true; // toggle for showing notes on monthly calendar
 let monthlyShowPlanned = false; // toggle for showing planned (incomplete) tasks on monthly calendar
@@ -47,7 +47,7 @@ function loadPreferences() {
     var prefs = JSON.parse(saved);
     if (prefs.projectsShowCompleted !== undefined) projectsShowCompleted = prefs.projectsShowCompleted;
     if (prefs.projectsShowNotes !== undefined) projectsShowNotes = prefs.projectsShowNotes;
-    if (prefs.projectsShowEmptyGroups !== undefined) projectsShowEmptyGroups = prefs.projectsShowEmptyGroups;
+    if (prefs.projectsShowEmptyFolders !== undefined) projectsShowEmptyFolders = prefs.projectsShowEmptyFolders;
     if (prefs.projectsViewMode !== undefined) projectsViewMode = prefs.projectsViewMode;
     if (prefs.projectsFocusPath !== undefined) projectsFocusPath = prefs.projectsFocusPath;
     if (prefs.projectsTimeFilter !== undefined) projectsTimeFilter = prefs.projectsTimeFilter;
@@ -63,7 +63,7 @@ function savePreferences() {
     localStorage.setItem('eh_preferences', JSON.stringify({
       projectsShowCompleted: projectsShowCompleted,
       projectsShowNotes: projectsShowNotes,
-      projectsShowEmptyGroups: projectsShowEmptyGroups,
+      projectsShowEmptyFolders: projectsShowEmptyFolders,
       projectsViewMode: projectsViewMode,
       projectsFocusPath: projectsFocusPath,
       projectsTimeFilter: projectsTimeFilter,
@@ -285,7 +285,7 @@ function renderSettingsContent() {
       <div class="settings-section-body">
         <div class="settings-row"><span class="settings-label">Completed</span><span class="settings-value"><label class="settings-toggle"><input type="checkbox" ${projectsShowCompleted ? 'checked' : ''} onchange="toggleProjectsCompleted(this.checked);renderSettingsPrefs()"><span class="settings-toggle-slider"></span></label></span></div>
         <div class="settings-row"><span class="settings-label">Notes</span><span class="settings-value"><label class="settings-toggle"><input type="checkbox" ${projectsShowNotes ? 'checked' : ''} onchange="projectsShowNotes=this.checked;savePreferences();renderProjects();renderSettingsPrefs()"><span class="settings-toggle-slider"></span></label></span></div>
-        <div class="settings-row"><span class="settings-label">Show Empty Groups</span><span class="settings-value"><label class="settings-toggle"><input type="checkbox" ${projectsShowEmptyGroups ? 'checked' : ''} onchange="projectsShowEmptyGroups=this.checked;savePreferences();renderProjects();renderSettingsPrefs()"><span class="settings-toggle-slider"></span></label></span></div>
+        <div class="settings-row"><span class="settings-label">Show Empty Groups</span><span class="settings-value"><label class="settings-toggle"><input type="checkbox" ${projectsShowEmptyFolders ? 'checked' : ''} onchange="projectsShowEmptyFolders=this.checked;savePreferences();renderProjects();renderSettingsPrefs()"><span class="settings-toggle-slider"></span></label></span></div>
       </div></div>
     <div class="settings-section"><div class="settings-section-header"><span class="material-symbols-outlined">calendar_month</span> Monthly View</div>
       <div class="settings-section-body">
@@ -889,7 +889,7 @@ function fetchAllData() {
     fetch('/api/routines').then(function(r) { return r.json(); }).catch(function() { return []; }),
     fetch('/api/goals').then(function(r) { return r.json(); }).catch(function() { return []; }),
     fetch('/api/tasks/calendar?month=' + (prodCalendarMonth || defaultCalMonth())).then(function(r) { return r.json(); }).catch(function() { return {}; }),
-    fetch('/api/groups').then(function(r) { return r.json(); }).catch(function() { return {"groups": []}; }),
+    fetch('/api/folders').then(function(r) { return r.json(); }).catch(function() { return {"folders": []}; }),
     fetch('/api/notes').then(function(r) { return r.json(); }).catch(function() { return {"notes": []}; }),
     fetch('/api/actions').then(function(r) { return r.json(); }).catch(function() { return []; }),
     fetch('/api/schedules').then(function(r) { return r.json(); }).catch(function() { return []; }),
@@ -900,8 +900,8 @@ function fetchAllData() {
     prodRoutines = Array.isArray(results[2]) ? results[2] : [];
     prodGoals = Array.isArray(results[3]) ? results[3] : [];
     prodCalendarData = (results[4] && typeof results[4] === 'object' && !Array.isArray(results[4])) ? results[4] : {};
-    var groupsResp = results[5] && typeof results[5] === 'object' ? results[5] : {"groups": []};
-    prodGroups = Array.isArray(groupsResp.groups) ? groupsResp.groups : [];
+    var foldersResp = results[5] && typeof results[5] === 'object' ? results[5] : {"folders": []};
+    prodFolders = Array.isArray(foldersResp.folders) ? foldersResp.folders : [];
     var notesResp = results[6] && typeof results[6] === 'object' ? results[6] : {"notes": []};
     prodNotes = Array.isArray(notesResp.notes) ? notesResp.notes : [];
     prodActions = Array.isArray(results[7]) ? results[7] : [];
@@ -1060,7 +1060,7 @@ function buildProjectsRulesContent() {
   html += '<div class="rules-popup-rule">' +
     '<span>Empty Folders</span>' +
     '<div class="rules-time-group">' + buildTimeToggle('empty','past') + buildTimeToggle('empty','present') + buildTimeToggle('empty','future') + '</div>' +
-    '<input type="checkbox"' + (projectsShowEmptyGroups ? ' checked' : '') + ' onchange="toggleProjectsEmptyGroupsSidebar(this)">' +
+    '<input type="checkbox"' + (projectsShowEmptyFolders ? ' checked' : '') + ' onchange="toggleProjectsEmptyFoldersSidebar(this)">' +
     '</div>';
 
   html += '</div>';
@@ -1111,8 +1111,8 @@ function projectsNavigateUp() {
   updateProjectsSubtab();
 }
 
-function projectsZoomIn(groupPath) {
-  projectsFocusPath = groupPath;
+function projectsZoomIn(folderPath) {
+  projectsFocusPath = folderPath;
   savePreferences();
   renderProjects();
   updateProjectsSubtab();
@@ -1277,7 +1277,7 @@ function renderDrafts(drafts) {
   el.innerHTML = drafts.map(d => {
     var typeLabel, icon;
     if (d.draft_type === 'note') { typeLabel = 'Note'; icon = 'note'; }
-    else if (d.draft_type === 'group') { typeLabel = 'Group'; icon = 'folder'; }
+    else if (d.draft_type === 'folder') { typeLabel = 'Group'; icon = 'folder'; }
     else if (d.is_routine_draft) { typeLabel = 'Routine'; icon = 'repeat'; }
     else { typeLabel = 'Task'; icon = 'draft'; }
     return `<div class="task-card" style="opacity:0.7;border-style:dashed">
@@ -1307,8 +1307,8 @@ function toggleProjectsNotesSidebar(el) {
   savePreferences();
   renderProjects();
 }
-function toggleProjectsEmptyGroupsSidebar(el) {
-  projectsShowEmptyGroups = el.checked !== undefined ? el.checked : !projectsShowEmptyGroups;
+function toggleProjectsEmptyFoldersSidebar(el) {
+  projectsShowEmptyFolders = el.checked !== undefined ? el.checked : !projectsShowEmptyFolders;
   savePreferences();
   renderProjects();
 }
@@ -1470,20 +1470,20 @@ function isItemVisibleByTimeFilter(item) {
   return true;
 }
 
-function getGroupColor(groupPath) {
-  if (!groupPath) return null;
-  var group = prodGroups.find(function(g) { return g.path === groupPath; });
-  if (group) return group.color;
+function getFolderColor(folderPath) {
+  if (!folderPath) return null;
+  var folder = prodFolders.find(function(g) { return g.path === folderPath; });
+  if (folder) return folder.color;
   return null;
 }
 
-function getUngroupedItems() {
-  // All non-draft, non-routine-instance tasks + routines + notes without a group, sorted by created_at desc
+function getUnfiledItems() {
+  // All non-draft, non-routine-instance tasks + routines + notes without a folder, sorted by created_at desc
   var tasks = (prodAllTasks || []).filter(function(t) {
-    return !t.draft && !t.routine_id && !t.group;
+    return !t.draft && !t.routine_id && !t.folder;
   });
-  var routines = (prodRoutines || []).filter(function(r) { return !r.group; });
-  var notes = (prodNotes || []).filter(function(n) { return !n.group; });
+  var routines = (prodRoutines || []).filter(function(r) { return !r.folder; });
+  var notes = (prodNotes || []).filter(function(n) { return !n.folder; });
   var items = [];
   tasks.forEach(function(t) { items.push({type: 'task', id: t.task_id, name: t.name, assign: t.assign_datetime, due: t.due_datetime, done: !!t.end_datetime, created_at: t.created_at || ''}); });
   routines.forEach(function(r) { items.push({type: 'routine', id: r.id, name: r.name, due: null, done: false, created_at: r.created_at || ''}); });
@@ -1492,13 +1492,13 @@ function getUngroupedItems() {
   return items;
 }
 
-function getGroupItems(groupPath) {
-  // Items assigned to exactly this group path
+function getFolderItems(folderPath) {
+  // Items assigned to exactly this folder path
   var tasks = (prodAllTasks || []).filter(function(t) {
-    return !t.draft && !t.routine_id && t.group === groupPath;
+    return !t.draft && !t.routine_id && t.folder === folderPath;
   });
-  var routines = (prodRoutines || []).filter(function(r) { return r.group === groupPath; });
-  var notes = (prodNotes || []).filter(function(n) { return n.group === groupPath; });
+  var routines = (prodRoutines || []).filter(function(r) { return r.folder === folderPath; });
+  var notes = (prodNotes || []).filter(function(n) { return n.folder === folderPath; });
   var items = [];
   tasks.forEach(function(t) { items.push({type: 'task', id: t.task_id, name: t.name, assign: t.assign_datetime, due: t.due_datetime, done: !!t.end_datetime, created_at: t.created_at || ''}); });
   routines.forEach(function(r) { items.push({type: 'routine', id: r.id, name: r.name, due: null, done: false, created_at: r.created_at || ''}); });
@@ -1507,36 +1507,36 @@ function getGroupItems(groupPath) {
   return items;
 }
 
-function renderGroupItemHtml(item) {
+function renderFolderItemHtml(item) {
   if (!projectsShowCompleted && item.done) return '';
   if (!projectsShowNotes && item.type === 'note') return '';
   if (!isItemVisibleByTimeFilter(item)) return '';
-  var doneClass = item.done ? ' group-item-done' : '';
+  var doneClass = item.done ? ' folder-item-done' : '';
   var icon = item.type === 'routine' ? 'repeat' : (item.type === 'note' ? 'note' : 'task_alt');
   var dueHtml = '';
   if (item.type === 'note' && item.due) {
-    dueHtml = '<span class="group-item-due">' + escHtml(item.due) + '</span>';
+    dueHtml = '<span class="folder-item-due">' + escHtml(item.due) + '</span>';
   } else if (item.due) {
-    dueHtml = '<span class="group-item-due">' + formatDateTime(item.due) + '</span>';
+    dueHtml = '<span class="folder-item-due">' + formatDateTime(item.due) + '</span>';
   }
-  return '<div class="group-item' + doneClass + '" draggable="true" data-item-id="' + item.id + '" data-item-type="' + item.type + '"' +
-    ' ondragstart="onGroupItemDragStart(event)" ondragend="onGroupItemDragEnd(event)">' +
-    '<span class="material-symbols-outlined group-item-icon">' + icon + '</span>' +
-    '<span class="group-item-name">' + escHtml(item.name) + '</span>' + dueHtml + '</div>';
+  return '<div class="folder-item' + doneClass + '" draggable="true" data-item-id="' + item.id + '" data-item-type="' + item.type + '"' +
+    ' ondragstart="onFolderItemDragStart(event)" ondragend="onFolderItemDragEnd(event)">' +
+    '<span class="material-symbols-outlined folder-item-icon">' + icon + '</span>' +
+    '<span class="folder-item-name">' + escHtml(item.name) + '</span>' + dueHtml + '</div>';
 }
 
-function getRootGroups() {
+function getRootFolders() {
   // Groups whose path has only one segment (e.g., "/STATS" but not "/CS/ML")
-  return prodGroups.filter(function(g) {
+  return prodFolders.filter(function(g) {
     var segments = g.path.split('/').filter(Boolean);
     return segments.length === 1;
   });
 }
 
-function getChildGroups(parentPath) {
+function getChildFolders(parentPath) {
   // Direct children: parentPath + one more segment
   var prefix = parentPath.endsWith('/') ? parentPath : parentPath + '/';
-  return prodGroups.filter(function(g) {
+  return prodFolders.filter(function(g) {
     if (!g.path.startsWith(prefix)) return false;
     var rest = g.path.slice(prefix.length);
     return rest.length > 0 && !rest.includes('/');
@@ -1550,8 +1550,8 @@ var LY_EST_HEADER_H = 36;
 var LY_GAP = 16;
 var projectsNeedsReorganize = false;
 
-function getVisibleItems(groupPath) {
-  return getGroupItems(groupPath).filter(function(item) {
+function getVisibleItems(folderPath) {
+  return getFolderItems(folderPath).filter(function(item) {
     if (!projectsShowCompleted && item.done) return false;
     if (!projectsShowNotes && item.type === 'note') return false;
     if (!isItemVisibleByTimeFilter(item)) return false;
@@ -1559,12 +1559,12 @@ function getVisibleItems(groupPath) {
   });
 }
 
-function buildGroupTree() {
+function buildFolderTree() {
   var nodeMap = {};
-  prodGroups.forEach(function(g) {
-    nodeMap[g.path] = { group: g, children: [], items: getVisibleItems(g.path) };
+  prodFolders.forEach(function(g) {
+    nodeMap[g.path] = { folder: g, children: [], items: getVisibleItems(g.path) };
   });
-  prodGroups.forEach(function(g) {
+  prodFolders.forEach(function(g) {
     var segs = g.path.split('/').filter(Boolean);
     if (segs.length > 1) {
       var parentPath = '/' + segs.slice(0, -1).join('/');
@@ -1572,11 +1572,11 @@ function buildGroupTree() {
     }
   });
   var roots = [];
-  prodGroups.forEach(function(g) {
+  prodFolders.forEach(function(g) {
     var segs = g.path.split('/').filter(Boolean);
     if (segs.length === 1) roots.push(nodeMap[g.path]);
   });
-  if (!projectsShowEmptyGroups) {
+  if (!projectsShowEmptyFolders) {
     function hasContent(node) {
       if (node.items.length > 0) return true;
       for (var i = 0; i < node.children.length; i++) {
@@ -1611,7 +1611,7 @@ var VIS_BOX_PAD = 20; // body padding + border for depth-1 cards
 // === Tree helpers ===
 function findNodeByPath(nodes, path) {
   for (var i = 0; i < nodes.length; i++) {
-    if (nodes[i].group.path === path) return nodes[i];
+    if (nodes[i].folder.path === path) return nodes[i];
     var found = findNodeByPath(nodes[i].children, path);
     if (found) return found;
   }
@@ -1619,20 +1619,20 @@ function findNodeByPath(nodes, path) {
 }
 
 function buildFocusedTree(focusPath) {
-  var allRoots = buildGroupTree();
+  var allRoots = buildFolderTree();
   if (!focusPath) {
-    return { focusGroup: null, children: allRoots, directItems: getVisibleUngroupedItems() };
+    return { focusFolder: null, children: allRoots, directItems: getVisibleUnfiledItems() };
   }
   var focusNode = findNodeByPath(allRoots, focusPath);
   if (!focusNode) {
     projectsFocusPath = null;
-    return { focusGroup: null, children: allRoots, directItems: getVisibleUngroupedItems() };
+    return { focusFolder: null, children: allRoots, directItems: getVisibleUnfiledItems() };
   }
-  return { focusGroup: focusNode.group, children: focusNode.children, directItems: focusNode.items };
+  return { focusFolder: focusNode.folder, children: focusNode.children, directItems: focusNode.items };
 }
 
-function getVisibleUngroupedItems() {
-  return getUngroupedItems().filter(function(item) {
+function getVisibleUnfiledItems() {
+  return getUnfiledItems().filter(function(item) {
     if (!projectsShowCompleted && item.done) return false;
     if (!projectsShowNotes && item.type === 'note') return false;
     if (!isItemVisibleByTimeFilter(item)) return false;
@@ -1641,11 +1641,11 @@ function getVisibleUngroupedItems() {
 }
 
 // === Render items with limit (shows first N-1 + "+X more") ===
-function renderItemsWithLimit(items, subgroups, limit) {
-  // Merge subgroups (depth 3+) as item-like entries, then real items
+function renderItemsWithLimit(items, subfolders, limit) {
+  // Merge subfolders (depth 3+) as item-like entries, then real items
   var allEntries = [];
-  (subgroups || []).forEach(function(sg) {
-    allEntries.push({ _isSubgroup: true, group: sg.group, _totalItems: countAllItems(sg) });
+  (subfolders || []).forEach(function(sg) {
+    allEntries.push({ _isSubfolder: true, folder: sg.folder, _totalItems: countAllItems(sg) });
   });
   items.forEach(function(item) { allEntries.push(item); });
 
@@ -1654,69 +1654,69 @@ function renderItemsWithLimit(items, subgroups, limit) {
   var showCount = total <= limit ? total : limit - 1;
   for (var i = 0; i < showCount; i++) {
     var entry = allEntries[i];
-    if (entry._isSubgroup) {
-      html += renderSubgroupAsItem(entry);
+    if (entry._isSubfolder) {
+      html += renderSubfolderAsItem(entry);
     } else {
-      html += renderGroupItemHtml(entry);
+      html += renderFolderItemHtml(entry);
     }
   }
   if (total > limit) {
     var remaining = total - showCount;
-    html += '<div class="group-item group-item-more" onclick="projectsZoomIn(\'' + escHtml((allEntries[0] && allEntries[0]._isSubgroup ? allEntries[0].group.path : '').replace(/\/[^\/]*$/, '')) + '\')">+' + remaining + ' more</div>';
+    html += '<div class="folder-item folder-item-more" onclick="projectsZoomIn(\'' + escHtml((allEntries[0] && allEntries[0]._isSubfolder ? allEntries[0].folder.path : '').replace(/\/[^\/]*$/, '')) + '\')">+' + remaining + ' more</div>';
   }
   return html;
 }
 
-function renderSubgroupAsItem(entry) {
-  var path = escHtml(entry.group.path);
-  return '<div class="group-item group-item-subgroup" ondblclick="event.stopPropagation();projectsZoomIn(\'' + path + '\')">' +
-    '<span class="material-symbols-outlined group-item-icon">folder</span>' +
-    '<span class="group-item-name">' + escHtml(entry.group.name) + '</span>' +
-    '<span class="group-item-due" style="color:#80868b">' + entry._totalItems + '</span></div>';
+function renderSubfolderAsItem(entry) {
+  var path = escHtml(entry.folder.path);
+  return '<div class="folder-item folder-item-subfolder" ondblclick="event.stopPropagation();projectsZoomIn(\'' + path + '\')">' +
+    '<span class="material-symbols-outlined folder-item-icon">folder</span>' +
+    '<span class="folder-item-name">' + escHtml(entry.folder.name) + '</span>' +
+    '<span class="folder-item-due" style="color:#80868b">' + entry._totalItems + '</span></div>';
 }
 
 // === Depth-2 card (small, fixed height, 1 col) ===
 function renderDepth2Card(node) {
-  var group = node.group;
-  var groupColor = escHtml(group.color || DEFAULT_COLOR);
+  var folder = node.folder;
+  var folderColor = escHtml(folder.color || DEFAULT_COLOR);
   // Depth-3+ children become items with folder icons
-  var depth3Groups = node.children || [];
+  var depth3Folders = node.children || [];
   var items = node.items || [];
-  var bodyHtml = renderItemsWithLimit(items, depth3Groups, VIS_MAX_DISPLAY_ITEMS);
+  var bodyHtml = renderItemsWithLimit(items, depth3Folders, VIS_MAX_DISPLAY_ITEMS);
 
-  return '<div class="group-box group-box-d2" data-group-path="' + escHtml(group.path) +
-    '" style="--group-color:' + groupColor + ';border-color:' + groupColor +
+  return '<div class="folder-box folder-box-d2" data-folder-path="' + escHtml(folder.path) +
+    '" style="--folder-color:' + folderColor + ';border-color:' + folderColor +
     ';height:' + VIS_D2_FIXED_H + 'px"' +
-    ' ondblclick="event.stopPropagation();projectsZoomIn(\'' + escHtml(group.path) + '\')"' +
-    ' ondragover="onGroupBoxDragOver(event)" ondragleave="onGroupBoxDragLeave(event)" ondrop="onGroupBoxDrop(event)">' +
-    '<div class="group-box-header">' +
-    '<span class="group-box-name">' + escHtml(group.name) + '</span>' +
-    '<div class="group-box-actions" onclick="event.stopPropagation()">' +
-    '<button class="group-box-actions-btn" onclick="event.stopPropagation();toggleGroupDropdown(this)"><span class="material-symbols-outlined">more_vert</span></button>' +
-    '<div class="group-box-dropdown">' +
-    '<button class="group-box-dd-item" onclick="event.stopPropagation();editGroup(\'' + escHtml(group.path) + '\')"><span class="material-symbols-outlined">edit</span> Edit</button>' +
-    '<button class="group-box-dd-item danger" onclick="event.stopPropagation();deleteGroup(\'' + escHtml(group.path) + '\')"><span class="material-symbols-outlined">delete</span> Delete</button>' +
+    ' ondblclick="event.stopPropagation();projectsZoomIn(\'' + escHtml(folder.path) + '\')"' +
+    ' ondragover="onFolderBoxDragOver(event)" ondragleave="onFolderBoxDragLeave(event)" ondrop="onFolderBoxDrop(event)">' +
+    '<div class="folder-box-header">' +
+    '<span class="folder-box-name">' + escHtml(folder.name) + '</span>' +
+    '<div class="folder-box-actions" onclick="event.stopPropagation()">' +
+    '<button class="folder-box-actions-btn" onclick="event.stopPropagation();toggleFolderDropdown(this)"><span class="material-symbols-outlined">more_vert</span></button>' +
+    '<div class="folder-box-dropdown">' +
+    '<button class="folder-box-dd-item" onclick="event.stopPropagation();editFolder(\'' + escHtml(folder.path) + '\')"><span class="material-symbols-outlined">edit</span> Edit</button>' +
+    '<button class="folder-box-dd-item danger" onclick="event.stopPropagation();deleteFolder(\'' + escHtml(folder.path) + '\')"><span class="material-symbols-outlined">delete</span> Delete</button>' +
     '</div></div></div>' +
-    '<div class="group-box-body">' + bodyHtml + '</div></div>';
+    '<div class="folder-box-body">' + bodyHtml + '</div></div>';
 }
 
 // === Catchall card (no header, for direct items) ===
 function renderCatchallCard(items, parentPath) {
   var bodyHtml = renderItemsWithLimit(items, [], VIS_MAX_DISPLAY_ITEMS);
-  return '<div class="group-box-catchall" data-group-path="' + escHtml(parentPath || '') + '"' +
+  return '<div class="folder-box-catchall" data-folder-path="' + escHtml(parentPath || '') + '"' +
     ' style="height:' + VIS_CATCHALL_FIXED_H + 'px"' +
-    ' ondragover="onGroupBoxDragOver(event)" ondragleave="onGroupBoxDragLeave(event)" ondrop="onGroupBoxDrop(event)">' +
-    '<div class="group-box-body">' + bodyHtml + '</div></div>';
+    ' ondragover="onFolderBoxDragOver(event)" ondragleave="onFolderBoxDragLeave(event)" ondrop="onFolderBoxDrop(event)">' +
+    '<div class="folder-box-body">' + bodyHtml + '</div></div>';
 }
 
 // === Depth-1 card (large, contains depth-2 grid) ===
 function renderDepth1Card(node, directItems) {
-  var group = node.group;
-  var groupColor = escHtml(group.color || DEFAULT_COLOR);
+  var folder = node.folder;
+  var folderColor = escHtml(folder.color || DEFAULT_COLOR);
   var depth2Children = node.children || [];
   var hasDirectItems = directItems && directItems.length > 0;
-  // Only use catchall card when there are BOTH subgroups and direct items
-  // Count depth-2 slots: subgroups + 1 for direct items if both exist
+  // Only use catchall card when there are BOTH subfolders and direct items
+  // Count depth-2 slots: subfolders + 1 for direct items if both exist
   var hasMixedContent = hasDirectItems && depth2Children.length > 0;
   var numD2 = depth2Children.length + (hasMixedContent ? 1 : 0);
   var cols = Math.min(numD2, LY_TOP_COLS);
@@ -1731,35 +1731,35 @@ function renderDepth1Card(node, directItems) {
   // Render inner content
   var innerHtml = '';
   if (depth2Children.length === 0 && hasDirectItems) {
-    // No subgroups — render items directly in body (no wrapper)
+    // No subfolders — render items directly in body (no wrapper)
     innerHtml = renderItemsWithLimit(directItems, [], VIS_MAX_DISPLAY_ITEMS);
   } else {
     depth2Children.forEach(function(child) {
       innerHtml += renderDepth2Card(child);
     });
     if (hasMixedContent) {
-      // Direct items alongside subgroups — render without catchall styling
+      // Direct items alongside subfolders — render without catchall styling
       var catchallBody = renderItemsWithLimit(directItems, [], VIS_MAX_DISPLAY_ITEMS);
       innerHtml += '<div style="height:' + VIS_D2_FIXED_H + 'px;overflow:hidden"' +
-        ' data-group-path="' + escHtml(group.path) + '"' +
-        ' ondragover="onGroupBoxDragOver(event)" ondragleave="onGroupBoxDragLeave(event)" ondrop="onGroupBoxDrop(event)">' +
-        '<div class="group-box-body">' + catchallBody + '</div></div>';
+        ' data-folder-path="' + escHtml(folder.path) + '"' +
+        ' ondragover="onFolderBoxDragOver(event)" ondragleave="onFolderBoxDragLeave(event)" ondrop="onFolderBoxDrop(event)">' +
+        '<div class="folder-box-body">' + catchallBody + '</div></div>';
     }
   }
 
-  return '<div class="group-box" data-group-path="' + escHtml(group.path) +
-    '" style="--group-color:' + groupColor + ';border-color:' + groupColor + ';min-height:' + d1Height + 'px"' +
-    ' ondblclick="projectsZoomIn(\'' + escHtml(group.path) + '\')"' +
-    ' ondragover="onGroupBoxDragOver(event)" ondragleave="onGroupBoxDragLeave(event)" ondrop="onGroupBoxDrop(event)">' +
-    '<div class="group-box-header">' +
-    '<span class="group-box-name">' + escHtml(group.name) + '</span>' +
-    '<div class="group-box-actions" onclick="event.stopPropagation()">' +
-    '<button class="group-box-actions-btn" onclick="event.stopPropagation();toggleGroupDropdown(this)"><span class="material-symbols-outlined">more_vert</span></button>' +
-    '<div class="group-box-dropdown">' +
-    '<button class="group-box-dd-item" onclick="event.stopPropagation();editGroup(\'' + escHtml(group.path) + '\')"><span class="material-symbols-outlined">edit</span> Edit</button>' +
-    '<button class="group-box-dd-item danger" onclick="event.stopPropagation();deleteGroup(\'' + escHtml(group.path) + '\')"><span class="material-symbols-outlined">delete</span> Delete</button>' +
+  return '<div class="folder-box" data-folder-path="' + escHtml(folder.path) +
+    '" style="--folder-color:' + folderColor + ';border-color:' + folderColor + ';min-height:' + d1Height + 'px"' +
+    ' ondblclick="projectsZoomIn(\'' + escHtml(folder.path) + '\')"' +
+    ' ondragover="onFolderBoxDragOver(event)" ondragleave="onFolderBoxDragLeave(event)" ondrop="onFolderBoxDrop(event)">' +
+    '<div class="folder-box-header">' +
+    '<span class="folder-box-name">' + escHtml(folder.name) + '</span>' +
+    '<div class="folder-box-actions" onclick="event.stopPropagation()">' +
+    '<button class="folder-box-actions-btn" onclick="event.stopPropagation();toggleFolderDropdown(this)"><span class="material-symbols-outlined">more_vert</span></button>' +
+    '<div class="folder-box-dropdown">' +
+    '<button class="folder-box-dd-item" onclick="event.stopPropagation();editFolder(\'' + escHtml(folder.path) + '\')"><span class="material-symbols-outlined">edit</span> Edit</button>' +
+    '<button class="folder-box-dd-item danger" onclick="event.stopPropagation();deleteFolder(\'' + escHtml(folder.path) + '\')"><span class="material-symbols-outlined">delete</span> Delete</button>' +
     '</div></div></div>' +
-    '<div class="group-box-body layout-packed-body" style="grid-template-columns:repeat(' + cols + ',1fr)">' +
+    '<div class="folder-box-body layout-packed-body" style="grid-template-columns:repeat(' + cols + ',1fr)">' +
     innerHtml + '</div></div>';
 }
 
@@ -1783,7 +1783,7 @@ function renderProjectsVisual() {
   var directItems = focused.directItems;
 
   if (depth1Nodes.length === 0 && directItems.length === 0) {
-    el.innerHTML = '<p class="prod-empty">No groups here. Right-click and select "Group" to create one.</p>';
+    el.innerHTML = '<p class="prod-empty">No folders here. Right-click and select "Folder" to create one.</p>';
     return;
   }
 
@@ -1795,14 +1795,14 @@ function renderProjectsVisual() {
     var hasDirectItems = nodeDirectItems.length > 0;
     var hasCatchall = hasDirectItems && node.children.length > 0;
     var numD2 = node.children.length + (hasCatchall ? 1 : 0);
-    // Items-only cards (no subgroups) take 1 column
+    // Items-only cards (no subfolders) take 1 column
     var cols = numD2 > 0 ? Math.min(numD2, LY_TOP_COLS) : 1;
     renderItems.push({ html: renderDepth1Card(node, nodeDirectItems), cols: cols, height: h });
   });
 
   // Root-level direct items: place individually into masonry (no wrapper)
   directItems.forEach(function(item) {
-    var itemHtml = renderGroupItemHtml(item);
+    var itemHtml = renderFolderItemHtml(item);
     if (itemHtml) {
       renderItems.push({ html: itemHtml, cols: 1, height: LY_EST_ITEM_H });
     }
@@ -1848,8 +1848,8 @@ function renderProjectsVisual() {
 // === List mode ===
 function renderProjectsList() {
   var el = document.getElementById('prod-projects'); if (!el) return;
-  var roots = buildGroupTree();
-  var ungrouped = getVisibleUngroupedItems();
+  var roots = buildFolderTree();
+  var ungrouped = getVisibleUnfiledItems();
   var rootLabel = userEmail || 'Projects';
 
   var html = '<div class="list-tree-node">';
@@ -1868,18 +1868,18 @@ function renderProjectsList() {
 }
 
 function renderListTreeNode(node, depth) {
-  var group = node.group;
+  var folder = node.folder;
   var items = node.items || [];
   var children = node.children || [];
   var totalItems = countAllItems(node);
   var indent = depth * 20;
   var hasChildren = children.length > 0 || items.length > 0;
-  var colorDot = (group.color && group.color !== '#000000' && group.color !== DEFAULT_COLOR)
-    ? '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + escHtml(group.color) + ';margin-right:2px;flex-shrink:0"></span>' : '';
+  var colorDot = (folder.color && folder.color !== '#000000' && folder.color !== DEFAULT_COLOR)
+    ? '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + escHtml(folder.color) + ';margin-right:2px;flex-shrink:0"></span>' : '';
 
-  var html = '<div class="list-tree-node" data-path="' + escHtml(group.path) + '"' +
+  var html = '<div class="list-tree-node" data-path="' + escHtml(folder.path) + '"' +
     ' ondragover="onListTreeDragOver(event)" ondragleave="onListTreeDragLeave(event)" ondrop="onListTreeDrop(event)">';
-  html += '<div class="list-tree-row" onclick="toggleListNode(this)" ondblclick="projectsZoomIn(\'' + escHtml(group.path) + '\')">';
+  html += '<div class="list-tree-row" onclick="toggleListNode(this)" ondblclick="projectsZoomIn(\'' + escHtml(folder.path) + '\')">';
   html += '<span style="width:' + indent + 'px" class="list-tree-indent"></span>';
   if (hasChildren) {
     html += '<span class="list-tree-chevron material-symbols-outlined">chevron_right</span>';
@@ -1888,7 +1888,7 @@ function renderListTreeNode(node, depth) {
   }
   html += colorDot;
   html += '<span class="list-tree-icon list-tree-icon-folder material-symbols-outlined">folder</span>';
-  html += '<span class="list-tree-name">' + escHtml(group.name) + '</span>';
+  html += '<span class="list-tree-name">' + escHtml(folder.name) + '</span>';
   if (totalItems > 0) html += '<span class="list-tree-count">(' + totalItems + ')</span>';
   html += '</div>';
 
@@ -1908,9 +1908,9 @@ function renderListTreeItem(item, depth) {
   if (!isItemVisibleByTimeFilter(item)) return '';
   var indent = depth * 20 + 20; // extra 20 for no chevron
   var icon = item.type === 'routine' ? 'repeat' : (item.type === 'note' ? 'note' : 'task_alt');
-  var doneClass = item.done ? ' group-item-done' : '';
+  var doneClass = item.done ? ' folder-item-done' : '';
   return '<div class="list-tree-item' + doneClass + '" draggable="true" data-item-id="' + item.id + '" data-item-type="' + item.type + '"' +
-    ' ondragstart="onGroupItemDragStart(event)" ondragend="onGroupItemDragEnd(event)">' +
+    ' ondragstart="onFolderItemDragStart(event)" ondragend="onFolderItemDragEnd(event)">' +
     '<span style="width:' + indent + 'px" class="list-tree-indent"></span>' +
     '<span class="list-tree-icon material-symbols-outlined">' + icon + '</span>' +
     '<span class="list-tree-name">' + escHtml(item.name) + '</span></div>';
@@ -1940,10 +1940,10 @@ function onListTreeDragLeave(e) {
 function onListTreeDrop(e) {
   e.preventDefault(); e.stopPropagation();
   var node = e.target.closest('.list-tree-node');
-  if (!node || !groupDraggedItemId) return;
+  if (!node || !folderDraggedItemId) return;
   node.querySelector('.list-tree-row').style.background = '';
   var targetPath = node.dataset.path;
-  if (targetPath) assignItemGroup(groupDraggedItemId, groupDraggedItemType, targetPath);
+  if (targetPath) assignItemFolder(folderDraggedItemId, folderDraggedItemType, targetPath);
 }
 
 // === Main render dispatcher ===
@@ -1961,87 +1961,87 @@ function renderProjectsInPlace() {
 }
 
 // --- Group box interactions ---
-function toggleGroupCollapse(headerEl) {
+function toggleFolderCollapse(headerEl) {
   var body = headerEl.nextElementSibling;
-  var toggle = headerEl.querySelector('.group-box-toggle');
+  var toggle = headerEl.querySelector('.folder-box-toggle');
   if (body) body.classList.toggle('collapsed');
   if (toggle) toggle.classList.toggle('collapsed');
 }
 
-function toggleGroupDropdown(btn) {
+function toggleFolderDropdown(btn) {
   var dd = btn.nextElementSibling;
   // Close others
-  document.querySelectorAll('.group-box-dropdown.open').forEach(function(d) { d.classList.remove('open'); });
+  document.querySelectorAll('.folder-box-dropdown.open').forEach(function(d) { d.classList.remove('open'); });
   if (dd) dd.classList.toggle('open');
 }
 
-// Close group dropdowns on click outside
+// Close folder dropdowns on click outside
 document.addEventListener('click', function(e) {
-  if (!e.target.closest('.group-box-actions')) {
-    document.querySelectorAll('.group-box-dropdown.open').forEach(function(d) { d.classList.remove('open'); });
+  if (!e.target.closest('.folder-box-actions')) {
+    document.querySelectorAll('.folder-box-dropdown.open').forEach(function(d) { d.classList.remove('open'); });
   }
 });
 
-function deleteGroup(path) {
-  document.querySelectorAll('.group-box-dropdown.open').forEach(function(d) { d.classList.remove('open'); });
-  if (!confirm('Delete group "' + path + '" and all subgroups? Items will become unclassified.')) return;
-  fetch('/api/groups', {method: 'DELETE', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({path: path})})
+function deleteFolder(path) {
+  document.querySelectorAll('.folder-box-dropdown.open').forEach(function(d) { d.classList.remove('open'); });
+  if (!confirm('Delete folder "' + path + '" and all subfolders? Items will become unclassified.')) return;
+  fetch('/api/folders', {method: 'DELETE', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({path: path})})
     .then(function(r) { if (!r.ok) throw 0; return r.json(); })
     .then(function() { refreshData(); })
-    .catch(function() { alert('Failed to delete group.'); });
+    .catch(function() { alert('Failed to delete folder.'); });
 }
 
-function editGroup(path) {
-  document.querySelectorAll('.group-box-dropdown.open').forEach(function(d) { d.classList.remove('open'); });
-  var group = prodGroups.find(function(g) { return g.path === path; });
-  if (!group) return;
-  openGroupModal(group);
+function editFolder(path) {
+  document.querySelectorAll('.folder-box-dropdown.open').forEach(function(d) { d.classList.remove('open'); });
+  var folder = prodFolders.find(function(g) { return g.path === path; });
+  if (!folder) return;
+  openFolderModal(folder);
 }
 
-// --- Drag and drop for groups ---
-var groupDraggedItemId = null;
-var groupDraggedItemType = null;
+// --- Drag and drop for folders ---
+var folderDraggedItemId = null;
+var folderDraggedItemType = null;
 
-function onGroupItemDragStart(e) {
-  var el = e.target.closest('.group-item');
+function onFolderItemDragStart(e) {
+  var el = e.target.closest('.folder-item');
   if (!el) return;
-  groupDraggedItemId = el.dataset.itemId;
-  groupDraggedItemType = el.dataset.itemType;
+  folderDraggedItemId = el.dataset.itemId;
+  folderDraggedItemType = el.dataset.itemType;
   el.classList.add('dragging');
   e.dataTransfer.effectAllowed = 'move';
-  e.dataTransfer.setData('text/plain', groupDraggedItemId);
+  e.dataTransfer.setData('text/plain', folderDraggedItemId);
   var ws = document.getElementById('projects-whitespace');
   if (ws) ws.classList.add('drag-active');
 }
 
-function onGroupItemDragEnd(e) {
-  var el = e.target.closest('.group-item');
+function onFolderItemDragEnd(e) {
+  var el = e.target.closest('.folder-item');
   if (el) el.classList.remove('dragging');
-  groupDraggedItemId = null;
-  groupDraggedItemType = null;
-  document.querySelectorAll('.group-box.drag-over-group').forEach(function(b) { b.classList.remove('drag-over-group'); });
+  folderDraggedItemId = null;
+  folderDraggedItemType = null;
+  document.querySelectorAll('.folder-box.drag-over-folder').forEach(function(b) { b.classList.remove('drag-over-folder'); });
   var ws = document.getElementById('projects-whitespace');
   if (ws) ws.classList.remove('drag-active', 'drag-over');
 }
 
-function onGroupBoxDragOver(e) {
+function onFolderBoxDragOver(e) {
   e.preventDefault();
-  var box = e.target.closest('.group-box');
-  if (box) box.classList.add('drag-over-group');
+  var box = e.target.closest('.folder-box');
+  if (box) box.classList.add('drag-over-folder');
 }
 
-function onGroupBoxDragLeave(e) {
-  var box = e.target.closest('.group-box');
-  if (box && !box.contains(e.relatedTarget)) box.classList.remove('drag-over-group');
+function onFolderBoxDragLeave(e) {
+  var box = e.target.closest('.folder-box');
+  if (box && !box.contains(e.relatedTarget)) box.classList.remove('drag-over-folder');
 }
 
-function onGroupBoxDrop(e) {
+function onFolderBoxDrop(e) {
   e.preventDefault(); e.stopPropagation();
-  var box = e.target.closest('.group-box');
-  if (!box || !groupDraggedItemId) return;
-  box.classList.remove('drag-over-group');
-  var targetPath = box.dataset.groupPath;
-  assignItemGroup(groupDraggedItemId, groupDraggedItemType, targetPath);
+  var box = e.target.closest('.folder-box');
+  if (!box || !folderDraggedItemId) return;
+  box.classList.remove('drag-over-folder');
+  var targetPath = box.dataset.folderPath;
+  assignItemFolder(folderDraggedItemId, folderDraggedItemType, targetPath);
 }
 
 function onProjectsWhitespaceDragOver(e) {
@@ -2054,26 +2054,26 @@ function onProjectsWhitespaceDragLeave(e) {
 function onProjectsWhitespaceDrop(e) {
   e.preventDefault();
   e.target.classList.remove('drag-over', 'drag-active');
-  if (!groupDraggedItemId) return;
-  assignItemGroup(groupDraggedItemId, groupDraggedItemType, null);
+  if (!folderDraggedItemId) return;
+  assignItemFolder(folderDraggedItemId, folderDraggedItemType, null);
 }
 
-function assignItemGroup(itemId, itemType, groupPath) {
+function assignItemFolder(itemId, itemType, folderPath) {
   if (itemType === 'routine') {
-    fetch('/api/routines/' + itemId, {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({group: groupPath})})
+    fetch('/api/routines/' + itemId, {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({folder: folderPath})})
       .then(function(r) { if (!r.ok) throw 0; return r.json(); })
       .then(function() { refreshData(); })
-      .catch(function() { alert('Failed to assign routine to group.'); });
+      .catch(function() { alert('Failed to assign routine to folder.'); });
   } else if (itemType === 'note') {
-    fetch('/api/notes/' + itemId, {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({group: groupPath})})
+    fetch('/api/notes/' + itemId, {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({folder: folderPath})})
       .then(function(r) { if (!r.ok) throw 0; return r.json(); })
       .then(function() { refreshData(); })
-      .catch(function() { alert('Failed to assign note to group.'); });
+      .catch(function() { alert('Failed to assign note to folder.'); });
   } else {
-    fetch('/api/tasks/' + itemId, {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({group: groupPath})})
+    fetch('/api/tasks/' + itemId, {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({folder: folderPath})})
       .then(function(r) { if (!r.ok) throw 0; return r.json(); })
       .then(function() { refreshData(); })
-      .catch(function() { alert('Failed to assign task to group.'); });
+      .catch(function() { alert('Failed to assign task to folder.'); });
   }
 }
 
@@ -2111,9 +2111,9 @@ function _normalizePathForSave(value) {
   return value.replace(/\s*\/\s*/g, '/').replace(/^\/+/, '').replace(/\/+$/, '').trim();
 }
 
-function createGroupCard(existingGroup) {
-  var editingGroupPath = existingGroup ? existingGroup.path : null;
-  var selectedColor = existingGroup ? (existingGroup.color || DEFAULT_COLOR) : DEFAULT_COLOR;
+function createFolderCard(existingFolder) {
+  var editingFolderPath = existingFolder ? existingFolder.path : null;
+  var selectedColor = existingFolder ? (existingFolder.color || DEFAULT_COLOR) : DEFAULT_COLOR;
   var draftId = null;
   var draftSaveTimer = null;
 
@@ -2148,10 +2148,10 @@ function createGroupCard(existingGroup) {
   var paletteEl = _q(cardEl, 'ga-palette');
   var hexInput = _q(cardEl, 'ga-hex-input');
 
-  header.textContent = existingGroup ? 'Edit Group' : 'Group';
+  header.textContent = existingFolder ? 'Edit Folder' : 'Group';
 
-  if (existingGroup) {
-    pathInput.value = _formatPathForDisplay(existingGroup.path.slice(1));
+  if (existingFolder) {
+    pathInput.value = _formatPathForDisplay(existingFolder.path.slice(1));
     pathInput.disabled = true;
   }
 
@@ -2183,7 +2183,7 @@ function createGroupCard(existingGroup) {
     if (!raw || raw === '') { parentPath = null; }
     else if (endsWithSlash) { parentPath = '/' + raw; }
     else { ghost.textContent = ''; return; }
-    var children = parentPath === null ? getRootGroups() : getChildGroups(parentPath);
+    var children = parentPath === null ? getRootFolders() : getChildFolders(parentPath);
     if (children.length === 0) { ghost.textContent = ''; }
     else {
       ghost.textContent = children.map(function(g) {
@@ -2249,16 +2249,16 @@ function createGroupCard(existingGroup) {
   // Draft auto-save for groups (not when editing existing)
   function scheduleDraftSave() {
     if (draftSaveTimer) clearTimeout(draftSaveTimer);
-    draftSaveTimer = setTimeout(saveGroupDraft, 2000);
+    draftSaveTimer = setTimeout(saveFolderDraft, 2000);
   }
   var draftCreated = false;
-  function saveGroupDraft() {
+  function saveFolderDraft() {
     if (!draftId) return;
     var pathVal = _normalizePathForSave(pathInput.value) || '';
     if (!pathVal && !draftCreated) return; // don't create draft for empty content
     var data = {
       name: pathVal,
-      draft_type: 'group',
+      draft_type: 'folder',
       color: selectedColor
     };
     if (!draftCreated) {
@@ -2269,26 +2269,26 @@ function createGroupCard(existingGroup) {
     }
   }
 
-  if (existingGroup && existingGroup._draftId) {
+  if (existingFolder && existingFolder._draftId) {
     // Resuming a draft — reuse existing draft ID
-    draftId = existingGroup._draftId;
+    draftId = existingFolder._draftId;
     draftCreated = true;
-    editingGroupPath = null;
+    editingFolderPath = null;
     pathInput.addEventListener('input', scheduleDraftSave);
-  } else if (!existingGroup) {
+  } else if (!existingFolder) {
     draftId = crypto.randomUUID ? crypto.randomUUID() : 'draft-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
     pathInput.addEventListener('input', scheduleDraftSave);
   }
 
   var card = {
-    type: 'group',
+    type: 'folder',
     el: cardEl,
     draftId: draftId,
     _onOverlayKeydown: function(e) {
       // Don't submit on Enter inside hex input
       if (e.key === 'Enter' && document.activeElement === hexInput) { e.stopPropagation(); e.preventDefault(); return; }
     },
-    onSubmit: function() { saveThisGroup(); },
+    onSubmit: function() { saveThisFolder(); },
     onDismiss: function() {
       if (draftSaveTimer) { clearTimeout(draftSaveTimer); draftSaveTimer = null; }
       if (draftId && draftCreated) {
@@ -2296,19 +2296,19 @@ function createGroupCard(existingGroup) {
         if (!hasContent) {
           fetch('/api/drafts/' + draftId, {method: 'DELETE'});
         } else {
-          saveGroupDraft();
+          saveFolderDraft();
         }
       }
     }
   };
 
-  function saveThisGroup() {
+  function saveThisFolder() {
     var rawPath = _normalizePathForSave(pathInput.value);
     var path = '/' + rawPath;
     var color = selectedColor || DEFAULT_COLOR;
 
-    if (editingGroupPath) {
-      fetch('/api/groups', {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({path: editingGroupPath, color: color})})
+    if (editingFolderPath) {
+      fetch('/api/folders', {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({path: editingFolderPath, color: color})})
         .then(function(r) { if (!r.ok) return r.json().then(function(d) { throw new Error(d.error || 'Failed'); }); return r.json(); })
         .then(function() { CardStack.remove(card); refreshData(); })
         .catch(function(err) { alert(err.message || 'Failed.'); });
@@ -2320,18 +2320,18 @@ function createGroupCard(existingGroup) {
       var segments = path.split('/').filter(Boolean);
       if (segments.length === 0) { alert('Path is required.'); return; }
       var pathsToCreate = [];
-      var existingPaths = prodGroups.map(function(g) { return g.path; });
+      var existingPaths = prodFolders.map(function(g) { return g.path; });
       for (var i = 0; i < segments.length; i++) {
         var partial = '/' + segments.slice(0, i + 1).join('/');
         if (existingPaths.indexOf(partial) < 0) pathsToCreate.push(partial);
       }
 
-      if (pathsToCreate.length === 0) { alert('Group already exists.'); return; }
+      if (pathsToCreate.length === 0) { alert('Folder already exists.'); return; }
 
-      // Enforce max 12 subgroups per parent
+      // Enforce max 12 subfolders per parent
       var parentPath = segments.length > 1 ? '/' + segments.slice(0, segments.length - 1).join('/') : null;
-      var siblings = parentPath ? getChildGroups(parentPath) : getRootGroups();
-      if (siblings.length >= 12) { alert('A group can have at most 12 subgroups.'); return; }
+      var siblings = parentPath ? getChildFolders(parentPath) : getRootFolders();
+      if (siblings.length >= 12) { alert('A folder can have at most 12 subfolders.'); return; }
 
       var createNext = function(idx) {
         if (idx >= pathsToCreate.length) {
@@ -2344,7 +2344,7 @@ function createGroupCard(existingGroup) {
         var segs = p.split('/').filter(Boolean);
         var name = segs[segs.length - 1];
         var c = (idx === pathsToCreate.length - 1) ? color : DEFAULT_COLOR;
-        fetch('/api/groups', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({path: p, name: name, color: c})})
+        fetch('/api/folders', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({path: p, name: name, color: c})})
           .then(function(r) { if (!r.ok) return r.json().then(function(d) { throw new Error(d.error || 'Failed'); }); return r.json(); })
           .then(function() { createNext(idx + 1); })
           .catch(function(err) { alert(err.message || 'Failed.'); });
@@ -2356,11 +2356,11 @@ function createGroupCard(existingGroup) {
   return card;
 }
 
-function openGroupModal(existingGroup) {
-  CardStack.push(createGroupCard(existingGroup));
+function openFolderModal(existingFolder) {
+  CardStack.push(createFolderCard(existingFolder));
 }
 
-function closeGroupModal() {
+function closeFolderModal() {
   CardStack.dismissTop();
 }
 // --- Pattern helpers (new format: "set:0,1,3" or "interval:2") ---
@@ -2856,11 +2856,11 @@ function resumeDraft(draftId) {
     const draft=all.find(t=>t.draft_id===draftId);
     if(!draft)return;
     if(draft.draft_type==='note') {
-      var noteData = {name: draft.name||'', date: draft.date||null, group: draft.group||null, _draftId: draft.draft_id};
+      var noteData = {name: draft.name||'', date: draft.date||null, folder: draft.folder||null, _draftId: draft.draft_id};
       openNoteAdd(noteData);
-    } else if(draft.draft_type==='group') {
-      var groupData = {path: draft.name ? '/'+draft.name : '', color: draft.color||DEFAULT_COLOR, _draftId: draft.draft_id};
-      openGroupModal(groupData);
+    } else if(draft.draft_type==='folder') {
+      var folderData = {path: draft.name ? '/'+draft.name : '', color: draft.color||DEFAULT_COLOR, _draftId: draft.draft_id};
+      openFolderModal(folderData);
     } else {
       openSmartModal(!!draft.is_routine_draft,draft);
     }
@@ -3099,7 +3099,7 @@ function renderCalendar(el, monthData) {
     (prodAllTasks || []).forEach(function(t) {
       if (!t.end_datetime || t.draft) return;
       if (utcToLocalDate(t.end_datetime) === dateStr) {
-        results.push({task_id: t.task_id, name: t.name, end_datetime: t.end_datetime, group: t.group});
+        results.push({task_id: t.task_id, name: t.name, end_datetime: t.end_datetime, folder: t.folder});
       }
     });
     return results;
@@ -3119,15 +3119,15 @@ function renderCalendar(el, monthData) {
     html += '<div class="mo-day-num">' + prevD + '</div>';
     html += '<div class="mo-day-tasks">';
     for (var pi = 0; pi < prevTasks.length; pi++) {
-      var ptColor = getGroupColor(prevTasks[pi].group) || DEFAULT_COLOR;
+      var ptColor = getFolderColor(prevTasks[pi].folder) || DEFAULT_COLOR;
       html += '<div class="mo-day-task mo-day-note" style="background:' + escHtml(ptColor) + '">' + escHtml(prevTasks[pi].name) + '</div>';
     }
     for (var pni = 0; pni < prevNotes.length; pni++) {
-      var pnColor = getGroupColor(prevNotes[pni].group) || DEFAULT_COLOR;
+      var pnColor = getFolderColor(prevNotes[pni].folder) || DEFAULT_COLOR;
       html += '<div class="mo-day-task mo-day-note" style="background:' + escHtml(pnColor) + '">' + escHtml(prevNotes[pni].name) + '</div>';
     }
     for (var ppi = 0; ppi < prevPlanned.length; ppi++) {
-      var ppColor = getGroupColor(prevPlanned[ppi].group) || DEFAULT_COLOR;
+      var ppColor = getFolderColor(prevPlanned[ppi].folder) || DEFAULT_COLOR;
       html += '<div class="mo-day-task mo-day-planned" style="border-color:' + escHtml(ppColor) + ';color:' + escHtml(ppColor) + '">' + escHtml(prevPlanned[ppi].name) + '</div>';
     }
     html += '</div></div>';
@@ -3163,15 +3163,15 @@ function renderCalendar(el, monthData) {
     html += '<div class="mo-day-num">' + d + '</div>';
     html += '<div class="mo-day-tasks">';
     for (var ti = 0; ti < dayTasks.length; ti++) {
-      var tColor = getGroupColor(dayTasks[ti].group) || DEFAULT_COLOR;
+      var tColor = getFolderColor(dayTasks[ti].folder) || DEFAULT_COLOR;
       html += '<div class="mo-day-task mo-day-note" style="background:' + escHtml(tColor) + '">' + escHtml(dayTasks[ti].name) + '</div>';
     }
     for (var ni = 0; ni < dayNotes.length; ni++) {
-      var nColor = getGroupColor(dayNotes[ni].group) || DEFAULT_COLOR;
+      var nColor = getFolderColor(dayNotes[ni].folder) || DEFAULT_COLOR;
       html += '<div class="mo-day-task mo-day-note" style="background:' + escHtml(nColor) + '">' + escHtml(dayNotes[ni].name) + '</div>';
     }
     for (var pli = 0; pli < dayPlanned.length; pli++) {
-      var plColor = getGroupColor(dayPlanned[pli].group) || DEFAULT_COLOR;
+      var plColor = getFolderColor(dayPlanned[pli].folder) || DEFAULT_COLOR;
       html += '<div class="mo-day-task mo-day-planned" style="border-color:' + escHtml(plColor) + ';color:' + escHtml(plColor) + '">' + escHtml(dayPlanned[pli].name) + '</div>';
     }
     html += '</div></div>';
@@ -3191,15 +3191,15 @@ function renderCalendar(el, monthData) {
     html += '<div class="mo-day-num">' + nextD + '</div>';
     html += '<div class="mo-day-tasks">';
     for (var tni = 0; tni < nextTasks.length; tni++) {
-      var ntColor = getGroupColor(nextTasks[tni].group) || DEFAULT_COLOR;
+      var ntColor = getFolderColor(nextTasks[tni].folder) || DEFAULT_COLOR;
       html += '<div class="mo-day-task mo-day-note" style="background:' + escHtml(ntColor) + '">' + escHtml(nextTasks[tni].name) + '</div>';
     }
     for (var nni = 0; nni < nextNotes.length; nni++) {
-      var nnColor = getGroupColor(nextNotes[nni].group) || DEFAULT_COLOR;
+      var nnColor = getFolderColor(nextNotes[nni].folder) || DEFAULT_COLOR;
       html += '<div class="mo-day-task mo-day-note" style="background:' + escHtml(nnColor) + '">' + escHtml(nextNotes[nni].name) + '</div>';
     }
     for (var npli = 0; npli < nextPlanned.length; npli++) {
-      var nplColor = getGroupColor(nextPlanned[npli].group) || DEFAULT_COLOR;
+      var nplColor = getFolderColor(nextPlanned[npli].folder) || DEFAULT_COLOR;
       html += '<div class="mo-day-task mo-day-planned" style="border-color:' + escHtml(nplColor) + ';color:' + escHtml(nplColor) + '">' + escHtml(nextPlanned[npli].name) + '</div>';
     }
     html += '</div></div>';
@@ -3287,7 +3287,7 @@ function renderWeekView() {
       let endFrac = endIso ? getLocalHourFrac(endIso) : startFrac + 0.25;
       if (endFrac <= startFrac) endFrac = startFrac + (1/60);
       const durationMin = (endFrac - startFrac) * 60;
-      sessions.push({ taskId: t.task_id, taskName: t.name, path: t.path || '/', dayStr, startFrac, endFrac, durationMin, sessionIndex: idx + 1, totalSessions, color: getGroupColor(t.group) });
+      sessions.push({ taskId: t.task_id, taskName: t.name, path: t.path || '/', dayStr, startFrac, endFrac, durationMin, sessionIndex: idx + 1, totalSessions, color: getFolderColor(t.folder) });
     });
   });
 
@@ -3517,7 +3517,7 @@ function renderWeekView() {
         var aTop = TICK_MARGIN + aStartFrac * HOUR_PX;
         var aHeight = Math.max(4, (aEndFrac - aStartFrac) * HOUR_PX - 2);
         var showLabel = aHeight >= 14;
-        var aColor = getGroupColor(a.group) || '#5f6368';
+        var aColor = getFolderColor(a.folder) || '#5f6368';
         var isPlanned = !!a.is_planned;
         var cssClass = isPlanned ? 'wk-action wk-action-planned' : 'wk-action';
         var style = 'top:' + aTop.toFixed(1) + 'px;height:' + aHeight.toFixed(1) + 'px;';
@@ -3751,8 +3751,8 @@ function changeWeek(delta) {
       '<span class="material-symbols-outlined">schedule</span> Action</button>' +
       '<button class="ctx-menu-item" data-action="note">' +
       '<span class="material-symbols-outlined">note</span> Note</button>' +
-      '<button class="ctx-menu-item" data-action="group">' +
-      '<span class="material-symbols-outlined">folder</span> Group</button>' +
+      '<button class="ctx-menu-item" data-action="folder">' +
+      '<span class="material-symbols-outlined">folder</span> Folder</button>' +
       '<button class="ctx-menu-item" data-action="drafts" id="ctx-drafts-item">' +
       '<span class="material-symbols-outlined">draft</span> Drafts' +
       '<span class="material-symbols-outlined" style="margin-left:auto;font-size:0.9rem">chevron_right</span>' +
@@ -3768,8 +3768,8 @@ function changeWeek(delta) {
     menu.querySelector('[data-action="note"]').addEventListener('click', function() {
       closeCtxMenu(); openNoteAdd();
     });
-    menu.querySelector('[data-action="group"]').addEventListener('click', function() {
-      closeCtxMenu(); openGroupModal(null);
+    menu.querySelector('[data-action="folder"]').addEventListener('click', function() {
+      closeCtxMenu(); openFolderModal(null);
     });
 
     var draftsItem = menu.querySelector('[data-action="drafts"]');
@@ -3789,7 +3789,7 @@ function changeWeek(delta) {
       submenu.innerHTML = prodDrafts.map(function(d) {
         var icon, label;
         if (d.draft_type === 'note') { icon = 'note'; label = 'Note'; }
-        else if (d.draft_type === 'group') { icon = 'folder'; label = 'Group'; }
+        else if (d.draft_type === 'folder') { icon = 'folder'; label = 'Group'; }
         else if (d.is_routine_draft) { icon = 'repeat'; label = 'Routine'; }
         else { icon = 'draft'; label = 'Task'; }
         return '<button class="ctx-submenu-item" data-draft-id="' + d.draft_id + '">' +
@@ -3993,7 +3993,7 @@ function createQuickAddCard() {
     '<input class="quickadd-input qa-name" placeholder="Name" autocomplete="off">' +
     '<input class="quickadd-input qa-assign" placeholder="Assign" autocomplete="off">' +
     '<input class="quickadd-input qa-due" placeholder="Due" autocomplete="off">' +
-    '<input class="quickadd-input qa-group" placeholder="Group" autocomplete="off">' +
+    '<input class="quickadd-input qa-folder" placeholder="Folder" autocomplete="off">' +
     '</div>' +
     '<div class="qa-routine-row qa-routine-row-el" style="display:none">' +
     '<input class="quickadd-input qa-start" placeholder="Start day" autocomplete="off">' +
@@ -4011,7 +4011,7 @@ function createQuickAddCard() {
     '</div>';
 
   // Scoped references
-  var groupInput = _q(cardEl, 'qa-group');
+  var folderInput = _q(cardEl, 'qa-folder');
   var plusBtn = _q(cardEl, 'qa-plus-btn');
   var modeSelector = _q(cardEl, 'qa-mode-selector');
   var routineRow = _q(cardEl, 'qa-routine-row-el');
@@ -4019,12 +4019,12 @@ function createQuickAddCard() {
   var qaMode = 0;
 
   function updateColor() {
-    var groupVal = groupInput.value.trim();
+    var folderVal = folderInput.value.trim();
     var color = DEFAULT_COLOR;
-    if (groupVal) {
-      var path = groupVal.startsWith('/') ? groupVal : '/' + groupVal;
+    if (folderVal) {
+      var path = folderVal.startsWith('/') ? folderVal : '/' + folderVal;
       if (path.endsWith('/')) path = path.slice(0, -1);
-      var found = getGroupColor(path);
+      var found = getFolderColor(path);
       if (found) color = found;
     }
     cardEl.style.borderColor = color;
@@ -4032,8 +4032,8 @@ function createQuickAddCard() {
     _q(cardEl, 'qa-header').style.backgroundColor = color;
   }
 
-  groupInput.addEventListener('input', updateColor);
-  groupInput.addEventListener('change', updateColor);
+  folderInput.addEventListener('input', updateColor);
+  folderInput.addEventListener('change', updateColor);
 
   function collapseToTask() {
     qaMode = 0;
@@ -4105,10 +4105,10 @@ function createQuickAddCard() {
     var nameVal = _q(cardEl, 'qa-name').value.trim();
     var assignVal = _q(cardEl, 'qa-assign').value.trim();
     var dueVal = _q(cardEl, 'qa-due').value.trim();
-    var groupVal = _q(cardEl, 'qa-group').value.trim();
+    var folderVal = _q(cardEl, 'qa-folder').value.trim();
     var isRoutine = routineRow && routineRow.style.display !== 'none';
 
-    if (isRoutine) { submitQuickAddRoutine(card, cardEl, nameVal, assignVal, dueVal, groupVal); return; }
+    if (isRoutine) { submitQuickAddRoutine(card, cardEl, nameVal, assignVal, dueVal, folderVal); return; }
 
     if (!nameVal) { alert('Name is required.'); _q(cardEl, 'qa-name').focus(); return; }
 
@@ -4128,51 +4128,51 @@ function createQuickAddCard() {
     }
     if (!dueDt) { alert('Could not parse due date. Try: "today", "friday 10 am", "next monday", etc.'); _q(cardEl, 'qa-due').focus(); return; }
 
-    var group = null;
-    if (groupVal) {
-      if (!groupVal.startsWith('/')) groupVal = '/' + groupVal;
-      if (groupVal.endsWith('/')) groupVal = groupVal.slice(0, -1);
-      group = groupVal;
+    var folder = null;
+    if (folderVal) {
+      if (!folderVal.startsWith('/')) folderVal = '/' + folderVal;
+      if (folderVal.endsWith('/')) folderVal = folderVal.slice(0, -1);
+      folder = folderVal;
     }
 
-    var data = { name: nameVal, assign_datetime: assignDt, due_datetime: dueDt, group: group, path: '/', draft: false };
+    var data = { name: nameVal, assign_datetime: assignDt, due_datetime: dueDt, folder: folder, path: '/', draft: false };
 
-    var createGroupsThenTask = function() {
+    var createFoldersThenTask = function() {
       fetch('/api/tasks', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data)})
         .then(function(r) { if (!r.ok) return r.json().then(function(d) { throw new Error(d.error || 'Failed'); }); return r.json(); })
         .then(function() { CardStack.remove(card); refreshData(); })
         .catch(function(err) { alert(err.message || 'Failed to create task.'); });
     };
 
-    if (group) {
-      var segments = group.split('/').filter(Boolean);
-      var existingPaths = prodGroups.map(function(g) { return g.path; });
+    if (folder) {
+      var segments = folder.split('/').filter(Boolean);
+      var existingPaths = prodFolders.map(function(g) { return g.path; });
       var pathsToCreate = [];
       for (var qi = 0; qi < segments.length; qi++) {
         var partial = '/' + segments.slice(0, qi + 1).join('/');
         if (existingPaths.indexOf(partial) < 0) pathsToCreate.push(partial);
       }
-      if (pathsToCreate.length === 0) { createGroupsThenTask(); return; }
+      if (pathsToCreate.length === 0) { createFoldersThenTask(); return; }
       var createNext = function(idx) {
-        if (idx >= pathsToCreate.length) { createGroupsThenTask(); return; }
+        if (idx >= pathsToCreate.length) { createFoldersThenTask(); return; }
         var p = pathsToCreate[idx];
         var segs = p.split('/').filter(Boolean);
         var gName = segs[segs.length - 1];
-        fetch('/api/groups', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({path: p, name: gName, color: DEFAULT_COLOR})})
+        fetch('/api/folders', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({path: p, name: gName, color: DEFAULT_COLOR})})
           .then(function(r) { if (!r.ok) return r.json().then(function(d) { throw new Error(d.error || 'Failed'); }); return r.json(); })
           .then(function() { createNext(idx + 1); })
           .catch(function() { createNext(idx + 1); });
       };
       createNext(0);
     } else {
-      createGroupsThenTask();
+      createFoldersThenTask();
     }
   }
 
   return card;
 }
 
-function submitQuickAddRoutine(card, cardEl, nameVal, assignVal, dueVal, groupVal) {
+function submitQuickAddRoutine(card, cardEl, nameVal, assignVal, dueVal, folderVal) {
   if (!nameVal) { alert('Name is required.'); _q(cardEl, 'qa-name').focus(); return; }
 
   var startVal = _q(cardEl, 'qa-start').value.trim();
@@ -4209,7 +4209,7 @@ function submitQuickAddRoutine(card, cardEl, nameVal, assignVal, dueVal, groupVa
 
   var routineData = {
     name: nameVal, assign_time: assignTime || '00:00', due_time: dueTime || '23:59',
-    first_day: firstDay, pattern: pattern, group: null
+    first_day: firstDay, pattern: pattern, folder: null
   };
 
   if (isEndDateMode) {
@@ -4226,10 +4226,10 @@ function submitQuickAddRoutine(card, cardEl, nameVal, assignVal, dueVal, groupVa
     routineData.max_instances = instVal;
   }
 
-  if (groupVal) {
-    if (!groupVal.startsWith('/')) groupVal = '/' + groupVal;
-    if (groupVal.endsWith('/')) groupVal = groupVal.slice(0, -1);
-    routineData.group = groupVal;
+  if (folderVal) {
+    if (!folderVal.startsWith('/')) folderVal = '/' + folderVal;
+    if (folderVal.endsWith('/')) folderVal = folderVal.slice(0, -1);
+    routineData.folder = folderVal;
   }
 
   var createRoutine = function() {
@@ -4239,9 +4239,9 @@ function submitQuickAddRoutine(card, cardEl, nameVal, assignVal, dueVal, groupVa
       .catch(function(err) { alert(err.message || 'Failed to create routine.'); });
   };
 
-  if (routineData.group) {
-    var segments = routineData.group.split('/').filter(Boolean);
-    var existingPaths = prodGroups.map(function(g) { return g.path; });
+  if (routineData.folder) {
+    var segments = routineData.folder.split('/').filter(Boolean);
+    var existingPaths = prodFolders.map(function(g) { return g.path; });
     var pathsToCreate = [];
     for (var qi = 0; qi < segments.length; qi++) {
       var partial = '/' + segments.slice(0, qi + 1).join('/');
@@ -4253,7 +4253,7 @@ function submitQuickAddRoutine(card, cardEl, nameVal, assignVal, dueVal, groupVa
       var p = pathsToCreate[idx];
       var segs = p.split('/').filter(Boolean);
       var gName = segs[segs.length - 1];
-      fetch('/api/groups', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({path: p, name: gName, color: DEFAULT_COLOR})})
+      fetch('/api/folders', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({path: p, name: gName, color: DEFAULT_COLOR})})
         .then(function(r) { return r.json(); })
         .then(function() { createNext(idx + 1); })
         .catch(function() { createNext(idx + 1); });
@@ -4282,7 +4282,7 @@ function createActionCard() {
     '<input class="quickadd-input qa-name" placeholder="Name" autocomplete="off">' +
     '<input class="quickadd-input qa-start-dt" placeholder="Start (e.g. today 8:30 am)" autocomplete="off">' +
     '<input class="quickadd-input qa-end-dt" placeholder="End (e.g. today 10 am)" autocomplete="off">' +
-    '<input class="quickadd-input qa-group" placeholder="Group" autocomplete="off">' +
+    '<input class="quickadd-input qa-folder" placeholder="Folder" autocomplete="off">' +
     '</div>' +
     '<div class="qa-routine-row qa-schedule-row-el" style="display:none">' +
     '<input class="quickadd-input qa-start-day" placeholder="Start day" autocomplete="off">' +
@@ -4299,7 +4299,7 @@ function createActionCard() {
     '</span>' +
     '</div>';
 
-  var groupInput = _q(cardEl, 'qa-group');
+  var folderInput = _q(cardEl, 'qa-folder');
   var plusBtn = _q(cardEl, 'qa-plus-btn');
   var modeSelector = _q(cardEl, 'qa-mode-selector');
   var scheduleRow = _q(cardEl, 'qa-schedule-row-el');
@@ -4307,12 +4307,12 @@ function createActionCard() {
   var qaMode = 0;
 
   function updateColor() {
-    var groupVal = groupInput.value.trim();
+    var folderVal = folderInput.value.trim();
     var color = '#5f6368';
-    if (groupVal) {
-      var path = groupVal.startsWith('/') ? groupVal : '/' + groupVal;
+    if (folderVal) {
+      var path = folderVal.startsWith('/') ? folderVal : '/' + folderVal;
       if (path.endsWith('/')) path = path.slice(0, -1);
-      var found = getGroupColor(path);
+      var found = getFolderColor(path);
       if (found) color = found;
     }
     cardEl.style.borderColor = color;
@@ -4320,8 +4320,8 @@ function createActionCard() {
     _q(cardEl, 'qa-header').style.backgroundColor = color;
   }
 
-  groupInput.addEventListener('input', updateColor);
-  groupInput.addEventListener('change', updateColor);
+  folderInput.addEventListener('input', updateColor);
+  folderInput.addEventListener('change', updateColor);
 
   function collapseToAction() {
     qaMode = 0;
@@ -4391,10 +4391,10 @@ function createActionCard() {
     var nameVal = _q(cardEl, 'qa-name').value.trim();
     var startVal = _q(cardEl, 'qa-start-dt').value.trim();
     var endVal = _q(cardEl, 'qa-end-dt').value.trim();
-    var groupVal = _q(cardEl, 'qa-group').value.trim();
+    var folderVal = _q(cardEl, 'qa-folder').value.trim();
     var isSchedule = scheduleRow && scheduleRow.style.display !== 'none';
 
-    if (isSchedule) { submitActionSchedule(card, cardEl, nameVal, startVal, endVal, groupVal); return; }
+    if (isSchedule) { submitActionSchedule(card, cardEl, nameVal, startVal, endVal, folderVal); return; }
 
     if (!nameVal) { alert('Name is required.'); _q(cardEl, 'qa-name').focus(); return; }
 
@@ -4414,51 +4414,51 @@ function createActionCard() {
     }
     if (!endDt) { alert('Could not parse end time. Try: "today 10 am", "tomorrow 5 pm", etc.'); _q(cardEl, 'qa-end-dt').focus(); return; }
 
-    var group = null;
-    if (groupVal) {
-      if (!groupVal.startsWith('/')) groupVal = '/' + groupVal;
-      if (groupVal.endsWith('/')) groupVal = groupVal.slice(0, -1);
-      group = groupVal;
+    var folder = null;
+    if (folderVal) {
+      if (!folderVal.startsWith('/')) folderVal = '/' + folderVal;
+      if (folderVal.endsWith('/')) folderVal = folderVal.slice(0, -1);
+      folder = folderVal;
     }
 
-    var data = { name: nameVal, start_datetime: startDt, end_datetime: endDt, group: group, is_planned: false };
+    var data = { name: nameVal, start_datetime: startDt, end_datetime: endDt, folder: folder, is_planned: false };
 
-    var createGroupsThenAction = function() {
+    var createFoldersThenAction = function() {
       fetch('/api/actions', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data)})
         .then(function(r) { if (!r.ok) return r.json().then(function(d) { throw new Error(d.error || 'Failed'); }); return r.json(); })
         .then(function() { CardStack.remove(card); refreshData(); })
         .catch(function(err) { alert(err.message || 'Failed to create action.'); });
     };
 
-    if (group) {
-      var segments = group.split('/').filter(Boolean);
-      var existingPaths = prodGroups.map(function(g) { return g.path; });
+    if (folder) {
+      var segments = folder.split('/').filter(Boolean);
+      var existingPaths = prodFolders.map(function(g) { return g.path; });
       var pathsToCreate = [];
       for (var qi = 0; qi < segments.length; qi++) {
         var partial = '/' + segments.slice(0, qi + 1).join('/');
         if (existingPaths.indexOf(partial) < 0) pathsToCreate.push(partial);
       }
-      if (pathsToCreate.length === 0) { createGroupsThenAction(); return; }
+      if (pathsToCreate.length === 0) { createFoldersThenAction(); return; }
       var createNext = function(idx) {
-        if (idx >= pathsToCreate.length) { createGroupsThenAction(); return; }
+        if (idx >= pathsToCreate.length) { createFoldersThenAction(); return; }
         var p = pathsToCreate[idx];
         var segs = p.split('/').filter(Boolean);
         var gName = segs[segs.length - 1];
-        fetch('/api/groups', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({path: p, name: gName, color: DEFAULT_COLOR})})
+        fetch('/api/folders', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({path: p, name: gName, color: DEFAULT_COLOR})})
           .then(function(r) { return r.json(); })
           .then(function() { createNext(idx + 1); })
           .catch(function() { createNext(idx + 1); });
       };
       createNext(0);
     } else {
-      createGroupsThenAction();
+      createFoldersThenAction();
     }
   }
 
   return card;
 }
 
-function submitActionSchedule(card, cardEl, nameVal, startVal, endVal, groupVal) {
+function submitActionSchedule(card, cardEl, nameVal, startVal, endVal, folderVal) {
   if (!nameVal) { alert('Name is required.'); _q(cardEl, 'qa-name').focus(); return; }
 
   var startDayVal = _q(cardEl, 'qa-start-day').value.trim();
@@ -4496,7 +4496,7 @@ function submitActionSchedule(card, cardEl, nameVal, startVal, endVal, groupVal)
 
   var scheduleData = {
     name: nameVal, start_time: startTime || '08:00', end_time: endTime || '09:00',
-    first_day: firstDay, pattern: pattern, group: null
+    first_day: firstDay, pattern: pattern, folder: null
   };
 
   if (isEndDateMode) {
@@ -4513,10 +4513,10 @@ function submitActionSchedule(card, cardEl, nameVal, startVal, endVal, groupVal)
     scheduleData.max_instances = instVal;
   }
 
-  if (groupVal) {
-    if (!groupVal.startsWith('/')) groupVal = '/' + groupVal;
-    if (groupVal.endsWith('/')) groupVal = groupVal.slice(0, -1);
-    scheduleData.group = groupVal;
+  if (folderVal) {
+    if (!folderVal.startsWith('/')) folderVal = '/' + folderVal;
+    if (folderVal.endsWith('/')) folderVal = folderVal.slice(0, -1);
+    scheduleData.folder = folderVal;
   }
 
   var createSchedule = function() {
@@ -4526,9 +4526,9 @@ function submitActionSchedule(card, cardEl, nameVal, startVal, endVal, groupVal)
       .catch(function(err) { alert(err.message || 'Failed to create schedule.'); });
   };
 
-  if (scheduleData.group) {
-    var segments = scheduleData.group.split('/').filter(Boolean);
-    var existingPaths = prodGroups.map(function(g) { return g.path; });
+  if (scheduleData.folder) {
+    var segments = scheduleData.folder.split('/').filter(Boolean);
+    var existingPaths = prodFolders.map(function(g) { return g.path; });
     var pathsToCreate = [];
     for (var qi = 0; qi < segments.length; qi++) {
       var partial = '/' + segments.slice(0, qi + 1).join('/');
@@ -4540,7 +4540,7 @@ function submitActionSchedule(card, cardEl, nameVal, startVal, endVal, groupVal)
       var p = pathsToCreate[idx];
       var segs = p.split('/').filter(Boolean);
       var gName = segs[segs.length - 1];
-      fetch('/api/groups', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({path: p, name: gName, color: DEFAULT_COLOR})})
+      fetch('/api/folders', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({path: p, name: gName, color: DEFAULT_COLOR})})
         .then(function(r) { return r.json(); })
         .then(function() { createNext(idx + 1); })
         .catch(function() { createNext(idx + 1); });
@@ -4591,22 +4591,22 @@ function createNoteAddCard(existingNote) {
       '<span class="noteadd-date-sep">/</span>' +
       '<span class="noteadd-year-group"><span class="noteadd-date-prefix">20</span><input class="noteadd-date-seg noteadd-date-year na-yy" placeholder="YY" inputmode="numeric"></span>' +
     '</div>' +
-    '<input class="quickadd-input qa-group na-group" placeholder="Group" autocomplete="off">' +
+    '<input class="quickadd-input qa-folder na-folder" placeholder="Folder" autocomplete="off">' +
     '</div>';
 
   var nameInput = _q(cardEl, 'na-name');
-  var groupInput = _q(cardEl, 'na-group');
+  var folderInput = _q(cardEl, 'na-folder');
   var mm = _q(cardEl, 'na-mm');
   var dd = _q(cardEl, 'na-dd');
   var yy = _q(cardEl, 'na-yy');
 
   function updateColor() {
-    var groupVal = groupInput.value.trim();
+    var folderVal = folderInput.value.trim();
     var color = DEFAULT_COLOR;
-    if (groupVal) {
-      var path = groupVal.startsWith('/') ? groupVal : '/' + groupVal;
+    if (folderVal) {
+      var path = folderVal.startsWith('/') ? folderVal : '/' + folderVal;
       if (path.endsWith('/')) path = path.slice(0, -1);
-      var found = getGroupColor(path);
+      var found = getFolderColor(path);
       if (found) color = found;
     }
     cardEl.style.borderColor = color;
@@ -4614,8 +4614,8 @@ function createNoteAddCard(existingNote) {
     _q(cardEl, 'na-header').style.backgroundColor = color;
   }
 
-  groupInput.addEventListener('input', updateColor);
-  groupInput.addEventListener('change', updateColor);
+  folderInput.addEventListener('input', updateColor);
+  folderInput.addEventListener('change', updateColor);
 
   // Smart auto-tab between date segments
   function filterNumeric(e) { e.target.value = e.target.value.replace(/[^0-9]/g, ''); }
@@ -4670,7 +4670,7 @@ function createNoteAddCard(existingNote) {
       dd.value = parseInt(parts[2], 10) || '';
       yy.value = parts[0] ? parts[0].slice(2) : '';
     }
-    groupInput.value = existingNote.group || '';
+    folderInput.value = existingNote.folder || '';
   }
 
   updateColor();
@@ -4689,7 +4689,7 @@ function createNoteAddCard(existingNote) {
       name: nameVal,
       draft_type: 'note',
       date: null,
-      group: groupInput.value.trim() || null
+      folder: folderInput.value.trim() || null
     };
     var mmV = mm.value.trim(), ddV = dd.value.trim(), yyV = yy.value.trim();
     if (mmV && ddV && yyV) {
@@ -4712,14 +4712,14 @@ function createNoteAddCard(existingNote) {
     mm.addEventListener('input', scheduleDraftSave);
     dd.addEventListener('input', scheduleDraftSave);
     yy.addEventListener('input', scheduleDraftSave);
-    groupInput.addEventListener('input', scheduleDraftSave);
+    folderInput.addEventListener('input', scheduleDraftSave);
   } else if (!existingNote) {
     draftId = crypto.randomUUID ? crypto.randomUUID() : 'draft-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
     nameInput.addEventListener('input', scheduleDraftSave);
     mm.addEventListener('input', scheduleDraftSave);
     dd.addEventListener('input', scheduleDraftSave);
     yy.addEventListener('input', scheduleDraftSave);
-    groupInput.addEventListener('input', scheduleDraftSave);
+    folderInput.addEventListener('input', scheduleDraftSave);
   }
 
   var card = {
@@ -4745,7 +4745,7 @@ function createNoteAddCard(existingNote) {
     var mmVal = mm.value.trim();
     var ddVal = dd.value.trim();
     var yyVal = yy.value.trim();
-    var groupVal = groupInput.value.trim();
+    var folderVal = folderInput.value.trim();
 
     if (!nameVal) { alert('Name is required.'); nameInput.focus(); return; }
     if (!mmVal || !ddVal || !yyVal) { alert('Date is required (M/D/YY).'); return; }
@@ -4759,14 +4759,14 @@ function createNoteAddCard(existingNote) {
     if (isNaN(yyyy)) { alert('Invalid year.'); yy.focus(); return; }
 
     var dateStr = yyyy + '-' + String(mmI).padStart(2, '0') + '-' + String(ddI).padStart(2, '0');
-    var group = null;
-    if (groupVal) {
-      if (!groupVal.startsWith('/')) groupVal = '/' + groupVal;
-      if (groupVal.endsWith('/')) groupVal = groupVal.slice(0, -1);
-      group = groupVal;
+    var folder = null;
+    if (folderVal) {
+      if (!folderVal.startsWith('/')) folderVal = '/' + folderVal;
+      if (folderVal.endsWith('/')) folderVal = folderVal.slice(0, -1);
+      folder = folderVal;
     }
 
-    var noteData = { name: nameVal, date: dateStr, group: group };
+    var noteData = { name: nameVal, date: dateStr, folder: folder };
 
     var saveNote = function() {
       var url = editingNoteId ? '/api/notes/' + editingNoteId : '/api/notes';
@@ -4781,9 +4781,9 @@ function createNoteAddCard(existingNote) {
         .catch(function(err) { alert(err.message || 'Failed to save note.'); });
     };
 
-    if (group) {
-      var segments = group.split('/').filter(Boolean);
-      var existingPaths = prodGroups.map(function(g) { return g.path; });
+    if (folder) {
+      var segments = folder.split('/').filter(Boolean);
+      var existingPaths = prodFolders.map(function(g) { return g.path; });
       var pathsToCreate = [];
       for (var i = 0; i < segments.length; i++) {
         var partial = '/' + segments.slice(0, i + 1).join('/');
@@ -4795,7 +4795,7 @@ function createNoteAddCard(existingNote) {
         var p = pathsToCreate[idx];
         var segs = p.split('/').filter(Boolean);
         var gName = segs[segs.length - 1];
-        fetch('/api/groups', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({path: p, name: gName, color: DEFAULT_COLOR})})
+        fetch('/api/folders', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({path: p, name: gName, color: DEFAULT_COLOR})})
           .then(function(r) { if (!r.ok) return r.json().then(function(d) { throw new Error(d.error || 'Failed'); }); return r.json(); })
           .then(function() { createNext(idx + 1); })
           .catch(function() { createNext(idx + 1); });

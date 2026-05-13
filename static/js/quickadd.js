@@ -8,7 +8,7 @@ function createQuickAddCard() {
     '<input class="quickadd-input qa-name" placeholder="Name" autocomplete="off">' +
     '<input class="quickadd-input qa-assign" placeholder="Assign" autocomplete="off">' +
     '<input class="quickadd-input qa-due" placeholder="Due" autocomplete="off">' +
-    '<input class="quickadd-input qa-group" placeholder="Group" autocomplete="off">' +
+    '<input class="quickadd-input qa-folder" placeholder="Folder" autocomplete="off">' +
     '</div>' +
     '<div class="qa-routine-row qa-routine-row-el" style="display:none">' +
     '<input class="quickadd-input qa-start" placeholder="Start day" autocomplete="off">' +
@@ -26,7 +26,7 @@ function createQuickAddCard() {
     '</div>';
 
   // Scoped references
-  var groupInput = _q(cardEl, 'qa-group');
+  var folderInput = _q(cardEl, 'qa-folder');
   var plusBtn = _q(cardEl, 'qa-plus-btn');
   var modeSelector = _q(cardEl, 'qa-mode-selector');
   var routineRow = _q(cardEl, 'qa-routine-row-el');
@@ -34,12 +34,12 @@ function createQuickAddCard() {
   var qaMode = 0;
 
   function updateColor() {
-    var groupVal = groupInput.value.trim();
+    var folderVal = folderInput.value.trim();
     var color = DEFAULT_COLOR;
-    if (groupVal) {
-      var path = groupVal.startsWith('/') ? groupVal : '/' + groupVal;
+    if (folderVal) {
+      var path = folderVal.startsWith('/') ? folderVal : '/' + folderVal;
       if (path.endsWith('/')) path = path.slice(0, -1);
-      var found = getGroupColor(path);
+      var found = getFolderColor(path);
       if (found) color = found;
     }
     cardEl.style.borderColor = color;
@@ -47,8 +47,8 @@ function createQuickAddCard() {
     _q(cardEl, 'qa-header').style.backgroundColor = color;
   }
 
-  groupInput.addEventListener('input', updateColor);
-  groupInput.addEventListener('change', updateColor);
+  folderInput.addEventListener('input', updateColor);
+  folderInput.addEventListener('change', updateColor);
 
   function collapseToTask() {
     qaMode = 0;
@@ -120,10 +120,10 @@ function createQuickAddCard() {
     var nameVal = _q(cardEl, 'qa-name').value.trim();
     var assignVal = _q(cardEl, 'qa-assign').value.trim();
     var dueVal = _q(cardEl, 'qa-due').value.trim();
-    var groupVal = _q(cardEl, 'qa-group').value.trim();
+    var folderVal = _q(cardEl, 'qa-folder').value.trim();
     var isRoutine = routineRow && routineRow.style.display !== 'none';
 
-    if (isRoutine) { submitQuickAddRoutine(card, cardEl, nameVal, assignVal, dueVal, groupVal); return; }
+    if (isRoutine) { submitQuickAddRoutine(card, cardEl, nameVal, assignVal, dueVal, folderVal); return; }
 
     if (!nameVal) { alert('Name is required.'); _q(cardEl, 'qa-name').focus(); return; }
 
@@ -143,51 +143,51 @@ function createQuickAddCard() {
     }
     if (!dueDt) { alert('Could not parse due date. Try: "today", "friday 10 am", "next monday", etc.'); _q(cardEl, 'qa-due').focus(); return; }
 
-    var group = null;
-    if (groupVal) {
-      if (!groupVal.startsWith('/')) groupVal = '/' + groupVal;
-      if (groupVal.endsWith('/')) groupVal = groupVal.slice(0, -1);
-      group = groupVal;
+    var folder = null;
+    if (folderVal) {
+      if (!folderVal.startsWith('/')) folderVal = '/' + folderVal;
+      if (folderVal.endsWith('/')) folderVal = folderVal.slice(0, -1);
+      folder = folderVal;
     }
 
-    var data = { name: nameVal, assign_datetime: assignDt, due_datetime: dueDt, group: group, path: '/', draft: false };
+    var data = { name: nameVal, assign_datetime: assignDt, due_datetime: dueDt, folder: folder, path: '/', draft: false };
 
-    var createGroupsThenTask = function() {
+    var createFoldersThenTask = function() {
       fetch('/api/tasks', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data)})
         .then(function(r) { if (!r.ok) return r.json().then(function(d) { throw new Error(d.error || 'Failed'); }); return r.json(); })
         .then(function() { CardStack.remove(card); refreshData(); })
         .catch(function(err) { alert(err.message || 'Failed to create task.'); });
     };
 
-    if (group) {
-      var segments = group.split('/').filter(Boolean);
-      var existingPaths = prodGroups.map(function(g) { return g.path; });
+    if (folder) {
+      var segments = folder.split('/').filter(Boolean);
+      var existingPaths = prodFolders.map(function(g) { return g.path; });
       var pathsToCreate = [];
       for (var qi = 0; qi < segments.length; qi++) {
         var partial = '/' + segments.slice(0, qi + 1).join('/');
         if (existingPaths.indexOf(partial) < 0) pathsToCreate.push(partial);
       }
-      if (pathsToCreate.length === 0) { createGroupsThenTask(); return; }
+      if (pathsToCreate.length === 0) { createFoldersThenTask(); return; }
       var createNext = function(idx) {
-        if (idx >= pathsToCreate.length) { createGroupsThenTask(); return; }
+        if (idx >= pathsToCreate.length) { createFoldersThenTask(); return; }
         var p = pathsToCreate[idx];
         var segs = p.split('/').filter(Boolean);
         var gName = segs[segs.length - 1];
-        fetch('/api/groups', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({path: p, name: gName, color: DEFAULT_COLOR})})
+        fetch('/api/folders', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({path: p, name: gName, color: DEFAULT_COLOR})})
           .then(function(r) { if (!r.ok) return r.json().then(function(d) { throw new Error(d.error || 'Failed'); }); return r.json(); })
           .then(function() { createNext(idx + 1); })
           .catch(function() { createNext(idx + 1); });
       };
       createNext(0);
     } else {
-      createGroupsThenTask();
+      createFoldersThenTask();
     }
   }
 
   return card;
 }
 
-function submitQuickAddRoutine(card, cardEl, nameVal, assignVal, dueVal, groupVal) {
+function submitQuickAddRoutine(card, cardEl, nameVal, assignVal, dueVal, folderVal) {
   if (!nameVal) { alert('Name is required.'); _q(cardEl, 'qa-name').focus(); return; }
 
   var startVal = _q(cardEl, 'qa-start').value.trim();
@@ -224,7 +224,7 @@ function submitQuickAddRoutine(card, cardEl, nameVal, assignVal, dueVal, groupVa
 
   var routineData = {
     name: nameVal, assign_time: assignTime || '00:00', due_time: dueTime || '23:59',
-    first_day: firstDay, pattern: pattern, group: null
+    first_day: firstDay, pattern: pattern, folder: null
   };
 
   if (isEndDateMode) {
@@ -241,10 +241,10 @@ function submitQuickAddRoutine(card, cardEl, nameVal, assignVal, dueVal, groupVa
     routineData.max_instances = instVal;
   }
 
-  if (groupVal) {
-    if (!groupVal.startsWith('/')) groupVal = '/' + groupVal;
-    if (groupVal.endsWith('/')) groupVal = groupVal.slice(0, -1);
-    routineData.group = groupVal;
+  if (folderVal) {
+    if (!folderVal.startsWith('/')) folderVal = '/' + folderVal;
+    if (folderVal.endsWith('/')) folderVal = folderVal.slice(0, -1);
+    routineData.folder = folderVal;
   }
 
   var createRoutine = function() {
@@ -254,9 +254,9 @@ function submitQuickAddRoutine(card, cardEl, nameVal, assignVal, dueVal, groupVa
       .catch(function(err) { alert(err.message || 'Failed to create routine.'); });
   };
 
-  if (routineData.group) {
-    var segments = routineData.group.split('/').filter(Boolean);
-    var existingPaths = prodGroups.map(function(g) { return g.path; });
+  if (routineData.folder) {
+    var segments = routineData.folder.split('/').filter(Boolean);
+    var existingPaths = prodFolders.map(function(g) { return g.path; });
     var pathsToCreate = [];
     for (var qi = 0; qi < segments.length; qi++) {
       var partial = '/' + segments.slice(0, qi + 1).join('/');
@@ -268,7 +268,7 @@ function submitQuickAddRoutine(card, cardEl, nameVal, assignVal, dueVal, groupVa
       var p = pathsToCreate[idx];
       var segs = p.split('/').filter(Boolean);
       var gName = segs[segs.length - 1];
-      fetch('/api/groups', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({path: p, name: gName, color: DEFAULT_COLOR})})
+      fetch('/api/folders', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({path: p, name: gName, color: DEFAULT_COLOR})})
         .then(function(r) { return r.json(); })
         .then(function() { createNext(idx + 1); })
         .catch(function() { createNext(idx + 1); });
@@ -297,7 +297,7 @@ function createActionCard() {
     '<input class="quickadd-input qa-name" placeholder="Name" autocomplete="off">' +
     '<input class="quickadd-input qa-start-dt" placeholder="Start (e.g. today 8:30 am)" autocomplete="off">' +
     '<input class="quickadd-input qa-end-dt" placeholder="End (e.g. today 10 am)" autocomplete="off">' +
-    '<input class="quickadd-input qa-group" placeholder="Group" autocomplete="off">' +
+    '<input class="quickadd-input qa-folder" placeholder="Folder" autocomplete="off">' +
     '</div>' +
     '<div class="qa-routine-row qa-schedule-row-el" style="display:none">' +
     '<input class="quickadd-input qa-start-day" placeholder="Start day" autocomplete="off">' +
@@ -314,7 +314,7 @@ function createActionCard() {
     '</span>' +
     '</div>';
 
-  var groupInput = _q(cardEl, 'qa-group');
+  var folderInput = _q(cardEl, 'qa-folder');
   var plusBtn = _q(cardEl, 'qa-plus-btn');
   var modeSelector = _q(cardEl, 'qa-mode-selector');
   var scheduleRow = _q(cardEl, 'qa-schedule-row-el');
@@ -322,12 +322,12 @@ function createActionCard() {
   var qaMode = 0;
 
   function updateColor() {
-    var groupVal = groupInput.value.trim();
+    var folderVal = folderInput.value.trim();
     var color = '#5f6368';
-    if (groupVal) {
-      var path = groupVal.startsWith('/') ? groupVal : '/' + groupVal;
+    if (folderVal) {
+      var path = folderVal.startsWith('/') ? folderVal : '/' + folderVal;
       if (path.endsWith('/')) path = path.slice(0, -1);
-      var found = getGroupColor(path);
+      var found = getFolderColor(path);
       if (found) color = found;
     }
     cardEl.style.borderColor = color;
@@ -335,8 +335,8 @@ function createActionCard() {
     _q(cardEl, 'qa-header').style.backgroundColor = color;
   }
 
-  groupInput.addEventListener('input', updateColor);
-  groupInput.addEventListener('change', updateColor);
+  folderInput.addEventListener('input', updateColor);
+  folderInput.addEventListener('change', updateColor);
 
   function collapseToAction() {
     qaMode = 0;
@@ -406,10 +406,10 @@ function createActionCard() {
     var nameVal = _q(cardEl, 'qa-name').value.trim();
     var startVal = _q(cardEl, 'qa-start-dt').value.trim();
     var endVal = _q(cardEl, 'qa-end-dt').value.trim();
-    var groupVal = _q(cardEl, 'qa-group').value.trim();
+    var folderVal = _q(cardEl, 'qa-folder').value.trim();
     var isSchedule = scheduleRow && scheduleRow.style.display !== 'none';
 
-    if (isSchedule) { submitActionSchedule(card, cardEl, nameVal, startVal, endVal, groupVal); return; }
+    if (isSchedule) { submitActionSchedule(card, cardEl, nameVal, startVal, endVal, folderVal); return; }
 
     if (!nameVal) { alert('Name is required.'); _q(cardEl, 'qa-name').focus(); return; }
 
@@ -429,51 +429,51 @@ function createActionCard() {
     }
     if (!endDt) { alert('Could not parse end time. Try: "today 10 am", "tomorrow 5 pm", etc.'); _q(cardEl, 'qa-end-dt').focus(); return; }
 
-    var group = null;
-    if (groupVal) {
-      if (!groupVal.startsWith('/')) groupVal = '/' + groupVal;
-      if (groupVal.endsWith('/')) groupVal = groupVal.slice(0, -1);
-      group = groupVal;
+    var folder = null;
+    if (folderVal) {
+      if (!folderVal.startsWith('/')) folderVal = '/' + folderVal;
+      if (folderVal.endsWith('/')) folderVal = folderVal.slice(0, -1);
+      folder = folderVal;
     }
 
-    var data = { name: nameVal, start_datetime: startDt, end_datetime: endDt, group: group, is_planned: false };
+    var data = { name: nameVal, start_datetime: startDt, end_datetime: endDt, folder: folder, is_planned: false };
 
-    var createGroupsThenAction = function() {
+    var createFoldersThenAction = function() {
       fetch('/api/actions', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data)})
         .then(function(r) { if (!r.ok) return r.json().then(function(d) { throw new Error(d.error || 'Failed'); }); return r.json(); })
         .then(function() { CardStack.remove(card); refreshData(); })
         .catch(function(err) { alert(err.message || 'Failed to create action.'); });
     };
 
-    if (group) {
-      var segments = group.split('/').filter(Boolean);
-      var existingPaths = prodGroups.map(function(g) { return g.path; });
+    if (folder) {
+      var segments = folder.split('/').filter(Boolean);
+      var existingPaths = prodFolders.map(function(g) { return g.path; });
       var pathsToCreate = [];
       for (var qi = 0; qi < segments.length; qi++) {
         var partial = '/' + segments.slice(0, qi + 1).join('/');
         if (existingPaths.indexOf(partial) < 0) pathsToCreate.push(partial);
       }
-      if (pathsToCreate.length === 0) { createGroupsThenAction(); return; }
+      if (pathsToCreate.length === 0) { createFoldersThenAction(); return; }
       var createNext = function(idx) {
-        if (idx >= pathsToCreate.length) { createGroupsThenAction(); return; }
+        if (idx >= pathsToCreate.length) { createFoldersThenAction(); return; }
         var p = pathsToCreate[idx];
         var segs = p.split('/').filter(Boolean);
         var gName = segs[segs.length - 1];
-        fetch('/api/groups', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({path: p, name: gName, color: DEFAULT_COLOR})})
+        fetch('/api/folders', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({path: p, name: gName, color: DEFAULT_COLOR})})
           .then(function(r) { return r.json(); })
           .then(function() { createNext(idx + 1); })
           .catch(function() { createNext(idx + 1); });
       };
       createNext(0);
     } else {
-      createGroupsThenAction();
+      createFoldersThenAction();
     }
   }
 
   return card;
 }
 
-function submitActionSchedule(card, cardEl, nameVal, startVal, endVal, groupVal) {
+function submitActionSchedule(card, cardEl, nameVal, startVal, endVal, folderVal) {
   if (!nameVal) { alert('Name is required.'); _q(cardEl, 'qa-name').focus(); return; }
 
   var startDayVal = _q(cardEl, 'qa-start-day').value.trim();
@@ -511,7 +511,7 @@ function submitActionSchedule(card, cardEl, nameVal, startVal, endVal, groupVal)
 
   var scheduleData = {
     name: nameVal, start_time: startTime || '08:00', end_time: endTime || '09:00',
-    first_day: firstDay, pattern: pattern, group: null
+    first_day: firstDay, pattern: pattern, folder: null
   };
 
   if (isEndDateMode) {
@@ -528,10 +528,10 @@ function submitActionSchedule(card, cardEl, nameVal, startVal, endVal, groupVal)
     scheduleData.max_instances = instVal;
   }
 
-  if (groupVal) {
-    if (!groupVal.startsWith('/')) groupVal = '/' + groupVal;
-    if (groupVal.endsWith('/')) groupVal = groupVal.slice(0, -1);
-    scheduleData.group = groupVal;
+  if (folderVal) {
+    if (!folderVal.startsWith('/')) folderVal = '/' + folderVal;
+    if (folderVal.endsWith('/')) folderVal = folderVal.slice(0, -1);
+    scheduleData.folder = folderVal;
   }
 
   var createSchedule = function() {
@@ -541,9 +541,9 @@ function submitActionSchedule(card, cardEl, nameVal, startVal, endVal, groupVal)
       .catch(function(err) { alert(err.message || 'Failed to create schedule.'); });
   };
 
-  if (scheduleData.group) {
-    var segments = scheduleData.group.split('/').filter(Boolean);
-    var existingPaths = prodGroups.map(function(g) { return g.path; });
+  if (scheduleData.folder) {
+    var segments = scheduleData.folder.split('/').filter(Boolean);
+    var existingPaths = prodFolders.map(function(g) { return g.path; });
     var pathsToCreate = [];
     for (var qi = 0; qi < segments.length; qi++) {
       var partial = '/' + segments.slice(0, qi + 1).join('/');
@@ -555,7 +555,7 @@ function submitActionSchedule(card, cardEl, nameVal, startVal, endVal, groupVal)
       var p = pathsToCreate[idx];
       var segs = p.split('/').filter(Boolean);
       var gName = segs[segs.length - 1];
-      fetch('/api/groups', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({path: p, name: gName, color: DEFAULT_COLOR})})
+      fetch('/api/folders', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({path: p, name: gName, color: DEFAULT_COLOR})})
         .then(function(r) { return r.json(); })
         .then(function() { createNext(idx + 1); })
         .catch(function() { createNext(idx + 1); });
@@ -606,22 +606,22 @@ function createNoteAddCard(existingNote) {
       '<span class="noteadd-date-sep">/</span>' +
       '<span class="noteadd-year-group"><span class="noteadd-date-prefix">20</span><input class="noteadd-date-seg noteadd-date-year na-yy" placeholder="YY" inputmode="numeric"></span>' +
     '</div>' +
-    '<input class="quickadd-input qa-group na-group" placeholder="Group" autocomplete="off">' +
+    '<input class="quickadd-input qa-folder na-folder" placeholder="Folder" autocomplete="off">' +
     '</div>';
 
   var nameInput = _q(cardEl, 'na-name');
-  var groupInput = _q(cardEl, 'na-group');
+  var folderInput = _q(cardEl, 'na-folder');
   var mm = _q(cardEl, 'na-mm');
   var dd = _q(cardEl, 'na-dd');
   var yy = _q(cardEl, 'na-yy');
 
   function updateColor() {
-    var groupVal = groupInput.value.trim();
+    var folderVal = folderInput.value.trim();
     var color = DEFAULT_COLOR;
-    if (groupVal) {
-      var path = groupVal.startsWith('/') ? groupVal : '/' + groupVal;
+    if (folderVal) {
+      var path = folderVal.startsWith('/') ? folderVal : '/' + folderVal;
       if (path.endsWith('/')) path = path.slice(0, -1);
-      var found = getGroupColor(path);
+      var found = getFolderColor(path);
       if (found) color = found;
     }
     cardEl.style.borderColor = color;
@@ -629,8 +629,8 @@ function createNoteAddCard(existingNote) {
     _q(cardEl, 'na-header').style.backgroundColor = color;
   }
 
-  groupInput.addEventListener('input', updateColor);
-  groupInput.addEventListener('change', updateColor);
+  folderInput.addEventListener('input', updateColor);
+  folderInput.addEventListener('change', updateColor);
 
   // Smart auto-tab between date segments
   function filterNumeric(e) { e.target.value = e.target.value.replace(/[^0-9]/g, ''); }
@@ -685,7 +685,7 @@ function createNoteAddCard(existingNote) {
       dd.value = parseInt(parts[2], 10) || '';
       yy.value = parts[0] ? parts[0].slice(2) : '';
     }
-    groupInput.value = existingNote.group || '';
+    folderInput.value = existingNote.folder || '';
   }
 
   updateColor();
@@ -704,7 +704,7 @@ function createNoteAddCard(existingNote) {
       name: nameVal,
       draft_type: 'note',
       date: null,
-      group: groupInput.value.trim() || null
+      folder: folderInput.value.trim() || null
     };
     var mmV = mm.value.trim(), ddV = dd.value.trim(), yyV = yy.value.trim();
     if (mmV && ddV && yyV) {
@@ -727,14 +727,14 @@ function createNoteAddCard(existingNote) {
     mm.addEventListener('input', scheduleDraftSave);
     dd.addEventListener('input', scheduleDraftSave);
     yy.addEventListener('input', scheduleDraftSave);
-    groupInput.addEventListener('input', scheduleDraftSave);
+    folderInput.addEventListener('input', scheduleDraftSave);
   } else if (!existingNote) {
     draftId = crypto.randomUUID ? crypto.randomUUID() : 'draft-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
     nameInput.addEventListener('input', scheduleDraftSave);
     mm.addEventListener('input', scheduleDraftSave);
     dd.addEventListener('input', scheduleDraftSave);
     yy.addEventListener('input', scheduleDraftSave);
-    groupInput.addEventListener('input', scheduleDraftSave);
+    folderInput.addEventListener('input', scheduleDraftSave);
   }
 
   var card = {
@@ -760,7 +760,7 @@ function createNoteAddCard(existingNote) {
     var mmVal = mm.value.trim();
     var ddVal = dd.value.trim();
     var yyVal = yy.value.trim();
-    var groupVal = groupInput.value.trim();
+    var folderVal = folderInput.value.trim();
 
     if (!nameVal) { alert('Name is required.'); nameInput.focus(); return; }
     if (!mmVal || !ddVal || !yyVal) { alert('Date is required (M/D/YY).'); return; }
@@ -774,14 +774,14 @@ function createNoteAddCard(existingNote) {
     if (isNaN(yyyy)) { alert('Invalid year.'); yy.focus(); return; }
 
     var dateStr = yyyy + '-' + String(mmI).padStart(2, '0') + '-' + String(ddI).padStart(2, '0');
-    var group = null;
-    if (groupVal) {
-      if (!groupVal.startsWith('/')) groupVal = '/' + groupVal;
-      if (groupVal.endsWith('/')) groupVal = groupVal.slice(0, -1);
-      group = groupVal;
+    var folder = null;
+    if (folderVal) {
+      if (!folderVal.startsWith('/')) folderVal = '/' + folderVal;
+      if (folderVal.endsWith('/')) folderVal = folderVal.slice(0, -1);
+      folder = folderVal;
     }
 
-    var noteData = { name: nameVal, date: dateStr, group: group };
+    var noteData = { name: nameVal, date: dateStr, folder: folder };
 
     var saveNote = function() {
       var url = editingNoteId ? '/api/notes/' + editingNoteId : '/api/notes';
@@ -796,9 +796,9 @@ function createNoteAddCard(existingNote) {
         .catch(function(err) { alert(err.message || 'Failed to save note.'); });
     };
 
-    if (group) {
-      var segments = group.split('/').filter(Boolean);
-      var existingPaths = prodGroups.map(function(g) { return g.path; });
+    if (folder) {
+      var segments = folder.split('/').filter(Boolean);
+      var existingPaths = prodFolders.map(function(g) { return g.path; });
       var pathsToCreate = [];
       for (var i = 0; i < segments.length; i++) {
         var partial = '/' + segments.slice(0, i + 1).join('/');
@@ -810,7 +810,7 @@ function createNoteAddCard(existingNote) {
         var p = pathsToCreate[idx];
         var segs = p.split('/').filter(Boolean);
         var gName = segs[segs.length - 1];
-        fetch('/api/groups', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({path: p, name: gName, color: DEFAULT_COLOR})})
+        fetch('/api/folders', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({path: p, name: gName, color: DEFAULT_COLOR})})
           .then(function(r) { if (!r.ok) return r.json().then(function(d) { throw new Error(d.error || 'Failed'); }); return r.json(); })
           .then(function() { createNext(idx + 1); })
           .catch(function() { createNext(idx + 1); });

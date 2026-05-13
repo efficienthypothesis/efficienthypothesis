@@ -53,7 +53,7 @@ def api_routines_create():
         "first_day": data.get("first_day"),
         "pattern": data.get("pattern", "interval:1"),
         "instances": 0,
-        "group": data.get("group"),
+        "folder": data.get("folder"),
         "active": True,
         "created_at": datetime.datetime.utcnow().isoformat() + 'Z',
     }
@@ -91,7 +91,7 @@ def api_routines_update(template_id):
     for t in templates:
         if t.get("id") == template_id:
             for field in ["name", "assign_time", "due_time", "first_day", "pattern",
-                          "max_instances", "end_date", "active", "group"]:
+                          "max_instances", "end_date", "active", "folder"]:
                 if field in data:
                     t[field] = data[field]
             # If switching modes, remove the other field

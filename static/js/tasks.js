@@ -137,7 +137,7 @@ function renderDrafts(drafts) {
   el.innerHTML = drafts.map(d => {
     var typeLabel, icon;
     if (d.draft_type === 'note') { typeLabel = 'Note'; icon = 'note'; }
-    else if (d.draft_type === 'group') { typeLabel = 'Group'; icon = 'folder'; }
+    else if (d.draft_type === 'folder') { typeLabel = 'Group'; icon = 'folder'; }
     else if (d.is_routine_draft) { typeLabel = 'Routine'; icon = 'repeat'; }
     else { typeLabel = 'Task'; icon = 'draft'; }
     return `<div class="task-card" style="opacity:0.7;border-style:dashed">
@@ -167,8 +167,8 @@ function toggleProjectsNotesSidebar(el) {
   savePreferences();
   renderProjects();
 }
-function toggleProjectsEmptyGroupsSidebar(el) {
-  projectsShowEmptyGroups = el.checked !== undefined ? el.checked : !projectsShowEmptyGroups;
+function toggleProjectsEmptyFoldersSidebar(el) {
+  projectsShowEmptyFolders = el.checked !== undefined ? el.checked : !projectsShowEmptyFolders;
   savePreferences();
   renderProjects();
 }

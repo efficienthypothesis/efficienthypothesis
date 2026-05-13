@@ -311,7 +311,7 @@ function fetchAllData() {
     fetch('/api/routines').then(function(r) { return r.json(); }).catch(function() { return []; }),
     fetch('/api/goals').then(function(r) { return r.json(); }).catch(function() { return []; }),
     fetch('/api/tasks/calendar?month=' + (prodCalendarMonth || defaultCalMonth())).then(function(r) { return r.json(); }).catch(function() { return {}; }),
-    fetch('/api/groups').then(function(r) { return r.json(); }).catch(function() { return {"groups": []}; }),
+    fetch('/api/folders').then(function(r) { return r.json(); }).catch(function() { return {"folders": []}; }),
     fetch('/api/notes').then(function(r) { return r.json(); }).catch(function() { return {"notes": []}; }),
     fetch('/api/actions').then(function(r) { return r.json(); }).catch(function() { return []; }),
     fetch('/api/schedules').then(function(r) { return r.json(); }).catch(function() { return []; }),
@@ -322,8 +322,8 @@ function fetchAllData() {
     prodRoutines = Array.isArray(results[2]) ? results[2] : [];
     prodGoals = Array.isArray(results[3]) ? results[3] : [];
     prodCalendarData = (results[4] && typeof results[4] === 'object' && !Array.isArray(results[4])) ? results[4] : {};
-    var groupsResp = results[5] && typeof results[5] === 'object' ? results[5] : {"groups": []};
-    prodGroups = Array.isArray(groupsResp.groups) ? groupsResp.groups : [];
+    var foldersResp = results[5] && typeof results[5] === 'object' ? results[5] : {"folders": []};
+    prodFolders = Array.isArray(foldersResp.folders) ? foldersResp.folders : [];
     var notesResp = results[6] && typeof results[6] === 'object' ? results[6] : {"notes": []};
     prodNotes = Array.isArray(notesResp.notes) ? notesResp.notes : [];
     prodActions = Array.isArray(results[7]) ? results[7] : [];
@@ -485,7 +485,7 @@ function buildProjectsRulesContent() {
   html += '<div class="rules-popup-rule">' +
     '<span>Empty Folders</span>' +
     '<div class="rules-time-group">' + buildTimeToggle('empty','past') + buildTimeToggle('empty','present') + buildTimeToggle('empty','future') + '</div>' +
-    '<input type="checkbox"' + (projectsShowEmptyGroups ? ' checked' : '') + ' onchange="toggleProjectsEmptyGroupsSidebar(this)">' +
+    '<input type="checkbox"' + (projectsShowEmptyFolders ? ' checked' : '') + ' onchange="toggleProjectsEmptyFoldersSidebar(this)">' +
     '</div>';
 
   html += '</div>';
@@ -537,8 +537,8 @@ function projectsNavigateUp() {
   updateProjectsSubtab();
 }
 
-function projectsZoomIn(groupPath) {
-  projectsFocusPath = groupPath;
+function projectsZoomIn(folderPath) {
+  projectsFocusPath = folderPath;
   savePreferences();
   renderProjects();
   updateProjectsSubtab();

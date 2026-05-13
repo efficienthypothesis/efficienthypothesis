@@ -20,21 +20,21 @@ let accountCreatedYear = null; // year of account creation (integer)
 let accessibleStartDate = null; // "YYYY-01-01" of creation year
 let accessibleEndDate = null; // "YYYY-12-31" of next year
 let nowLineInterval = null; // interval ID for updating the current-time line
-let prodGroups = []; // group objects [{path, name, color}]
-let prodNotes = []; // note objects [{id, name, date, group, created_at}]
+let prodFolders = []; // folder objects [{path, name, color}]
+let prodNotes = []; // note objects [{id, name, date, folder, created_at}]
 let prodActions = []; // action objects [{action_id, name, start_datetime, end_datetime, ...}]
 let prodSchedules = []; // schedule template objects [{id, name, start_time, end_time, pattern, ...}]
 let prodTimelogs = []; // timelog objects [{log_id, parent_id, parent_type, start, end}]
 let projectsShowCompleted = true; // toggle for showing completed items in projects
 let projectsShowNotes = true; // toggle for showing notes in projects
-let projectsShowEmptyGroups = true; // toggle for showing empty groups in projects
+let projectsShowEmptyFolders = true; // toggle for showing empty folders in projects
 let projectsTimeFilter = {
   completed: { past: true, present: true, future: true },
   notes: { past: true, present: true, future: true },
   empty: { past: true, present: true, future: true }
 };
 let projectsViewMode = 'visual'; // 'list' | 'visual'
-let projectsFocusPath = null; // null = root, or a group path like '/SCHOOL'
+let projectsFocusPath = null; // null = root, or a folder path like '/SCHOOL'
 let userEmail = null; // populated from session, used as root label
 let monthlyShowNotes = true; // toggle for showing notes on monthly calendar
 let monthlyShowPlanned = false; // toggle for showing planned (incomplete) tasks on monthly calendar
@@ -47,7 +47,7 @@ function loadPreferences() {
     var prefs = JSON.parse(saved);
     if (prefs.projectsShowCompleted !== undefined) projectsShowCompleted = prefs.projectsShowCompleted;
     if (prefs.projectsShowNotes !== undefined) projectsShowNotes = prefs.projectsShowNotes;
-    if (prefs.projectsShowEmptyGroups !== undefined) projectsShowEmptyGroups = prefs.projectsShowEmptyGroups;
+    if (prefs.projectsShowEmptyFolders !== undefined) projectsShowEmptyFolders = prefs.projectsShowEmptyFolders;
     if (prefs.projectsViewMode !== undefined) projectsViewMode = prefs.projectsViewMode;
     if (prefs.projectsFocusPath !== undefined) projectsFocusPath = prefs.projectsFocusPath;
     if (prefs.projectsTimeFilter !== undefined) projectsTimeFilter = prefs.projectsTimeFilter;
@@ -63,7 +63,7 @@ function savePreferences() {
     localStorage.setItem('eh_preferences', JSON.stringify({
       projectsShowCompleted: projectsShowCompleted,
       projectsShowNotes: projectsShowNotes,
-      projectsShowEmptyGroups: projectsShowEmptyGroups,
+      projectsShowEmptyFolders: projectsShowEmptyFolders,
       projectsViewMode: projectsViewMode,
       projectsFocusPath: projectsFocusPath,
       projectsTimeFilter: projectsTimeFilter,

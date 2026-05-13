@@ -12,8 +12,8 @@
       '<span class="material-symbols-outlined">schedule</span> Action</button>' +
       '<button class="ctx-menu-item" data-action="note">' +
       '<span class="material-symbols-outlined">note</span> Note</button>' +
-      '<button class="ctx-menu-item" data-action="group">' +
-      '<span class="material-symbols-outlined">folder</span> Group</button>' +
+      '<button class="ctx-menu-item" data-action="folder">' +
+      '<span class="material-symbols-outlined">folder</span> Folder</button>' +
       '<button class="ctx-menu-item" data-action="drafts" id="ctx-drafts-item">' +
       '<span class="material-symbols-outlined">draft</span> Drafts' +
       '<span class="material-symbols-outlined" style="margin-left:auto;font-size:0.9rem">chevron_right</span>' +
@@ -29,8 +29,8 @@
     menu.querySelector('[data-action="note"]').addEventListener('click', function() {
       closeCtxMenu(); openNoteAdd();
     });
-    menu.querySelector('[data-action="group"]').addEventListener('click', function() {
-      closeCtxMenu(); openGroupModal(null);
+    menu.querySelector('[data-action="folder"]').addEventListener('click', function() {
+      closeCtxMenu(); openFolderModal(null);
     });
 
     var draftsItem = menu.querySelector('[data-action="drafts"]');
@@ -50,7 +50,7 @@
       submenu.innerHTML = prodDrafts.map(function(d) {
         var icon, label;
         if (d.draft_type === 'note') { icon = 'note'; label = 'Note'; }
-        else if (d.draft_type === 'group') { icon = 'folder'; label = 'Group'; }
+        else if (d.draft_type === 'folder') { icon = 'folder'; label = 'Folder'; }
         else if (d.is_routine_draft) { icon = 'repeat'; label = 'Routine'; }
         else { icon = 'draft'; label = 'Task'; }
         return '<button class="ctx-submenu-item" data-draft-id="' + d.draft_id + '">' +

@@ -12,7 +12,7 @@ from config import (
 from routes.routines import _routines_s3_key
 from routes.schedules import _schedules_s3_key
 from routes.notes import _load_notes, _save_notes
-from routes.groups import _load_groups, _save_groups
+from routes.folders import _load_folders, _save_folders
 
 
 def execute_plan(email, plan, user_tz_str="UTC"):
@@ -52,12 +52,12 @@ def execute_plan(email, plan, user_tz_str="UTC"):
                 result = _update_note(email, data)
             elif action == "delete_note":
                 result = _delete_note(email, data)
-            elif action == "create_group":
-                result = _create_group(email, data)
-            elif action == "update_group":
-                result = _update_group(email, data)
-            elif action == "delete_group":
-                result = _delete_group(email, data)
+            elif action == "create_folder":
+                result = _create_folder(email, data)
+            elif action == "update_folder":
+                result = _update_folder(email, data)
+            elif action == "delete_folder":
+                result = _delete_folder(email, data)
             elif action == "create_goal":
                 result = _create_goal(email, data)
             elif action == "log_goal":
@@ -84,7 +84,7 @@ def _create_task(email, data):
         "due_datetime": data.get("due_datetime"),
         "due_status": "pending",
         "routine_id": data.get("routine_id"),
-        "group": data.get("group"),
+        "folder": data.get("folder"),
         "created_at": now,
     }
     item = {k: v for k, v in item.items() if v is not None}
@@ -96,7 +96,7 @@ def _update_task(email, data):
     task_id = data.get("task_id") or _find_task_id(email, data)
     if not task_id:
         return {"ok": False, "error": "Could not find task to update"}
-    allowed = ["name", "path", "assign_datetime", "due_datetime", "group"]
+    allowed = ["name", "path", "assign_datetime", "due_datetime", "folder"]
     expr_parts, attr_names, attr_values = _build_update_expr(data, allowed)
     if not expr_parts:
         return {"ok": False, "error": "No fields to update"}
@@ -143,7 +143,7 @@ def _create_action(email, data):
         "start_datetime": data.get("start_datetime"),
         "end_datetime": data.get("end_datetime"),
         "schedule_id": data.get("schedule_id"),
-        "group": data.get("group"),
+        "folder": data.get("folder"),
         "is_planned": data.get("is_planned", False),
         "created_at": now,
     }
@@ -156,7 +156,7 @@ def _update_action(email, data):
     action_id = data.get("action_id") or _find_action_id(email, data)
     if not action_id:
         return {"ok": False, "error": "Could not find action to update"}
-    allowed = ["name", "start_datetime", "end_datetime", "group", "is_planned"]
+    allowed = ["name", "start_datetime", "end_datetime", "folder", "is_planned"]
     expr_parts, attr_names, attr_values = _build_update_expr(data, allowed)
     if not expr_parts:
         return {"ok": False, "error": "No fields to update"}
@@ -203,7 +203,7 @@ def _create_routine(email, data):
         "first_day": data.get("first_day"),
         "pattern": data.get("pattern", "interval:1"),
         "instances": 0,
-        "group": data.get("group"),
+        "folder": data.get("folder"),
         "active": True,
         "created_at": datetime.datetime.utcnow().isoformat() + 'Z',
     }
@@ -226,7 +226,7 @@ def _update_routine(email, data):
     for t in templates:
         if t.get("id") == rid:
             for field in ["name", "assign_time", "due_time", "first_day", "pattern",
-                          "max_instances", "end_date", "active", "group"]:
+                          "max_instances", "end_date", "active", "folder"]:
                 if field in data:
                     t[field] = data[field]
             if "end_date" in data:
@@ -262,7 +262,7 @@ def _create_schedule(email, data):
         "first_day": data.get("first_day"),
         "pattern": data.get("pattern", "interval:1"),
         "instances": 0,
-        "group": data.get("group"),
+        "folder": data.get("folder"),
         "active": True,
         "created_at": datetime.datetime.utcnow().isoformat() + 'Z',
     }
@@ -285,7 +285,7 @@ def _update_schedule(email, data):
     for t in templates:
         if t.get("id") == sid:
             for field in ["name", "start_time", "end_time", "first_day", "pattern",
-                          "max_instances", "end_date", "active", "group"]:
+                          "max_instances", "end_date", "active", "folder"]:
                 if field in data:
                     t[field] = data[field]
             if "end_date" in data:
@@ -317,7 +317,7 @@ def _create_note(email, data):
         "id": str(uuid.uuid4()),
         "name": data.get("name", ""),
         "date": data.get("date", ""),
-        "group": data.get("group"),
+        "folder": data.get("folder"),
         "created_at": datetime.datetime.utcnow().isoformat() + 'Z',
     }
     notes.append(note)
@@ -334,7 +334,7 @@ def _update_note(email, data):
         return {"ok": False, "error": "Note not found"}
     for n in notes:
         if n["id"] == nid:
-            for field in ["name", "date", "group"]:
+            for field in ["name", "date", "folder"]:
                 if field in data:
                     n[field] = data[field]
             break
@@ -354,31 +354,31 @@ def _delete_note(email, data):
     return {"ok": True, "note_id": nid}
 
 
-# --- Groups (S3) ---
+# --- Folders (S3) ---
 
-def _create_group(email, data):
-    groups_data = _load_groups(email)
-    groups = groups_data.get("groups", [])
+def _create_folder(email, data):
+    folders_data = _load_folders(email)
+    folders = folders_data.get("folders", [])
     path = data.get("path", "")
     # Check if already exists
-    for g in groups:
+    for g in folders:
         if g["path"] == path:
-            return {"ok": True, "note": "Group already exists", "path": path}
-    groups.append({
+            return {"ok": True, "note": "Folder already exists", "path": path}
+    folders.append({
         "path": path,
         "name": data.get("name", path.split("/")[-1]),
         "color": data.get("color", "#000000"),
     })
-    groups_data["groups"] = groups
-    _save_groups(email, groups_data)
+    folders_data["folders"] = folders
+    _save_folders(email, folders_data)
     return {"ok": True, "path": path}
 
 
-def _update_group(email, data):
-    groups_data = _load_groups(email)
-    groups = groups_data.get("groups", [])
+def _update_folder(email, data):
+    folders_data = _load_folders(email)
+    folders = folders_data.get("folders", [])
     path = data.get("path", "")
-    for g in groups:
+    for g in folders:
         if g["path"] == path:
             if "name" in data:
                 g["name"] = data["name"]
@@ -386,21 +386,21 @@ def _update_group(email, data):
                 g["color"] = data["color"]
             break
     else:
-        return {"ok": False, "error": "Group not found"}
-    groups_data["groups"] = groups
-    _save_groups(email, groups_data)
+        return {"ok": False, "error": "Folder not found"}
+    folders_data["folders"] = folders
+    _save_folders(email, folders_data)
     return {"ok": True, "path": path}
 
 
-def _delete_group(email, data):
-    groups_data = _load_groups(email)
-    groups = groups_data.get("groups", [])
+def _delete_folder(email, data):
+    folders_data = _load_folders(email)
+    folders = folders_data.get("folders", [])
     path = data.get("path", "")
-    new_groups = [g for g in groups if g["path"] != path]
-    if len(new_groups) == len(groups):
-        return {"ok": False, "error": "Group not found"}
-    groups_data["groups"] = new_groups
-    _save_groups(email, groups_data)
+    new_folders = [g for g in folders if g["path"] != path]
+    if len(new_folders) == len(folders):
+        return {"ok": False, "error": "Folder not found"}
+    folders_data["folders"] = new_folders
+    _save_folders(email, folders_data)
     return {"ok": True, "path": path}
 
 

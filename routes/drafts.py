@@ -48,8 +48,8 @@ def api_drafts_create():
         "max_instances": data.get("max_instances"),
         # Note draft fields
         "date": data.get("date"),
-        "group": data.get("group"),
-        # Group draft fields
+        "folder": data.get("folder"),
+        # Folder draft fields
         "color": data.get("color"),
         "created_at": now,
     }
@@ -68,7 +68,7 @@ def api_drafts_update(draft_id):
     allowed = ["name", "is_routine_draft", "draft_type",
                "assign_datetime", "due_datetime",
                "pattern", "due_time", "assign_time", "first_day", "max_instances", "end_date",
-               "date", "group", "color"]
+               "date", "folder", "color"]
     set_parts = []
     remove_parts = []
     attr_names = {}

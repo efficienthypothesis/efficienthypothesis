@@ -50,7 +50,7 @@ def api_actions_create():
         "start_datetime": data.get("start_datetime"),
         "end_datetime": data.get("end_datetime"),
         "schedule_id": data.get("schedule_id"),
-        "group": data.get("group"),
+        "folder": data.get("folder"),
         "is_planned": data.get("is_planned", False),
         "created_at": now,
     }
@@ -78,7 +78,7 @@ def api_actions_update(action_id):
             if err:
                 return jsonify({"error": err}), 400
 
-    allowed = ["name", "start_datetime", "end_datetime", "group", "is_planned",
+    allowed = ["name", "start_datetime", "end_datetime", "folder", "is_planned",
                "ai_draft", "ai_draft_type", "ttl"]
     set_parts = []
     remove_parts = []

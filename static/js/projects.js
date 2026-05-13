@@ -50,22 +50,22 @@ function isItemVisibleByTimeFilter(item) {
   return true;
 }
 
-function getGroupColor(groupPath) {
-  // Returns the color of the deepest (most specific) group matching this path.
-  // e.g. groupPath="/SCHOOL/CHINESE" → use color of /SCHOOL/CHINESE group
-  if (!groupPath) return null;
-  var group = prodGroups.find(function(g) { return g.path === groupPath; });
-  if (group) return group.color;
+function getFolderColor(folderPath) {
+  // Returns the color of the deepest (most specific) folder matching this path.
+  // e.g. folderPath="/SCHOOL/CHINESE" → use color of /SCHOOL/CHINESE folder
+  if (!folderPath) return null;
+  var folder = prodFolders.find(function(g) { return g.path === folderPath; });
+  if (folder) return folder.color;
   return null;
 }
 
-function getUngroupedItems() {
-  // All non-draft, non-routine-instance tasks + routines + notes without a group, sorted by created_at desc
+function getUnfiledItems() {
+  // All non-draft, non-routine-instance tasks + routines + notes without a folder, sorted by created_at desc
   var tasks = (prodAllTasks || []).filter(function(t) {
-    return !t.draft && !t.routine_id && !t.group;
+    return !t.draft && !t.routine_id && !t.folder;
   });
-  var routines = (prodRoutines || []).filter(function(r) { return !r.group; });
-  var notes = (prodNotes || []).filter(function(n) { return !n.group; });
+  var routines = (prodRoutines || []).filter(function(r) { return !r.folder; });
+  var notes = (prodNotes || []).filter(function(n) { return !n.folder; });
   var items = [];
   tasks.forEach(function(t) { items.push({type: 'task', id: t.task_id, name: t.name, assign: t.assign_datetime, due: t.due_datetime, done: !!t.end_datetime, created_at: t.created_at || ''}); });
   routines.forEach(function(r) { items.push({type: 'routine', id: r.id, name: r.name, due: null, done: false, created_at: r.created_at || ''}); });
@@ -74,13 +74,13 @@ function getUngroupedItems() {
   return items;
 }
 
-function getGroupItems(groupPath) {
-  // Items assigned to exactly this group path
+function getFolderItems(folderPath) {
+  // Items assigned to exactly this folder path
   var tasks = (prodAllTasks || []).filter(function(t) {
-    return !t.draft && !t.routine_id && t.group === groupPath;
+    return !t.draft && !t.routine_id && t.folder === folderPath;
   });
-  var routines = (prodRoutines || []).filter(function(r) { return r.group === groupPath; });
-  var notes = (prodNotes || []).filter(function(n) { return n.group === groupPath; });
+  var routines = (prodRoutines || []).filter(function(r) { return r.folder === folderPath; });
+  var notes = (prodNotes || []).filter(function(n) { return n.folder === folderPath; });
   var items = [];
   tasks.forEach(function(t) { items.push({type: 'task', id: t.task_id, name: t.name, assign: t.assign_datetime, due: t.due_datetime, done: !!t.end_datetime, created_at: t.created_at || ''}); });
   routines.forEach(function(r) { items.push({type: 'routine', id: r.id, name: r.name, due: null, done: false, created_at: r.created_at || ''}); });
@@ -89,36 +89,36 @@ function getGroupItems(groupPath) {
   return items;
 }
 
-function renderGroupItemHtml(item) {
+function renderFolderItemHtml(item) {
   if (!projectsShowCompleted && item.done) return '';
   if (!projectsShowNotes && item.type === 'note') return '';
   if (!isItemVisibleByTimeFilter(item)) return '';
-  var doneClass = item.done ? ' group-item-done' : '';
+  var doneClass = item.done ? ' folder-item-done' : '';
   var icon = item.type === 'routine' ? 'repeat' : (item.type === 'note' ? 'note' : 'task_alt');
   var dueHtml = '';
   if (item.type === 'note' && item.due) {
-    dueHtml = '<span class="group-item-due">' + escHtml(item.due) + '</span>';
+    dueHtml = '<span class="folder-item-due">' + escHtml(item.due) + '</span>';
   } else if (item.due) {
-    dueHtml = '<span class="group-item-due">' + formatDateTime(item.due) + '</span>';
+    dueHtml = '<span class="folder-item-due">' + formatDateTime(item.due) + '</span>';
   }
-  return '<div class="group-item' + doneClass + '" draggable="true" data-item-id="' + item.id + '" data-item-type="' + item.type + '"' +
-    ' ondragstart="onGroupItemDragStart(event)" ondragend="onGroupItemDragEnd(event)">' +
-    '<span class="material-symbols-outlined group-item-icon">' + icon + '</span>' +
-    '<span class="group-item-name">' + escHtml(item.name) + '</span>' + dueHtml + '</div>';
+  return '<div class="folder-item' + doneClass + '" draggable="true" data-item-id="' + item.id + '" data-item-type="' + item.type + '"' +
+    ' ondragstart="onFolderItemDragStart(event)" ondragend="onFolderItemDragEnd(event)">' +
+    '<span class="material-symbols-outlined folder-item-icon">' + icon + '</span>' +
+    '<span class="folder-item-name">' + escHtml(item.name) + '</span>' + dueHtml + '</div>';
 }
 
-function getRootGroups() {
+function getRootFolders() {
   // Groups whose path has only one segment (e.g., "/STATS" but not "/CS/ML")
-  return prodGroups.filter(function(g) {
+  return prodFolders.filter(function(g) {
     var segments = g.path.split('/').filter(Boolean);
     return segments.length === 1;
   });
 }
 
-function getChildGroups(parentPath) {
+function getChildFolders(parentPath) {
   // Direct children: parentPath + one more segment
   var prefix = parentPath.endsWith('/') ? parentPath : parentPath + '/';
-  return prodGroups.filter(function(g) {
+  return prodFolders.filter(function(g) {
     if (!g.path.startsWith(prefix)) return false;
     var rest = g.path.slice(prefix.length);
     return rest.length > 0 && !rest.includes('/');
@@ -132,8 +132,8 @@ var LY_EST_HEADER_H = 36;
 var LY_GAP = 16;
 var projectsNeedsReorganize = false;
 
-function getVisibleItems(groupPath) {
-  return getGroupItems(groupPath).filter(function(item) {
+function getVisibleItems(folderPath) {
+  return getFolderItems(folderPath).filter(function(item) {
     if (!projectsShowCompleted && item.done) return false;
     if (!projectsShowNotes && item.type === 'note') return false;
     if (!isItemVisibleByTimeFilter(item)) return false;
@@ -141,12 +141,12 @@ function getVisibleItems(groupPath) {
   });
 }
 
-function buildGroupTree() {
+function buildFolderTree() {
   var nodeMap = {};
-  prodGroups.forEach(function(g) {
-    nodeMap[g.path] = { group: g, children: [], items: getVisibleItems(g.path) };
+  prodFolders.forEach(function(g) {
+    nodeMap[g.path] = { folder: g, children: [], items: getVisibleItems(g.path) };
   });
-  prodGroups.forEach(function(g) {
+  prodFolders.forEach(function(g) {
     var segs = g.path.split('/').filter(Boolean);
     if (segs.length > 1) {
       var parentPath = '/' + segs.slice(0, -1).join('/');
@@ -154,11 +154,11 @@ function buildGroupTree() {
     }
   });
   var roots = [];
-  prodGroups.forEach(function(g) {
+  prodFolders.forEach(function(g) {
     var segs = g.path.split('/').filter(Boolean);
     if (segs.length === 1) roots.push(nodeMap[g.path]);
   });
-  if (!projectsShowEmptyGroups) {
+  if (!projectsShowEmptyFolders) {
     function hasContent(node) {
       if (node.items.length > 0) return true;
       for (var i = 0; i < node.children.length; i++) {
@@ -193,7 +193,7 @@ var VIS_BOX_PAD = 20; // body padding + border for depth-1 cards
 // === Tree helpers ===
 function findNodeByPath(nodes, path) {
   for (var i = 0; i < nodes.length; i++) {
-    if (nodes[i].group.path === path) return nodes[i];
+    if (nodes[i].folder.path === path) return nodes[i];
     var found = findNodeByPath(nodes[i].children, path);
     if (found) return found;
   }
@@ -201,20 +201,20 @@ function findNodeByPath(nodes, path) {
 }
 
 function buildFocusedTree(focusPath) {
-  var allRoots = buildGroupTree();
+  var allRoots = buildFolderTree();
   if (!focusPath) {
-    return { focusGroup: null, children: allRoots, directItems: getVisibleUngroupedItems() };
+    return { focusFolder: null, children: allRoots, directItems: getVisibleUnfiledItems() };
   }
   var focusNode = findNodeByPath(allRoots, focusPath);
   if (!focusNode) {
     projectsFocusPath = null;
-    return { focusGroup: null, children: allRoots, directItems: getVisibleUngroupedItems() };
+    return { focusFolder: null, children: allRoots, directItems: getVisibleUnfiledItems() };
   }
-  return { focusGroup: focusNode.group, children: focusNode.children, directItems: focusNode.items };
+  return { focusFolder: focusNode.folder, children: focusNode.children, directItems: focusNode.items };
 }
 
-function getVisibleUngroupedItems() {
-  return getUngroupedItems().filter(function(item) {
+function getVisibleUnfiledItems() {
+  return getUnfiledItems().filter(function(item) {
     if (!projectsShowCompleted && item.done) return false;
     if (!projectsShowNotes && item.type === 'note') return false;
     if (!isItemVisibleByTimeFilter(item)) return false;
@@ -223,11 +223,11 @@ function getVisibleUngroupedItems() {
 }
 
 // === Render items with limit (shows first N-1 + "+X more") ===
-function renderItemsWithLimit(items, subgroups, limit) {
-  // Merge subgroups (depth 3+) as item-like entries, then real items
+function renderItemsWithLimit(items, subfolders, limit) {
+  // Merge subfolders (depth 3+) as item-like entries, then real items
   var allEntries = [];
-  (subgroups || []).forEach(function(sg) {
-    allEntries.push({ _isSubgroup: true, group: sg.group, _totalItems: countAllItems(sg) });
+  (subfolders || []).forEach(function(sg) {
+    allEntries.push({ _isSubfolder: true, folder: sg.folder, _totalItems: countAllItems(sg) });
   });
   items.forEach(function(item) { allEntries.push(item); });
 
@@ -236,69 +236,69 @@ function renderItemsWithLimit(items, subgroups, limit) {
   var showCount = total <= limit ? total : limit - 1;
   for (var i = 0; i < showCount; i++) {
     var entry = allEntries[i];
-    if (entry._isSubgroup) {
-      html += renderSubgroupAsItem(entry);
+    if (entry._isSubfolder) {
+      html += renderSubfolderAsItem(entry);
     } else {
-      html += renderGroupItemHtml(entry);
+      html += renderFolderItemHtml(entry);
     }
   }
   if (total > limit) {
     var remaining = total - showCount;
-    html += '<div class="group-item group-item-more" onclick="projectsZoomIn(\'' + escHtml((allEntries[0] && allEntries[0]._isSubgroup ? allEntries[0].group.path : '').replace(/\/[^\/]*$/, '')) + '\')">+' + remaining + ' more</div>';
+    html += '<div class="folder-item folder-item-more" onclick="projectsZoomIn(\'' + escHtml((allEntries[0] && allEntries[0]._isSubfolder ? allEntries[0].folder.path : '').replace(/\/[^\/]*$/, '')) + '\')">+' + remaining + ' more</div>';
   }
   return html;
 }
 
-function renderSubgroupAsItem(entry) {
-  var path = escHtml(entry.group.path);
-  return '<div class="group-item group-item-subgroup" ondblclick="event.stopPropagation();projectsZoomIn(\'' + path + '\')">' +
-    '<span class="material-symbols-outlined group-item-icon">folder</span>' +
-    '<span class="group-item-name">' + escHtml(entry.group.name) + '</span>' +
-    '<span class="group-item-due" style="color:#80868b">' + entry._totalItems + '</span></div>';
+function renderSubfolderAsItem(entry) {
+  var path = escHtml(entry.folder.path);
+  return '<div class="folder-item folder-item-subfolder" ondblclick="event.stopPropagation();projectsZoomIn(\'' + path + '\')">' +
+    '<span class="material-symbols-outlined folder-item-icon">folder</span>' +
+    '<span class="folder-item-name">' + escHtml(entry.folder.name) + '</span>' +
+    '<span class="folder-item-due" style="color:#80868b">' + entry._totalItems + '</span></div>';
 }
 
 // === Depth-2 card (small, fixed height, 1 col) ===
 function renderDepth2Card(node) {
-  var group = node.group;
-  var groupColor = escHtml(group.color || DEFAULT_COLOR);
+  var folder = node.folder;
+  var folderColor = escHtml(folder.color || DEFAULT_COLOR);
   // Depth-3+ children become items with folder icons
-  var depth3Groups = node.children || [];
+  var depth3Folders = node.children || [];
   var items = node.items || [];
-  var bodyHtml = renderItemsWithLimit(items, depth3Groups, VIS_MAX_DISPLAY_ITEMS);
+  var bodyHtml = renderItemsWithLimit(items, depth3Folders, VIS_MAX_DISPLAY_ITEMS);
 
-  return '<div class="group-box group-box-d2" data-group-path="' + escHtml(group.path) +
-    '" style="--group-color:' + groupColor + ';border-color:' + groupColor +
+  return '<div class="folder-box folder-box-d2" data-folder-path="' + escHtml(folder.path) +
+    '" style="--folder-color:' + folderColor + ';border-color:' + folderColor +
     ';height:' + VIS_D2_FIXED_H + 'px"' +
-    ' ondblclick="event.stopPropagation();projectsZoomIn(\'' + escHtml(group.path) + '\')"' +
-    ' ondragover="onGroupBoxDragOver(event)" ondragleave="onGroupBoxDragLeave(event)" ondrop="onGroupBoxDrop(event)">' +
-    '<div class="group-box-header">' +
-    '<span class="group-box-name">' + escHtml(group.name) + '</span>' +
-    '<div class="group-box-actions" onclick="event.stopPropagation()">' +
-    '<button class="group-box-actions-btn" onclick="event.stopPropagation();toggleGroupDropdown(this)"><span class="material-symbols-outlined">more_vert</span></button>' +
-    '<div class="group-box-dropdown">' +
-    '<button class="group-box-dd-item" onclick="event.stopPropagation();editGroup(\'' + escHtml(group.path) + '\')"><span class="material-symbols-outlined">edit</span> Edit</button>' +
-    '<button class="group-box-dd-item danger" onclick="event.stopPropagation();deleteGroup(\'' + escHtml(group.path) + '\')"><span class="material-symbols-outlined">delete</span> Delete</button>' +
+    ' ondblclick="event.stopPropagation();projectsZoomIn(\'' + escHtml(folder.path) + '\')"' +
+    ' ondragover="onFolderBoxDragOver(event)" ondragleave="onFolderBoxDragLeave(event)" ondrop="onFolderBoxDrop(event)">' +
+    '<div class="folder-box-header">' +
+    '<span class="folder-box-name">' + escHtml(folder.name) + '</span>' +
+    '<div class="folder-box-actions" onclick="event.stopPropagation()">' +
+    '<button class="folder-box-actions-btn" onclick="event.stopPropagation();toggleFolderDropdown(this)"><span class="material-symbols-outlined">more_vert</span></button>' +
+    '<div class="folder-box-dropdown">' +
+    '<button class="folder-box-dd-item" onclick="event.stopPropagation();editFolder(\'' + escHtml(folder.path) + '\')"><span class="material-symbols-outlined">edit</span> Edit</button>' +
+    '<button class="folder-box-dd-item danger" onclick="event.stopPropagation();deleteFolder(\'' + escHtml(folder.path) + '\')"><span class="material-symbols-outlined">delete</span> Delete</button>' +
     '</div></div></div>' +
-    '<div class="group-box-body">' + bodyHtml + '</div></div>';
+    '<div class="folder-box-body">' + bodyHtml + '</div></div>';
 }
 
 // === Catchall card (no header, for direct items) ===
 function renderCatchallCard(items, parentPath) {
   var bodyHtml = renderItemsWithLimit(items, [], VIS_MAX_DISPLAY_ITEMS);
-  return '<div class="group-box-catchall" data-group-path="' + escHtml(parentPath || '') + '"' +
+  return '<div class="folder-box-catchall" data-folder-path="' + escHtml(parentPath || '') + '"' +
     ' style="height:' + VIS_CATCHALL_FIXED_H + 'px"' +
-    ' ondragover="onGroupBoxDragOver(event)" ondragleave="onGroupBoxDragLeave(event)" ondrop="onGroupBoxDrop(event)">' +
-    '<div class="group-box-body">' + bodyHtml + '</div></div>';
+    ' ondragover="onFolderBoxDragOver(event)" ondragleave="onFolderBoxDragLeave(event)" ondrop="onFolderBoxDrop(event)">' +
+    '<div class="folder-box-body">' + bodyHtml + '</div></div>';
 }
 
 // === Depth-1 card (large, contains depth-2 grid) ===
 function renderDepth1Card(node, directItems) {
-  var group = node.group;
-  var groupColor = escHtml(group.color || DEFAULT_COLOR);
+  var folder = node.folder;
+  var folderColor = escHtml(folder.color || DEFAULT_COLOR);
   var depth2Children = node.children || [];
   var hasDirectItems = directItems && directItems.length > 0;
-  // Only use catchall card when there are BOTH subgroups and direct items
-  // Count depth-2 slots: subgroups + 1 for direct items if both exist
+  // Only use catchall card when there are BOTH subfolders and direct items
+  // Count depth-2 slots: subfolders + 1 for direct items if both exist
   var hasMixedContent = hasDirectItems && depth2Children.length > 0;
   var numD2 = depth2Children.length + (hasMixedContent ? 1 : 0);
   var cols = Math.min(numD2, LY_TOP_COLS);
@@ -313,35 +313,35 @@ function renderDepth1Card(node, directItems) {
   // Render inner content
   var innerHtml = '';
   if (depth2Children.length === 0 && hasDirectItems) {
-    // No subgroups — render items directly in body (no wrapper)
+    // No subfolders — render items directly in body (no wrapper)
     innerHtml = renderItemsWithLimit(directItems, [], VIS_MAX_DISPLAY_ITEMS);
   } else {
     depth2Children.forEach(function(child) {
       innerHtml += renderDepth2Card(child);
     });
     if (hasMixedContent) {
-      // Direct items alongside subgroups — render without catchall styling
+      // Direct items alongside subfolders — render without catchall styling
       var catchallBody = renderItemsWithLimit(directItems, [], VIS_MAX_DISPLAY_ITEMS);
       innerHtml += '<div style="height:' + VIS_D2_FIXED_H + 'px;overflow:hidden"' +
-        ' data-group-path="' + escHtml(group.path) + '"' +
-        ' ondragover="onGroupBoxDragOver(event)" ondragleave="onGroupBoxDragLeave(event)" ondrop="onGroupBoxDrop(event)">' +
-        '<div class="group-box-body">' + catchallBody + '</div></div>';
+        ' data-folder-path="' + escHtml(folder.path) + '"' +
+        ' ondragover="onFolderBoxDragOver(event)" ondragleave="onFolderBoxDragLeave(event)" ondrop="onFolderBoxDrop(event)">' +
+        '<div class="folder-box-body">' + catchallBody + '</div></div>';
     }
   }
 
-  return '<div class="group-box" data-group-path="' + escHtml(group.path) +
-    '" style="--group-color:' + groupColor + ';border-color:' + groupColor + ';min-height:' + d1Height + 'px"' +
-    ' ondblclick="projectsZoomIn(\'' + escHtml(group.path) + '\')"' +
-    ' ondragover="onGroupBoxDragOver(event)" ondragleave="onGroupBoxDragLeave(event)" ondrop="onGroupBoxDrop(event)">' +
-    '<div class="group-box-header">' +
-    '<span class="group-box-name">' + escHtml(group.name) + '</span>' +
-    '<div class="group-box-actions" onclick="event.stopPropagation()">' +
-    '<button class="group-box-actions-btn" onclick="event.stopPropagation();toggleGroupDropdown(this)"><span class="material-symbols-outlined">more_vert</span></button>' +
-    '<div class="group-box-dropdown">' +
-    '<button class="group-box-dd-item" onclick="event.stopPropagation();editGroup(\'' + escHtml(group.path) + '\')"><span class="material-symbols-outlined">edit</span> Edit</button>' +
-    '<button class="group-box-dd-item danger" onclick="event.stopPropagation();deleteGroup(\'' + escHtml(group.path) + '\')"><span class="material-symbols-outlined">delete</span> Delete</button>' +
+  return '<div class="folder-box" data-folder-path="' + escHtml(folder.path) +
+    '" style="--folder-color:' + folderColor + ';border-color:' + folderColor + ';min-height:' + d1Height + 'px"' +
+    ' ondblclick="projectsZoomIn(\'' + escHtml(folder.path) + '\')"' +
+    ' ondragover="onFolderBoxDragOver(event)" ondragleave="onFolderBoxDragLeave(event)" ondrop="onFolderBoxDrop(event)">' +
+    '<div class="folder-box-header">' +
+    '<span class="folder-box-name">' + escHtml(folder.name) + '</span>' +
+    '<div class="folder-box-actions" onclick="event.stopPropagation()">' +
+    '<button class="folder-box-actions-btn" onclick="event.stopPropagation();toggleFolderDropdown(this)"><span class="material-symbols-outlined">more_vert</span></button>' +
+    '<div class="folder-box-dropdown">' +
+    '<button class="folder-box-dd-item" onclick="event.stopPropagation();editFolder(\'' + escHtml(folder.path) + '\')"><span class="material-symbols-outlined">edit</span> Edit</button>' +
+    '<button class="folder-box-dd-item danger" onclick="event.stopPropagation();deleteFolder(\'' + escHtml(folder.path) + '\')"><span class="material-symbols-outlined">delete</span> Delete</button>' +
     '</div></div></div>' +
-    '<div class="group-box-body layout-packed-body" style="grid-template-columns:repeat(' + cols + ',1fr)">' +
+    '<div class="folder-box-body layout-packed-body" style="grid-template-columns:repeat(' + cols + ',1fr)">' +
     innerHtml + '</div></div>';
 }
 
@@ -365,7 +365,7 @@ function renderProjectsVisual() {
   var directItems = focused.directItems;
 
   if (depth1Nodes.length === 0 && directItems.length === 0) {
-    el.innerHTML = '<p class="prod-empty">No groups here. Right-click and select "Group" to create one.</p>';
+    el.innerHTML = '<p class="prod-empty">No folders here. Right-click and select "Folder" to create one.</p>';
     return;
   }
 
@@ -377,14 +377,14 @@ function renderProjectsVisual() {
     var hasDirectItems = nodeDirectItems.length > 0;
     var hasCatchall = hasDirectItems && node.children.length > 0;
     var numD2 = node.children.length + (hasCatchall ? 1 : 0);
-    // Items-only cards (no subgroups) take 1 column
+    // Items-only cards (no subfolders) take 1 column
     var cols = numD2 > 0 ? Math.min(numD2, LY_TOP_COLS) : 1;
     renderItems.push({ html: renderDepth1Card(node, nodeDirectItems), cols: cols, height: h });
   });
 
   // Root-level direct items: place individually into masonry (no wrapper)
   directItems.forEach(function(item) {
-    var itemHtml = renderGroupItemHtml(item);
+    var itemHtml = renderFolderItemHtml(item);
     if (itemHtml) {
       renderItems.push({ html: itemHtml, cols: 1, height: LY_EST_ITEM_H });
     }
@@ -430,8 +430,8 @@ function renderProjectsVisual() {
 // === List mode ===
 function renderProjectsList() {
   var el = document.getElementById('prod-projects'); if (!el) return;
-  var roots = buildGroupTree();
-  var ungrouped = getVisibleUngroupedItems();
+  var roots = buildFolderTree();
+  var ungrouped = getVisibleUnfiledItems();
   var rootLabel = userEmail || 'Projects';
 
   var html = '<div class="list-tree-node">';
@@ -450,18 +450,18 @@ function renderProjectsList() {
 }
 
 function renderListTreeNode(node, depth) {
-  var group = node.group;
+  var folder = node.folder;
   var items = node.items || [];
   var children = node.children || [];
   var totalItems = countAllItems(node);
   var indent = depth * 20;
   var hasChildren = children.length > 0 || items.length > 0;
-  var colorDot = (group.color && group.color !== '#000000' && group.color !== DEFAULT_COLOR)
-    ? '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + escHtml(group.color) + ';margin-right:2px;flex-shrink:0"></span>' : '';
+  var colorDot = (folder.color && folder.color !== '#000000' && folder.color !== DEFAULT_COLOR)
+    ? '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + escHtml(folder.color) + ';margin-right:2px;flex-shrink:0"></span>' : '';
 
-  var html = '<div class="list-tree-node" data-path="' + escHtml(group.path) + '"' +
+  var html = '<div class="list-tree-node" data-path="' + escHtml(folder.path) + '"' +
     ' ondragover="onListTreeDragOver(event)" ondragleave="onListTreeDragLeave(event)" ondrop="onListTreeDrop(event)">';
-  html += '<div class="list-tree-row" onclick="toggleListNode(this)" ondblclick="projectsZoomIn(\'' + escHtml(group.path) + '\')">';
+  html += '<div class="list-tree-row" onclick="toggleListNode(this)" ondblclick="projectsZoomIn(\'' + escHtml(folder.path) + '\')">';
   html += '<span style="width:' + indent + 'px" class="list-tree-indent"></span>';
   if (hasChildren) {
     html += '<span class="list-tree-chevron material-symbols-outlined">chevron_right</span>';
@@ -470,7 +470,7 @@ function renderListTreeNode(node, depth) {
   }
   html += colorDot;
   html += '<span class="list-tree-icon list-tree-icon-folder material-symbols-outlined">folder</span>';
-  html += '<span class="list-tree-name">' + escHtml(group.name) + '</span>';
+  html += '<span class="list-tree-name">' + escHtml(folder.name) + '</span>';
   if (totalItems > 0) html += '<span class="list-tree-count">(' + totalItems + ')</span>';
   html += '</div>';
 
@@ -490,9 +490,9 @@ function renderListTreeItem(item, depth) {
   if (!isItemVisibleByTimeFilter(item)) return '';
   var indent = depth * 20 + 20; // extra 20 for no chevron
   var icon = item.type === 'routine' ? 'repeat' : (item.type === 'note' ? 'note' : 'task_alt');
-  var doneClass = item.done ? ' group-item-done' : '';
+  var doneClass = item.done ? ' folder-item-done' : '';
   return '<div class="list-tree-item' + doneClass + '" draggable="true" data-item-id="' + item.id + '" data-item-type="' + item.type + '"' +
-    ' ondragstart="onGroupItemDragStart(event)" ondragend="onGroupItemDragEnd(event)">' +
+    ' ondragstart="onFolderItemDragStart(event)" ondragend="onFolderItemDragEnd(event)">' +
     '<span style="width:' + indent + 'px" class="list-tree-indent"></span>' +
     '<span class="list-tree-icon material-symbols-outlined">' + icon + '</span>' +
     '<span class="list-tree-name">' + escHtml(item.name) + '</span></div>';
@@ -522,10 +522,10 @@ function onListTreeDragLeave(e) {
 function onListTreeDrop(e) {
   e.preventDefault(); e.stopPropagation();
   var node = e.target.closest('.list-tree-node');
-  if (!node || !groupDraggedItemId) return;
+  if (!node || !folderDraggedItemId) return;
   node.querySelector('.list-tree-row').style.background = '';
   var targetPath = node.dataset.path;
-  if (targetPath) assignItemGroup(groupDraggedItemId, groupDraggedItemType, targetPath);
+  if (targetPath) assignItemFolder(folderDraggedItemId, folderDraggedItemType, targetPath);
 }
 
 // === Main render dispatcher ===
@@ -543,87 +543,87 @@ function renderProjectsInPlace() {
 }
 
 // --- Group box interactions ---
-function toggleGroupCollapse(headerEl) {
+function toggleFolderCollapse(headerEl) {
   var body = headerEl.nextElementSibling;
-  var toggle = headerEl.querySelector('.group-box-toggle');
+  var toggle = headerEl.querySelector('.folder-box-toggle');
   if (body) body.classList.toggle('collapsed');
   if (toggle) toggle.classList.toggle('collapsed');
 }
 
-function toggleGroupDropdown(btn) {
+function toggleFolderDropdown(btn) {
   var dd = btn.nextElementSibling;
   // Close others
-  document.querySelectorAll('.group-box-dropdown.open').forEach(function(d) { d.classList.remove('open'); });
+  document.querySelectorAll('.folder-box-dropdown.open').forEach(function(d) { d.classList.remove('open'); });
   if (dd) dd.classList.toggle('open');
 }
 
-// Close group dropdowns on click outside
+// Close folder dropdowns on click outside
 document.addEventListener('click', function(e) {
-  if (!e.target.closest('.group-box-actions')) {
-    document.querySelectorAll('.group-box-dropdown.open').forEach(function(d) { d.classList.remove('open'); });
+  if (!e.target.closest('.folder-box-actions')) {
+    document.querySelectorAll('.folder-box-dropdown.open').forEach(function(d) { d.classList.remove('open'); });
   }
 });
 
-function deleteGroup(path) {
-  document.querySelectorAll('.group-box-dropdown.open').forEach(function(d) { d.classList.remove('open'); });
-  if (!confirm('Delete group "' + path + '" and all subgroups? Items will become unclassified.')) return;
-  fetch('/api/groups', {method: 'DELETE', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({path: path})})
+function deleteFolder(path) {
+  document.querySelectorAll('.folder-box-dropdown.open').forEach(function(d) { d.classList.remove('open'); });
+  if (!confirm('Delete folder "' + path + '" and all subfolders? Items will become unclassified.')) return;
+  fetch('/api/folders', {method: 'DELETE', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({path: path})})
     .then(function(r) { if (!r.ok) throw 0; return r.json(); })
     .then(function() { refreshData(); })
-    .catch(function() { alert('Failed to delete group.'); });
+    .catch(function() { alert('Failed to delete folder.'); });
 }
 
-function editGroup(path) {
-  document.querySelectorAll('.group-box-dropdown.open').forEach(function(d) { d.classList.remove('open'); });
-  var group = prodGroups.find(function(g) { return g.path === path; });
-  if (!group) return;
-  openGroupModal(group);
+function editFolder(path) {
+  document.querySelectorAll('.folder-box-dropdown.open').forEach(function(d) { d.classList.remove('open'); });
+  var folder = prodFolders.find(function(g) { return g.path === path; });
+  if (!folder) return;
+  openFolderModal(folder);
 }
 
-// --- Drag and drop for groups ---
-var groupDraggedItemId = null;
-var groupDraggedItemType = null;
+// --- Drag and drop for folders ---
+var folderDraggedItemId = null;
+var folderDraggedItemType = null;
 
-function onGroupItemDragStart(e) {
-  var el = e.target.closest('.group-item');
+function onFolderItemDragStart(e) {
+  var el = e.target.closest('.folder-item');
   if (!el) return;
-  groupDraggedItemId = el.dataset.itemId;
-  groupDraggedItemType = el.dataset.itemType;
+  folderDraggedItemId = el.dataset.itemId;
+  folderDraggedItemType = el.dataset.itemType;
   el.classList.add('dragging');
   e.dataTransfer.effectAllowed = 'move';
-  e.dataTransfer.setData('text/plain', groupDraggedItemId);
+  e.dataTransfer.setData('text/plain', folderDraggedItemId);
   var ws = document.getElementById('projects-whitespace');
   if (ws) ws.classList.add('drag-active');
 }
 
-function onGroupItemDragEnd(e) {
-  var el = e.target.closest('.group-item');
+function onFolderItemDragEnd(e) {
+  var el = e.target.closest('.folder-item');
   if (el) el.classList.remove('dragging');
-  groupDraggedItemId = null;
-  groupDraggedItemType = null;
-  document.querySelectorAll('.group-box.drag-over-group').forEach(function(b) { b.classList.remove('drag-over-group'); });
+  folderDraggedItemId = null;
+  folderDraggedItemType = null;
+  document.querySelectorAll('.folder-box.drag-over-folder').forEach(function(b) { b.classList.remove('drag-over-folder'); });
   var ws = document.getElementById('projects-whitespace');
   if (ws) ws.classList.remove('drag-active', 'drag-over');
 }
 
-function onGroupBoxDragOver(e) {
+function onFolderBoxDragOver(e) {
   e.preventDefault();
-  var box = e.target.closest('.group-box');
-  if (box) box.classList.add('drag-over-group');
+  var box = e.target.closest('.folder-box');
+  if (box) box.classList.add('drag-over-folder');
 }
 
-function onGroupBoxDragLeave(e) {
-  var box = e.target.closest('.group-box');
-  if (box && !box.contains(e.relatedTarget)) box.classList.remove('drag-over-group');
+function onFolderBoxDragLeave(e) {
+  var box = e.target.closest('.folder-box');
+  if (box && !box.contains(e.relatedTarget)) box.classList.remove('drag-over-folder');
 }
 
-function onGroupBoxDrop(e) {
+function onFolderBoxDrop(e) {
   e.preventDefault(); e.stopPropagation();
-  var box = e.target.closest('.group-box');
-  if (!box || !groupDraggedItemId) return;
-  box.classList.remove('drag-over-group');
-  var targetPath = box.dataset.groupPath;
-  assignItemGroup(groupDraggedItemId, groupDraggedItemType, targetPath);
+  var box = e.target.closest('.folder-box');
+  if (!box || !folderDraggedItemId) return;
+  box.classList.remove('drag-over-folder');
+  var targetPath = box.dataset.folderPath;
+  assignItemFolder(folderDraggedItemId, folderDraggedItemType, targetPath);
 }
 
 function onProjectsWhitespaceDragOver(e) {
@@ -636,26 +636,26 @@ function onProjectsWhitespaceDragLeave(e) {
 function onProjectsWhitespaceDrop(e) {
   e.preventDefault();
   e.target.classList.remove('drag-over', 'drag-active');
-  if (!groupDraggedItemId) return;
-  assignItemGroup(groupDraggedItemId, groupDraggedItemType, null);
+  if (!folderDraggedItemId) return;
+  assignItemFolder(folderDraggedItemId, folderDraggedItemType, null);
 }
 
-function assignItemGroup(itemId, itemType, groupPath) {
+function assignItemFolder(itemId, itemType, folderPath) {
   if (itemType === 'routine') {
-    fetch('/api/routines/' + itemId, {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({group: groupPath})})
+    fetch('/api/routines/' + itemId, {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({folder: folderPath})})
       .then(function(r) { if (!r.ok) throw 0; return r.json(); })
       .then(function() { refreshData(); })
-      .catch(function() { alert('Failed to assign routine to group.'); });
+      .catch(function() { alert('Failed to assign routine to folder.'); });
   } else if (itemType === 'note') {
-    fetch('/api/notes/' + itemId, {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({group: groupPath})})
+    fetch('/api/notes/' + itemId, {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({folder: folderPath})})
       .then(function(r) { if (!r.ok) throw 0; return r.json(); })
       .then(function() { refreshData(); })
-      .catch(function() { alert('Failed to assign note to group.'); });
+      .catch(function() { alert('Failed to assign note to folder.'); });
   } else {
-    fetch('/api/tasks/' + itemId, {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({group: groupPath})})
+    fetch('/api/tasks/' + itemId, {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({folder: folderPath})})
       .then(function(r) { if (!r.ok) throw 0; return r.json(); })
       .then(function() { refreshData(); })
-      .catch(function() { alert('Failed to assign task to group.'); });
+      .catch(function() { alert('Failed to assign task to folder.'); });
   }
 }
 
@@ -693,9 +693,9 @@ function _normalizePathForSave(value) {
   return value.replace(/\s*\/\s*/g, '/').replace(/^\/+/, '').replace(/\/+$/, '').trim();
 }
 
-function createGroupCard(existingGroup) {
-  var editingGroupPath = existingGroup ? existingGroup.path : null;
-  var selectedColor = existingGroup ? (existingGroup.color || DEFAULT_COLOR) : DEFAULT_COLOR;
+function createFolderCard(existingFolder) {
+  var editingFolderPath = existingFolder ? existingFolder.path : null;
+  var selectedColor = existingFolder ? (existingFolder.color || DEFAULT_COLOR) : DEFAULT_COLOR;
   var draftId = null;
   var draftSaveTimer = null;
 
@@ -730,10 +730,10 @@ function createGroupCard(existingGroup) {
   var paletteEl = _q(cardEl, 'ga-palette');
   var hexInput = _q(cardEl, 'ga-hex-input');
 
-  header.textContent = existingGroup ? 'Edit Group' : 'Group';
+  header.textContent = existingFolder ? 'Edit Folder' : 'Group';
 
-  if (existingGroup) {
-    pathInput.value = _formatPathForDisplay(existingGroup.path.slice(1));
+  if (existingFolder) {
+    pathInput.value = _formatPathForDisplay(existingFolder.path.slice(1));
     pathInput.disabled = true;
   }
 
@@ -765,7 +765,7 @@ function createGroupCard(existingGroup) {
     if (!raw || raw === '') { parentPath = null; }
     else if (endsWithSlash) { parentPath = '/' + raw; }
     else { ghost.textContent = ''; return; }
-    var children = parentPath === null ? getRootGroups() : getChildGroups(parentPath);
+    var children = parentPath === null ? getRootFolders() : getChildFolders(parentPath);
     if (children.length === 0) { ghost.textContent = ''; }
     else {
       ghost.textContent = children.map(function(g) {
@@ -831,16 +831,16 @@ function createGroupCard(existingGroup) {
   // Draft auto-save for groups (not when editing existing)
   function scheduleDraftSave() {
     if (draftSaveTimer) clearTimeout(draftSaveTimer);
-    draftSaveTimer = setTimeout(saveGroupDraft, 2000);
+    draftSaveTimer = setTimeout(saveFolderDraft, 2000);
   }
   var draftCreated = false;
-  function saveGroupDraft() {
+  function saveFolderDraft() {
     if (!draftId) return;
     var pathVal = _normalizePathForSave(pathInput.value) || '';
     if (!pathVal && !draftCreated) return; // don't create draft for empty content
     var data = {
       name: pathVal,
-      draft_type: 'group',
+      draft_type: 'folder',
       color: selectedColor
     };
     if (!draftCreated) {
@@ -851,26 +851,26 @@ function createGroupCard(existingGroup) {
     }
   }
 
-  if (existingGroup && existingGroup._draftId) {
+  if (existingFolder && existingFolder._draftId) {
     // Resuming a draft — reuse existing draft ID
-    draftId = existingGroup._draftId;
+    draftId = existingFolder._draftId;
     draftCreated = true;
-    editingGroupPath = null;
+    editingFolderPath = null;
     pathInput.addEventListener('input', scheduleDraftSave);
-  } else if (!existingGroup) {
+  } else if (!existingFolder) {
     draftId = crypto.randomUUID ? crypto.randomUUID() : 'draft-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
     pathInput.addEventListener('input', scheduleDraftSave);
   }
 
   var card = {
-    type: 'group',
+    type: 'folder',
     el: cardEl,
     draftId: draftId,
     _onOverlayKeydown: function(e) {
       // Don't submit on Enter inside hex input
       if (e.key === 'Enter' && document.activeElement === hexInput) { e.stopPropagation(); e.preventDefault(); return; }
     },
-    onSubmit: function() { saveThisGroup(); },
+    onSubmit: function() { saveThisFolder(); },
     onDismiss: function() {
       if (draftSaveTimer) { clearTimeout(draftSaveTimer); draftSaveTimer = null; }
       if (draftId && draftCreated) {
@@ -878,19 +878,19 @@ function createGroupCard(existingGroup) {
         if (!hasContent) {
           fetch('/api/drafts/' + draftId, {method: 'DELETE'});
         } else {
-          saveGroupDraft();
+          saveFolderDraft();
         }
       }
     }
   };
 
-  function saveThisGroup() {
+  function saveThisFolder() {
     var rawPath = _normalizePathForSave(pathInput.value);
     var path = '/' + rawPath;
     var color = selectedColor || DEFAULT_COLOR;
 
-    if (editingGroupPath) {
-      fetch('/api/groups', {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({path: editingGroupPath, color: color})})
+    if (editingFolderPath) {
+      fetch('/api/folders', {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({path: editingFolderPath, color: color})})
         .then(function(r) { if (!r.ok) return r.json().then(function(d) { throw new Error(d.error || 'Failed'); }); return r.json(); })
         .then(function() { CardStack.remove(card); refreshData(); })
         .catch(function(err) { alert(err.message || 'Failed.'); });
@@ -902,18 +902,18 @@ function createGroupCard(existingGroup) {
       var segments = path.split('/').filter(Boolean);
       if (segments.length === 0) { alert('Path is required.'); return; }
       var pathsToCreate = [];
-      var existingPaths = prodGroups.map(function(g) { return g.path; });
+      var existingPaths = prodFolders.map(function(g) { return g.path; });
       for (var i = 0; i < segments.length; i++) {
         var partial = '/' + segments.slice(0, i + 1).join('/');
         if (existingPaths.indexOf(partial) < 0) pathsToCreate.push(partial);
       }
 
-      if (pathsToCreate.length === 0) { alert('Group already exists.'); return; }
+      if (pathsToCreate.length === 0) { alert('Folder already exists.'); return; }
 
-      // Enforce max 12 subgroups per parent
+      // Enforce max 12 subfolders per parent
       var parentPath = segments.length > 1 ? '/' + segments.slice(0, segments.length - 1).join('/') : null;
-      var siblings = parentPath ? getChildGroups(parentPath) : getRootGroups();
-      if (siblings.length >= 12) { alert('A group can have at most 12 subgroups.'); return; }
+      var siblings = parentPath ? getChildFolders(parentPath) : getRootFolders();
+      if (siblings.length >= 12) { alert('A folder can have at most 12 subfolders.'); return; }
 
       var createNext = function(idx) {
         if (idx >= pathsToCreate.length) {
@@ -926,7 +926,7 @@ function createGroupCard(existingGroup) {
         var segs = p.split('/').filter(Boolean);
         var name = segs[segs.length - 1];
         var c = (idx === pathsToCreate.length - 1) ? color : DEFAULT_COLOR;
-        fetch('/api/groups', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({path: p, name: name, color: c})})
+        fetch('/api/folders', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({path: p, name: name, color: c})})
           .then(function(r) { if (!r.ok) return r.json().then(function(d) { throw new Error(d.error || 'Failed'); }); return r.json(); })
           .then(function() { createNext(idx + 1); })
           .catch(function(err) { alert(err.message || 'Failed.'); });
@@ -938,10 +938,10 @@ function createGroupCard(existingGroup) {
   return card;
 }
 
-function openGroupModal(existingGroup) {
-  CardStack.push(createGroupCard(existingGroup));
+function openFolderModal(existingFolder) {
+  CardStack.push(createFolderCard(existingFolder));
 }
 
-function closeGroupModal() {
+function closeFolderModal() {
   CardStack.dismissTop();
 }

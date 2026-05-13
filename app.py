@@ -13,7 +13,7 @@ from routes.tasks import tasks_bp
 from routes.drafts import drafts_bp
 from routes.routines import routines_bp
 from routes.goals import goals_bp
-from routes.groups import groups_bp
+from routes.folders import folders_bp
 from routes.notes import notes_bp
 from routes.actions import actions_bp
 from routes.schedules import schedules_bp
@@ -28,7 +28,7 @@ app.register_blueprint(tasks_bp)
 app.register_blueprint(drafts_bp)
 app.register_blueprint(routines_bp)
 app.register_blueprint(goals_bp)
-app.register_blueprint(groups_bp)
+app.register_blueprint(folders_bp)
 app.register_blueprint(notes_bp)
 app.register_blueprint(actions_bp)
 app.register_blueprint(schedules_bp)

@@ -70,7 +70,7 @@ def api_tasks_create():
         "end_datetime": None,
         "due_status": "pending",
         "routine_id": data.get("routine_id"),
-        "group": data.get("group"),
+        "folder": data.get("folder"),
         "created_at": now,
     }
     # AI draft support: mark as draft with TTL for auto-cleanup
@@ -99,7 +99,7 @@ def api_tasks_update(task_id):
                 return jsonify({"error": err}), 400
 
     allowed = ["name", "path", "assign_datetime", "due_datetime",
-               "end_datetime", "due_status", "group",
+               "end_datetime", "due_status", "folder",
                "ai_draft", "ai_draft_type", "ttl"]
     set_parts = []
     remove_parts = []
@@ -307,6 +307,6 @@ def api_tasks_calendar():
                 "task_id": item["task_id"],
                 "name": item.get("name", ""),
                 "end_datetime": end,
-                "group": item.get("group"),
+                "folder": item.get("folder"),
             })
     return jsonify(by_day)
