@@ -28,6 +28,11 @@ let prodTimelogs = []; // timelog objects [{log_id, parent_id, parent_type, star
 let projectsShowCompleted = true; // toggle for showing completed items in projects
 let projectsShowNotes = true; // toggle for showing notes in projects
 let projectsShowEmptyGroups = true; // toggle for showing empty groups in projects
+let projectsTimeFilter = {
+  completed: { past: true, present: true, future: true },
+  notes: { past: true, present: true, future: true },
+  empty: { past: true, present: true, future: true }
+};
 let projectsViewMode = 'visual'; // 'list' | 'visual'
 let projectsFocusPath = null; // null = root, or a group path like '/SCHOOL'
 let userEmail = null; // populated from session, used as root label
@@ -45,6 +50,7 @@ function loadPreferences() {
     if (prefs.projectsShowEmptyGroups !== undefined) projectsShowEmptyGroups = prefs.projectsShowEmptyGroups;
     if (prefs.projectsViewMode !== undefined) projectsViewMode = prefs.projectsViewMode;
     if (prefs.projectsFocusPath !== undefined) projectsFocusPath = prefs.projectsFocusPath;
+    if (prefs.projectsTimeFilter !== undefined) projectsTimeFilter = prefs.projectsTimeFilter;
     if (prefs.monthlyShowNotes !== undefined) monthlyShowNotes = prefs.monthlyShowNotes;
     if (prefs.monthlyShowPlanned !== undefined) monthlyShowPlanned = prefs.monthlyShowPlanned;
     if (prefs.use24HourTime !== undefined) use24HourTime = prefs.use24HourTime;
@@ -60,6 +66,7 @@ function savePreferences() {
       projectsShowEmptyGroups: projectsShowEmptyGroups,
       projectsViewMode: projectsViewMode,
       projectsFocusPath: projectsFocusPath,
+      projectsTimeFilter: projectsTimeFilter,
       monthlyShowNotes: monthlyShowNotes,
       monthlyShowPlanned: monthlyShowPlanned,
       use24HourTime: use24HourTime,

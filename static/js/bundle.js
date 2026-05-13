@@ -28,6 +28,11 @@ let prodTimelogs = []; // timelog objects [{log_id, parent_id, parent_type, star
 let projectsShowCompleted = true; // toggle for showing completed items in projects
 let projectsShowNotes = true; // toggle for showing notes in projects
 let projectsShowEmptyGroups = true; // toggle for showing empty groups in projects
+let projectsTimeFilter = {
+  completed: { past: true, present: true, future: true },
+  notes: { past: true, present: true, future: true },
+  empty: { past: true, present: true, future: true }
+};
 let projectsViewMode = 'visual'; // 'list' | 'visual'
 let projectsFocusPath = null; // null = root, or a group path like '/SCHOOL'
 let userEmail = null; // populated from session, used as root label
@@ -45,6 +50,7 @@ function loadPreferences() {
     if (prefs.projectsShowEmptyGroups !== undefined) projectsShowEmptyGroups = prefs.projectsShowEmptyGroups;
     if (prefs.projectsViewMode !== undefined) projectsViewMode = prefs.projectsViewMode;
     if (prefs.projectsFocusPath !== undefined) projectsFocusPath = prefs.projectsFocusPath;
+    if (prefs.projectsTimeFilter !== undefined) projectsTimeFilter = prefs.projectsTimeFilter;
     if (prefs.monthlyShowNotes !== undefined) monthlyShowNotes = prefs.monthlyShowNotes;
     if (prefs.monthlyShowPlanned !== undefined) monthlyShowPlanned = prefs.monthlyShowPlanned;
     if (prefs.use24HourTime !== undefined) use24HourTime = prefs.use24HourTime;
@@ -60,6 +66,7 @@ function savePreferences() {
       projectsShowEmptyGroups: projectsShowEmptyGroups,
       projectsViewMode: projectsViewMode,
       projectsFocusPath: projectsFocusPath,
+      projectsTimeFilter: projectsTimeFilter,
       monthlyShowNotes: monthlyShowNotes,
       monthlyShowPlanned: monthlyShowPlanned,
       use24HourTime: use24HourTime,
@@ -1025,29 +1032,46 @@ function toggleProjectsRulesPopup() {
   document.body.appendChild(popup);
 }
 
+function buildTimeToggle(ruleKey, period) {
+  var active = projectsTimeFilter[ruleKey][period];
+  var label = period.charAt(0).toUpperCase() + period.slice(1);
+  return '<button class="rules-time-btn' + (active ? ' active' : '') + '"' +
+    ' onclick="toggleProjectsTimeFilter(\'' + ruleKey + '\',\'' + period + '\')">' + label + '</button>';
+}
+
 function buildProjectsRulesContent() {
   var html = '<div class="rules-popup-header">' +
     '<span>Rules</span>' +
     '<button class="rules-popup-close" onclick="closeProjectsRulesPopup()"><span class="material-symbols-outlined">close</span></button>' +
     '</div><div class="rules-popup-body">';
 
-  html += '<label class="rules-popup-rule">' +
+  html += '<div class="rules-popup-rule">' +
     '<span>Completed</span>' +
+    '<div class="rules-time-group">' + buildTimeToggle('completed','past') + buildTimeToggle('completed','present') + buildTimeToggle('completed','future') + '</div>' +
     '<input type="checkbox"' + (projectsShowCompleted ? ' checked' : '') + ' onchange="toggleProjectsCompletedSidebar(this)">' +
-    '</label>';
+    '</div>';
 
-  html += '<label class="rules-popup-rule">' +
+  html += '<div class="rules-popup-rule">' +
     '<span>Notes</span>' +
+    '<div class="rules-time-group">' + buildTimeToggle('notes','past') + buildTimeToggle('notes','present') + buildTimeToggle('notes','future') + '</div>' +
     '<input type="checkbox"' + (projectsShowNotes ? ' checked' : '') + ' onchange="toggleProjectsNotesSidebar(this)">' +
-    '</label>';
+    '</div>';
 
-  html += '<label class="rules-popup-rule">' +
+  html += '<div class="rules-popup-rule">' +
     '<span>Empty Folders</span>' +
+    '<div class="rules-time-group">' + buildTimeToggle('empty','past') + buildTimeToggle('empty','present') + buildTimeToggle('empty','future') + '</div>' +
     '<input type="checkbox"' + (projectsShowEmptyGroups ? ' checked' : '') + ' onchange="toggleProjectsEmptyGroupsSidebar(this)">' +
-    '</label>';
+    '</div>';
 
   html += '</div>';
   return html;
+}
+
+function toggleProjectsTimeFilter(ruleKey, period) {
+  projectsTimeFilter[ruleKey][period] = !projectsTimeFilter[ruleKey][period];
+  savePreferences();
+  renderProjects();
+  refreshProjectsRulesPopup();
 }
 
 function closeProjectsRulesPopup() {
@@ -1395,9 +1419,58 @@ function moveTaskAndChildren(taskId, newPath) {
   children.forEach(c=>{const cp=c.path||'/';promises.push(fetch('/api/tasks/'+c.task_id+'/move',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:newParent+cp.slice(oldPath.length)})}));});
   Promise.all(promises).then(()=>loadProductivityData()).catch(()=>alert('Failed.'));
 }
+function getItemTemporalStatus(item) {
+  var today = getTodayStr();
+  if (item.type === 'task' || item.type === 'routine') {
+    var assignDate = item.assign ? utcToLocalDate(item.assign) : '';
+    var dueDate = item.due ? utcToLocalDate(item.due) : '';
+    if (assignDate && dueDate) {
+      if (today < assignDate) return 'future';
+      if (today > dueDate) return 'past';
+      return 'present';
+    } else if (assignDate) {
+      if (today < assignDate) return 'future';
+      if (today > assignDate) return 'past';
+      return 'present';
+    } else if (dueDate) {
+      if (today < dueDate) return 'future';
+      if (today > dueDate) return 'past';
+      return 'present';
+    }
+    return 'present';
+  }
+  if (item.type === 'note') {
+    var noteDate = item.due || '';
+    if (!noteDate) return 'present';
+    if (noteDate === today) return 'present';
+    return noteDate < today ? 'past' : 'future';
+  }
+  if (item.type === 'action') {
+    var startDate = item.assign ? utcToLocalDate(item.assign) : '';
+    var endDate = item.due ? utcToLocalDate(item.due) : '';
+    if (startDate === today || endDate === today) return 'present';
+    if (startDate && startDate > today) return 'future';
+    if (endDate && endDate < today) return 'past';
+    if (startDate && startDate < today) return 'past';
+    return 'present';
+  }
+  return 'present';
+}
+
+function isItemVisibleByTimeFilter(item) {
+  var status = getItemTemporalStatus(item);
+  if (item.done) {
+    var tf = projectsTimeFilter.completed;
+    return tf[status];
+  }
+  if (item.type === 'note') {
+    var tf = projectsTimeFilter.notes;
+    return tf[status];
+  }
+  return true;
+}
+
 function getGroupColor(groupPath) {
-  // Returns the color of the deepest (most specific) group matching this path.
-  // e.g. groupPath="/SCHOOL/CHINESE" → use color of /SCHOOL/CHINESE group
   if (!groupPath) return null;
   var group = prodGroups.find(function(g) { return g.path === groupPath; });
   if (group) return group.color;
@@ -1412,7 +1485,7 @@ function getUngroupedItems() {
   var routines = (prodRoutines || []).filter(function(r) { return !r.group; });
   var notes = (prodNotes || []).filter(function(n) { return !n.group; });
   var items = [];
-  tasks.forEach(function(t) { items.push({type: 'task', id: t.task_id, name: t.name, due: t.due_datetime, done: !!t.end_datetime, created_at: t.created_at || ''}); });
+  tasks.forEach(function(t) { items.push({type: 'task', id: t.task_id, name: t.name, assign: t.assign_datetime, due: t.due_datetime, done: !!t.end_datetime, created_at: t.created_at || ''}); });
   routines.forEach(function(r) { items.push({type: 'routine', id: r.id, name: r.name, due: null, done: false, created_at: r.created_at || ''}); });
   notes.forEach(function(n) { items.push({type: 'note', id: n.id, name: n.name, due: n.date, done: false, created_at: n.created_at || ''}); });
   items.sort(function(a, b) { return (b.created_at || '').localeCompare(a.created_at || ''); });
@@ -1427,7 +1500,7 @@ function getGroupItems(groupPath) {
   var routines = (prodRoutines || []).filter(function(r) { return r.group === groupPath; });
   var notes = (prodNotes || []).filter(function(n) { return n.group === groupPath; });
   var items = [];
-  tasks.forEach(function(t) { items.push({type: 'task', id: t.task_id, name: t.name, due: t.due_datetime, done: !!t.end_datetime, created_at: t.created_at || ''}); });
+  tasks.forEach(function(t) { items.push({type: 'task', id: t.task_id, name: t.name, assign: t.assign_datetime, due: t.due_datetime, done: !!t.end_datetime, created_at: t.created_at || ''}); });
   routines.forEach(function(r) { items.push({type: 'routine', id: r.id, name: r.name, due: null, done: false, created_at: r.created_at || ''}); });
   notes.forEach(function(n) { items.push({type: 'note', id: n.id, name: n.name, due: n.date, done: false, created_at: n.created_at || ''}); });
   items.sort(function(a, b) { return (b.created_at || '').localeCompare(a.created_at || ''); });
@@ -1437,6 +1510,7 @@ function getGroupItems(groupPath) {
 function renderGroupItemHtml(item) {
   if (!projectsShowCompleted && item.done) return '';
   if (!projectsShowNotes && item.type === 'note') return '';
+  if (!isItemVisibleByTimeFilter(item)) return '';
   var doneClass = item.done ? ' group-item-done' : '';
   var icon = item.type === 'routine' ? 'repeat' : (item.type === 'note' ? 'note' : 'task_alt');
   var dueHtml = '';
@@ -1480,6 +1554,7 @@ function getVisibleItems(groupPath) {
   return getGroupItems(groupPath).filter(function(item) {
     if (!projectsShowCompleted && item.done) return false;
     if (!projectsShowNotes && item.type === 'note') return false;
+    if (!isItemVisibleByTimeFilter(item)) return false;
     return true;
   });
 }
@@ -1560,6 +1635,7 @@ function getVisibleUngroupedItems() {
   return getUngroupedItems().filter(function(item) {
     if (!projectsShowCompleted && item.done) return false;
     if (!projectsShowNotes && item.type === 'note') return false;
+    if (!isItemVisibleByTimeFilter(item)) return false;
     return true;
   });
 }
@@ -1829,6 +1905,7 @@ function renderListTreeNode(node, depth) {
 function renderListTreeItem(item, depth) {
   if (!projectsShowCompleted && item.done) return '';
   if (!projectsShowNotes && item.type === 'note') return '';
+  if (!isItemVisibleByTimeFilter(item)) return '';
   var indent = depth * 20 + 20; // extra 20 for no chevron
   var icon = item.type === 'routine' ? 'repeat' : (item.type === 'note' ? 'note' : 'task_alt');
   var doneClass = item.done ? ' group-item-done' : '';

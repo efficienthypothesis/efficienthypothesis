@@ -1,3 +1,55 @@
+function getItemTemporalStatus(item) {
+  var today = getTodayStr();
+  if (item.type === 'task' || item.type === 'routine') {
+    var assignDate = item.assign ? utcToLocalDate(item.assign) : '';
+    var dueDate = item.due ? utcToLocalDate(item.due) : '';
+    if (assignDate && dueDate) {
+      if (today < assignDate) return 'future';
+      if (today > dueDate) return 'past';
+      return 'present';
+    } else if (assignDate) {
+      if (today < assignDate) return 'future';
+      if (today > assignDate) return 'past';
+      return 'present';
+    } else if (dueDate) {
+      if (today < dueDate) return 'future';
+      if (today > dueDate) return 'past';
+      return 'present';
+    }
+    return 'present';
+  }
+  if (item.type === 'note') {
+    var noteDate = item.due || '';
+    if (!noteDate) return 'present';
+    if (noteDate === today) return 'present';
+    return noteDate < today ? 'past' : 'future';
+  }
+  if (item.type === 'action') {
+    var startDate = item.assign ? utcToLocalDate(item.assign) : '';
+    var endDate = item.due ? utcToLocalDate(item.due) : '';
+    if (startDate === today || endDate === today) return 'present';
+    if (startDate && startDate > today) return 'future';
+    if (endDate && endDate < today) return 'past';
+    if (startDate && startDate < today) return 'past';
+    return 'present';
+  }
+  return 'present';
+}
+
+function isItemVisibleByTimeFilter(item) {
+  var status = getItemTemporalStatus(item);
+  if (item.done) {
+    var tf = projectsTimeFilter.completed;
+    return tf[status];
+  }
+  if (item.type === 'note') {
+    var tf = projectsTimeFilter.notes;
+    return tf[status];
+  }
+  // tasks, routines, actions — no time filter rule yet, always show
+  return true;
+}
+
 function getGroupColor(groupPath) {
   // Returns the color of the deepest (most specific) group matching this path.
   // e.g. groupPath="/SCHOOL/CHINESE" → use color of /SCHOOL/CHINESE group
@@ -15,7 +67,7 @@ function getUngroupedItems() {
   var routines = (prodRoutines || []).filter(function(r) { return !r.group; });
   var notes = (prodNotes || []).filter(function(n) { return !n.group; });
   var items = [];
-  tasks.forEach(function(t) { items.push({type: 'task', id: t.task_id, name: t.name, due: t.due_datetime, done: !!t.end_datetime, created_at: t.created_at || ''}); });
+  tasks.forEach(function(t) { items.push({type: 'task', id: t.task_id, name: t.name, assign: t.assign_datetime, due: t.due_datetime, done: !!t.end_datetime, created_at: t.created_at || ''}); });
   routines.forEach(function(r) { items.push({type: 'routine', id: r.id, name: r.name, due: null, done: false, created_at: r.created_at || ''}); });
   notes.forEach(function(n) { items.push({type: 'note', id: n.id, name: n.name, due: n.date, done: false, created_at: n.created_at || ''}); });
   items.sort(function(a, b) { return (b.created_at || '').localeCompare(a.created_at || ''); });
@@ -30,7 +82,7 @@ function getGroupItems(groupPath) {
   var routines = (prodRoutines || []).filter(function(r) { return r.group === groupPath; });
   var notes = (prodNotes || []).filter(function(n) { return n.group === groupPath; });
   var items = [];
-  tasks.forEach(function(t) { items.push({type: 'task', id: t.task_id, name: t.name, due: t.due_datetime, done: !!t.end_datetime, created_at: t.created_at || ''}); });
+  tasks.forEach(function(t) { items.push({type: 'task', id: t.task_id, name: t.name, assign: t.assign_datetime, due: t.due_datetime, done: !!t.end_datetime, created_at: t.created_at || ''}); });
   routines.forEach(function(r) { items.push({type: 'routine', id: r.id, name: r.name, due: null, done: false, created_at: r.created_at || ''}); });
   notes.forEach(function(n) { items.push({type: 'note', id: n.id, name: n.name, due: n.date, done: false, created_at: n.created_at || ''}); });
   items.sort(function(a, b) { return (b.created_at || '').localeCompare(a.created_at || ''); });
@@ -40,6 +92,7 @@ function getGroupItems(groupPath) {
 function renderGroupItemHtml(item) {
   if (!projectsShowCompleted && item.done) return '';
   if (!projectsShowNotes && item.type === 'note') return '';
+  if (!isItemVisibleByTimeFilter(item)) return '';
   var doneClass = item.done ? ' group-item-done' : '';
   var icon = item.type === 'routine' ? 'repeat' : (item.type === 'note' ? 'note' : 'task_alt');
   var dueHtml = '';
@@ -83,6 +136,7 @@ function getVisibleItems(groupPath) {
   return getGroupItems(groupPath).filter(function(item) {
     if (!projectsShowCompleted && item.done) return false;
     if (!projectsShowNotes && item.type === 'note') return false;
+    if (!isItemVisibleByTimeFilter(item)) return false;
     return true;
   });
 }
@@ -163,6 +217,7 @@ function getVisibleUngroupedItems() {
   return getUngroupedItems().filter(function(item) {
     if (!projectsShowCompleted && item.done) return false;
     if (!projectsShowNotes && item.type === 'note') return false;
+    if (!isItemVisibleByTimeFilter(item)) return false;
     return true;
   });
 }
@@ -432,6 +487,7 @@ function renderListTreeNode(node, depth) {
 function renderListTreeItem(item, depth) {
   if (!projectsShowCompleted && item.done) return '';
   if (!projectsShowNotes && item.type === 'note') return '';
+  if (!isItemVisibleByTimeFilter(item)) return '';
   var indent = depth * 20 + 20; // extra 20 for no chevron
   var icon = item.type === 'routine' ? 'repeat' : (item.type === 'note' ? 'note' : 'task_alt');
   var doneClass = item.done ? ' group-item-done' : '';

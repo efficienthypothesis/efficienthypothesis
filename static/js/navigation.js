@@ -457,29 +457,46 @@ function toggleProjectsRulesPopup() {
   document.body.appendChild(popup);
 }
 
+function buildTimeToggle(ruleKey, period) {
+  var active = projectsTimeFilter[ruleKey][period];
+  var label = period.charAt(0).toUpperCase() + period.slice(1);
+  return '<button class="rules-time-btn' + (active ? ' active' : '') + '"' +
+    ' onclick="toggleProjectsTimeFilter(\'' + ruleKey + '\',\'' + period + '\')">' + label + '</button>';
+}
+
 function buildProjectsRulesContent() {
   var html = '<div class="rules-popup-header">' +
     '<span>Rules</span>' +
     '<button class="rules-popup-close" onclick="closeProjectsRulesPopup()"><span class="material-symbols-outlined">close</span></button>' +
     '</div><div class="rules-popup-body">';
 
-  html += '<label class="rules-popup-rule">' +
+  html += '<div class="rules-popup-rule">' +
     '<span>Completed</span>' +
+    '<div class="rules-time-group">' + buildTimeToggle('completed','past') + buildTimeToggle('completed','present') + buildTimeToggle('completed','future') + '</div>' +
     '<input type="checkbox"' + (projectsShowCompleted ? ' checked' : '') + ' onchange="toggleProjectsCompletedSidebar(this)">' +
-    '</label>';
+    '</div>';
 
-  html += '<label class="rules-popup-rule">' +
+  html += '<div class="rules-popup-rule">' +
     '<span>Notes</span>' +
+    '<div class="rules-time-group">' + buildTimeToggle('notes','past') + buildTimeToggle('notes','present') + buildTimeToggle('notes','future') + '</div>' +
     '<input type="checkbox"' + (projectsShowNotes ? ' checked' : '') + ' onchange="toggleProjectsNotesSidebar(this)">' +
-    '</label>';
+    '</div>';
 
-  html += '<label class="rules-popup-rule">' +
+  html += '<div class="rules-popup-rule">' +
     '<span>Empty Folders</span>' +
+    '<div class="rules-time-group">' + buildTimeToggle('empty','past') + buildTimeToggle('empty','present') + buildTimeToggle('empty','future') + '</div>' +
     '<input type="checkbox"' + (projectsShowEmptyGroups ? ' checked' : '') + ' onchange="toggleProjectsEmptyGroupsSidebar(this)">' +
-    '</label>';
+    '</div>';
 
   html += '</div>';
   return html;
+}
+
+function toggleProjectsTimeFilter(ruleKey, period) {
+  projectsTimeFilter[ruleKey][period] = !projectsTimeFilter[ruleKey][period];
+  savePreferences();
+  renderProjects();
+  refreshProjectsRulesPopup();
 }
 
 function closeProjectsRulesPopup() {
