@@ -14,7 +14,10 @@ GOOGLE_CLIENT_ID = os.getenv(
     "GOOGLE_CLIENT_ID",
     "902463711334-g7pehqqis9eh4uq2d8a5mbijf0incu93.apps.googleusercontent.com",
 )
-IOS_GOOGLE_CLIENT_ID = os.getenv("IOS_GOOGLE_CLIENT_ID", "")
+IOS_GOOGLE_CLIENT_ID = os.getenv(
+    "IOS_GOOGLE_CLIENT_ID",
+    "902463711334-s86okoiv6cd94bn9mkklq7t5j5vm9neq.apps.googleusercontent.com",
+)
 GOOGLE_ALLOWED_CLIENT_IDS = [
     cid.strip()
     for cid in (
