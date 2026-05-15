@@ -10,7 +10,19 @@ import os
 from flask import session, request, jsonify
 
 # === Google OAuth config ===
-GOOGLE_CLIENT_ID = "902463711334-g7pehqqis9eh4uq2d8a5mbijf0incu93.apps.googleusercontent.com"
+GOOGLE_CLIENT_ID = os.getenv(
+    "GOOGLE_CLIENT_ID",
+    "902463711334-g7pehqqis9eh4uq2d8a5mbijf0incu93.apps.googleusercontent.com",
+)
+IOS_GOOGLE_CLIENT_ID = os.getenv("IOS_GOOGLE_CLIENT_ID", "")
+GOOGLE_ALLOWED_CLIENT_IDS = [
+    cid.strip()
+    for cid in (
+        [GOOGLE_CLIENT_ID, IOS_GOOGLE_CLIENT_ID]
+        + os.getenv("GOOGLE_ALLOWED_CLIENT_IDS", "").split(",")
+    )
+    if cid and cid.strip()
+]
 
 # === DynamoDB setup ===
 dynamodb = boto3.resource("dynamodb", region_name="us-east-2")
