@@ -46,12 +46,28 @@ def _oauth_clients_s3_key(email):
     return f"{email}/oauth/clients.json"
 
 
+def _global_oauth_clients_s3_key():
+    return "oauth/clients.json"
+
+
+def _load_global_oauth_clients():
+    try:
+        obj = s3.get_object(Bucket=PRODUCTIVITY_BUCKET, Key=_global_oauth_clients_s3_key())
+        return json.loads(obj["Body"].read().decode("utf-8"))
+    except Exception:
+        return []
+
+
 def _load_oauth_clients(email):
     try:
         obj = s3.get_object(Bucket=PRODUCTIVITY_BUCKET, Key=_oauth_clients_s3_key(email))
         return json.loads(obj["Body"].read().decode("utf-8"))
     except Exception:
         return []
+
+
+def _load_registered_oauth_clients(email):
+    return _load_global_oauth_clients() + _load_oauth_clients(email)
 
 
 def _save_oauth_clients(email, clients):
@@ -70,7 +86,7 @@ def api_oauth_clients_list():
         return err
     if _is_programmatic(ctx):
         return jsonify({"error": "Requires browser session"}), 403
-    clients = _load_oauth_clients(ctx["email"])
+    clients = _load_registered_oauth_clients(ctx["email"])
     safe = [{k: v for k, v in c.items() if k != "client_secret_hash"} for c in clients]
     return jsonify(safe)
 
@@ -150,7 +166,7 @@ def oauth_authorize_get():
         return jsonify({"error": "unsupported_response_type"}), 400
 
     email = session["user"]["email"]
-    clients = _load_oauth_clients(email)
+    clients = _load_registered_oauth_clients(email)
     client = next((c for c in clients if c["client_id"] == client_id), None)
     if not client:
         return jsonify({"error": "invalid_client", "description": "Client not registered"}), 400
@@ -181,7 +197,7 @@ def oauth_authorize_post():
     email = session["user"]["email"]
     user_id = session["user"]["id"]
 
-    clients = _load_oauth_clients(email)
+    clients = _load_registered_oauth_clients(email)
     client = next((c for c in clients if c["client_id"] == client_id), None)
     if not client or redirect_uri not in client.get("redirect_uris", []):
         return jsonify({"error": "invalid_client"}), 400
@@ -246,7 +262,7 @@ def _handle_auth_code_grant():
         return jsonify({"error": "invalid_grant"}), 400
 
     email = item["email"]
-    clients = _load_oauth_clients(email)
+    clients = _load_registered_oauth_clients(email)
     client = next((c for c in clients if c["client_id"] == client_id), None)
     if not client:
         return jsonify({"error": "invalid_client"}), 400
@@ -300,7 +316,7 @@ def _handle_refresh_token_grant():
         return jsonify({"error": "invalid_grant"}), 400
 
     email = item["email"]
-    clients = _load_oauth_clients(email)
+    clients = _load_registered_oauth_clients(email)
     client = next((c for c in clients if c["client_id"] == client_id), None)
     if not client or _hash_token(client_secret) != client.get("client_secret_hash"):
         return jsonify({"error": "invalid_client"}), 401
