@@ -22,6 +22,7 @@ from routes.oauth import oauth_bp
 from routes.chat import chat_bp
 from routes.timelogs import timelogs_bp
 from routes.mobile_auth import mobile_auth_bp
+from routes.mcp import mcp_bp
 
 app.register_blueprint(pages_bp)
 app.register_blueprint(auth_bp)
@@ -38,6 +39,7 @@ app.register_blueprint(oauth_bp)
 app.register_blueprint(chat_bp)
 app.register_blueprint(timelogs_bp)
 app.register_blueprint(mobile_auth_bp)
+app.register_blueprint(mcp_bp)
 
 handler = make_lambda_handler(app, binary_support=True)
 

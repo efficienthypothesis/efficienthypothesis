@@ -11,6 +11,37 @@ from config import (
 oauth_bp = Blueprint('oauth', __name__)
 
 
+def _issuer():
+    return request.url_root.rstrip("/")
+
+
+@oauth_bp.route('/.well-known/oauth-protected-resource', methods=['GET'])
+def oauth_protected_resource_metadata():
+    issuer = _issuer()
+    return jsonify({
+        "resource": issuer,
+        "authorization_servers": [issuer],
+        "scopes_supported": ["full_access"],
+        "resource_documentation": issuer,
+    })
+
+
+@oauth_bp.route('/.well-known/oauth-authorization-server', methods=['GET'])
+def oauth_authorization_server_metadata():
+    issuer = _issuer()
+    return jsonify({
+        "issuer": issuer,
+        "authorization_endpoint": f"{issuer}/oauth/authorize",
+        "token_endpoint": f"{issuer}/oauth/token",
+        "revocation_endpoint": f"{issuer}/oauth/revoke",
+        "response_types_supported": ["code"],
+        "grant_types_supported": ["authorization_code", "refresh_token"],
+        "scopes_supported": ["full_access"],
+        "token_endpoint_auth_methods_supported": ["client_secret_post"],
+        "code_challenge_methods_supported": [],
+    })
+
+
 def _oauth_clients_s3_key(email):
     return f"{email}/oauth/clients.json"
 
