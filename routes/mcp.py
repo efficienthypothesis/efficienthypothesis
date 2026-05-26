@@ -19,6 +19,11 @@ from routes.schedules import _schedules_s3_key
 mcp_bp = Blueprint("mcp", __name__)
 
 MCP_PROTOCOL_VERSION = "2024-11-05"
+ITEM_TYPES = ["tasks", "actions", "notes", "folders", "routines", "schedules", "goals"]
+FILTER_OPS = ["eq", "neq", "contains", "starts_with", "in", "exists", "gte", "lte", "between"]
+DEFAULT_QUERY_FIELDS = [
+    "item_type", "id", "name", "folder", "date", "created_at", "status", "search_score"
+]
 
 
 def _json_default(value):
@@ -116,6 +121,84 @@ def _items_output_schema(field_name):
 
 TOOLS = [
     _read_only_tool(
+        "query_items",
+        "Query items",
+        "Use this to find only the Efficient Hypothesis records relevant to a prompt, with server-side filtering, text search, sorting, projection, and limits.",
+        {
+            "type": "object",
+            "properties": {
+                "item_types": {
+                    "type": "array",
+                    "items": {"type": "string", "enum": ITEM_TYPES},
+                    "description": "Datasets to query. Defaults to all item types.",
+                },
+                "filters": {
+                    "type": "array",
+                    "description": "Server-side filters. Values should be explicit strings/numbers/booleans, not relative phrases like yesterday.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "field": {
+                                "type": "string",
+                                "description": "Field to filter, such as created_at, date, due_datetime, start_datetime, folder, name, status, item_type, or id.",
+                            },
+                            "op": {
+                                "type": "string",
+                                "enum": FILTER_OPS,
+                                "description": "Filter operator.",
+                            },
+                            "value": {
+                                "description": "Comparison value. Use an array of two values for between.",
+                            },
+                        },
+                        "required": ["field", "op"],
+                        "additionalProperties": False,
+                    },
+                },
+                "search": {
+                    "type": "string",
+                    "description": "Optional case-insensitive text search across names, folders, dates, statuses, goal schemas, and other compact item text.",
+                },
+                "sort": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "field": {"type": "string"},
+                            "direction": {"type": "string", "enum": ["asc", "desc"]},
+                        },
+                        "required": ["field"],
+                        "additionalProperties": False,
+                    },
+                    "description": "Sort instructions. Defaults to search_score desc when search is present, otherwise date desc.",
+                },
+                "fields": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Fields to return. Defaults to compact fields: item_type, id, name, folder, date, created_at, status, search_score.",
+                },
+                "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 500,
+                    "description": "Maximum number of matching items to return. Defaults to 50.",
+                },
+            },
+            "additionalProperties": False,
+        },
+        {
+            "type": "object",
+            "properties": {
+                "items": {"type": "array", "items": {"type": "object"}},
+                "count": {"type": "integer"},
+                "total_matches": {"type": "integer"},
+                "truncated": {"type": "boolean"},
+            },
+            "required": ["items", "count", "total_matches", "truncated"],
+            "additionalProperties": False,
+        },
+    ),
+    _read_only_tool(
         "list_tasks",
         "List tasks",
         "Use this when the user wants to view their Efficient Hypothesis tasks.",
@@ -209,6 +292,12 @@ def _limit(arguments):
     return max(1, min(value, 500))
 
 
+def _query_limit(arguments):
+    value = dict(arguments or {})
+    value.setdefault("limit", 50)
+    return _limit(value)
+
+
 def _filter_folder(items, folder):
     if not folder:
         return items
@@ -257,6 +346,283 @@ def _list_goals(email):
     return goals
 
 
+def _canonical_item_type(item_type):
+    aliases = {
+        "task": "tasks",
+        "action": "actions",
+        "note": "notes",
+        "folder": "folders",
+        "routine": "routines",
+        "schedule": "schedules",
+        "goal": "goals",
+    }
+    return aliases.get(item_type, item_type)
+
+
+def _item_id(item_type, item):
+    id_fields = {
+        "tasks": "task_id",
+        "actions": "action_id",
+        "notes": "id",
+        "folders": "path",
+        "routines": "id",
+        "schedules": "id",
+        "goals": "name",
+    }
+    return item.get(id_fields[item_type])
+
+
+def _item_name(item_type, item):
+    if item_type == "folders":
+        return item.get("name") or item.get("path")
+    if item_type == "goals":
+        return item.get("display_name") or item.get("name")
+    return item.get("name")
+
+
+def _item_date(item_type, item):
+    if item_type == "tasks":
+        return item.get("due_datetime") or item.get("assign_datetime") or item.get("created_at")
+    if item_type == "actions":
+        return item.get("start_datetime") or item.get("end_datetime") or item.get("created_at")
+    if item_type == "notes":
+        return item.get("date") or item.get("created_at")
+    if item_type in ("routines", "schedules"):
+        return item.get("first_day") or item.get("created_at")
+    if item_type == "goals":
+        return item.get("created_at")
+    return None
+
+
+def _item_status(item_type, item):
+    if item_type == "tasks":
+        if item.get("due_status") in ("met", "done") or item.get("end_datetime"):
+            return "complete"
+        return "incomplete"
+    if item_type in ("routines", "schedules"):
+        return "active" if item.get("active", True) else "inactive"
+    if item_type == "actions":
+        return "planned" if item.get("is_planned") else "manifested"
+    return None
+
+
+def _augment_item(item_type, item):
+    augmented = dict(item)
+    augmented["item_type"] = item_type
+    augmented["id"] = _item_id(item_type, item)
+    augmented["name"] = _item_name(item_type, item)
+    augmented["date"] = _item_date(item_type, item)
+    augmented["status"] = _item_status(item_type, item)
+    return augmented
+
+
+def _load_items_by_type(email, item_type):
+    if item_type == "tasks":
+        return [_augment_item(item_type, item) for item in _scan_user_items(tasks_table, email)]
+    if item_type == "actions":
+        return [_augment_item(item_type, item) for item in _scan_user_items(actions_table, email)]
+    if item_type == "notes":
+        return [_augment_item(item_type, item) for item in _load_notes(email).get("notes", [])]
+    if item_type == "folders":
+        return [_augment_item(item_type, item) for item in _load_folders(email).get("folders", [])]
+    if item_type == "routines":
+        return [
+            _augment_item(item_type, item)
+            for item in _load_s3_json(_routines_s3_key(email), [])
+        ]
+    if item_type == "schedules":
+        return [
+            _augment_item(item_type, item)
+            for item in _load_s3_json(_schedules_s3_key(email), [])
+        ]
+    if item_type == "goals":
+        return [_augment_item(item_type, item) for item in _list_goals(email)]
+    raise ValueError(f"Unsupported item type: {item_type}")
+
+
+def _field_value(item, field):
+    aliases = {
+        "type": "item_type",
+        "itemType": "item_type",
+        "title": "name",
+    }
+    field = aliases.get(field, field)
+    return item.get(field)
+
+
+def _coerce_text(value):
+    if value is None:
+        return ""
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, default=_json_default, sort_keys=True)
+    return str(value)
+
+
+def _compare_values(left, right):
+    left_text = _coerce_text(left)
+    right_text = _coerce_text(right)
+    if isinstance(left, (int, float, Decimal)) and isinstance(right, (int, float, Decimal)):
+        return (left > right) - (left < right)
+    return (left_text > right_text) - (left_text < right_text)
+
+
+def _filter_matches(item, flt):
+    field = flt.get("field")
+    op = flt.get("op")
+    value = flt.get("value")
+    if not field or op not in FILTER_OPS:
+        raise ValueError(f"Invalid filter: {flt}")
+
+    actual = _field_value(item, field)
+    if op == "exists":
+        return bool(actual) == bool(value if value is not None else True)
+    if op == "eq":
+        return actual == value
+    if op == "neq":
+        return actual != value
+    if op == "contains":
+        return _coerce_text(value).lower() in _coerce_text(actual).lower()
+    if op == "starts_with":
+        return _coerce_text(actual).lower().startswith(_coerce_text(value).lower())
+    if op == "in":
+        if not isinstance(value, list):
+            raise ValueError("Filter op 'in' requires an array value")
+        return actual in value
+    if op == "gte":
+        if actual is None:
+            return False
+        return _compare_values(actual, value) >= 0
+    if op == "lte":
+        if actual is None:
+            return False
+        return _compare_values(actual, value) <= 0
+    if op == "between":
+        if not isinstance(value, list) or len(value) != 2:
+            raise ValueError("Filter op 'between' requires a two-item array value")
+        if actual is None:
+            return False
+        return _compare_values(actual, value[0]) >= 0 and _compare_values(actual, value[1]) <= 0
+    return False
+
+
+def _search_text(item):
+    searchable = []
+    for key in [
+        "item_type", "id", "name", "folder", "date", "created_at", "status",
+        "assign_datetime", "due_datetime", "start_datetime", "end_datetime",
+        "first_day", "pattern", "display_name",
+    ]:
+        searchable.append(_coerce_text(item.get(key)))
+    if item.get("fields"):
+        searchable.append(_coerce_text(item.get("fields")))
+    return " ".join(part for part in searchable if part)
+
+
+def _search_score(item, search):
+    if not search:
+        return 0
+    text = _search_text(item).lower()
+    terms = [term for term in search.lower().split() if term]
+    if not terms:
+        return 0
+    score = 0
+    name = _coerce_text(item.get("name")).lower()
+    folder = _coerce_text(item.get("folder")).lower()
+    for term in terms:
+        if term in text:
+            score += 1
+        if term in name:
+            score += 3
+        if term in folder:
+            score += 2
+    return score
+
+
+def _sort_key(value):
+    if value is None:
+        return ""
+    return _coerce_text(value)
+
+
+def _apply_sort(items, sort_spec, has_search):
+    sort_spec = sort_spec or []
+    if not sort_spec:
+        sort_spec = [{"field": "search_score", "direction": "desc"}] if has_search else [
+            {"field": "date", "direction": "desc"}
+        ]
+    for spec in reversed(sort_spec):
+        field = spec.get("field")
+        if not field:
+            continue
+        reverse = spec.get("direction", "asc") == "desc"
+        if field == "search_score":
+            items.sort(key=lambda item: item.get("search_score") or 0, reverse=reverse)
+        else:
+            items.sort(key=lambda item: _sort_key(_field_value(item, field)), reverse=reverse)
+    return items
+
+
+def _project_item(item, fields):
+    projected = {}
+    for field in fields:
+        if field in item:
+            projected[field] = item[field]
+    return projected
+
+
+def _query_items(email, arguments):
+    requested_types = arguments.get("item_types") or ITEM_TYPES
+    item_types = []
+    for item_type in requested_types:
+        canonical = _canonical_item_type(item_type)
+        if canonical not in ITEM_TYPES:
+            raise ValueError(f"Unsupported item type: {item_type}")
+        if canonical not in item_types:
+            item_types.append(canonical)
+
+    filters = arguments.get("filters") or []
+    search = (arguments.get("search") or "").strip()
+    fields = arguments.get("fields") or DEFAULT_QUERY_FIELDS
+    if not isinstance(fields, list) or not all(isinstance(field, str) for field in fields):
+        raise ValueError("fields must be an array of strings")
+    limit = _query_limit(arguments)
+
+    items = []
+    for item_type in item_types:
+        items.extend(_load_items_by_type(email, item_type))
+
+    matched = []
+    for item in items:
+        if filters and not all(_filter_matches(item, flt) for flt in filters):
+            continue
+        score = _search_score(item, search)
+        if search and score <= 0:
+            continue
+        item["search_score"] = score
+        matched.append(item)
+
+    _apply_sort(matched, arguments.get("sort"), bool(search))
+    total_matches = len(matched)
+    projected = [_project_item(item, fields) for item in matched[:limit]]
+
+    return {
+        "structuredContent": {
+            "items": projected,
+            "count": len(projected),
+            "total_matches": total_matches,
+            "truncated": total_matches > len(projected),
+        },
+        "content": [
+            {
+                "type": "text",
+                "text": (
+                    f"Returned {len(projected)} of {total_matches} matching items."
+                ),
+            }
+        ],
+    }
+
+
 def _tool_result(field_name, items, limit):
     items = items[:limit]
     return {
@@ -277,6 +643,9 @@ def _call_tool(name, arguments, ctx):
     arguments = arguments or {}
     email = ctx["email"]
     limit = _limit(arguments)
+
+    if name == "query_items":
+        return _query_items(email, arguments)
 
     if name == "list_tasks":
         items = _filter_folder(_scan_user_items(tasks_table, email), arguments.get("folder"))
@@ -370,5 +739,7 @@ def mcp_rpc():
             return _rpc_result(request_id, _call_tool(name, arguments, ctx))
         except KeyError:
             return _rpc_error(request_id, -32602, f"Unknown tool: {name}")
+        except ValueError as exc:
+            return _rpc_error(request_id, -32602, str(exc))
 
     return _rpc_error(request_id, -32601, f"Method not found: {method}")
