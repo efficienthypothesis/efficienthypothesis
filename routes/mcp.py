@@ -407,7 +407,7 @@ TOOLS = [
                 },
                 "id": {
                     "type": "string",
-                    "description": "Exact item ID. For folders this is the path. For goals this is the goal name.",
+                    "description": "Exact item ID. For folders use the stable folder ID; legacy folder paths are also accepted during migration. For goals this is the goal name.",
                 },
                 "fields": {
                     "type": "object",
