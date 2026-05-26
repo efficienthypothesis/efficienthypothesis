@@ -28,6 +28,10 @@ FILTER_OPS = ["eq", "neq", "contains", "starts_with", "in", "exists", "gte", "lt
 DEFAULT_QUERY_FIELDS = [
     "item_type", "id", "name", "folder", "date", "created_at", "status", "search_score"
 ]
+PROTECTED_UPDATE_FIELDS = {
+    "id", "item_type", "user", "created_at", "task_id", "action_id",
+    "routine_id", "schedule_id",
+}
 
 
 def _json_default(value):
@@ -383,6 +387,42 @@ TOOLS = [
                 "completed_at": {"type": "string"},
             },
             "required": ["ok", "task_id", "completed_at"],
+            "additionalProperties": False,
+        },
+    ),
+    _write_tool(
+        "update_item",
+        "Update item",
+        "Update fields on an existing Efficient Hypothesis item by exact type and ID. This does not delete the item. Use query_items first if the exact ID is not known.",
+        {
+            "type": "object",
+            "properties": {
+                "item_type": {
+                    "type": "string",
+                    "enum": ITEM_TYPES,
+                    "description": "Type of item to update.",
+                },
+                "id": {
+                    "type": "string",
+                    "description": "Exact item ID. For folders this is the path. For goals this is the goal name.",
+                },
+                "fields": {
+                    "type": "object",
+                    "description": "Field updates to apply. Use null to remove optional fields. ID, ownership, and created_at fields cannot be changed.",
+                },
+            },
+            "required": ["item_type", "id", "fields"],
+            "additionalProperties": False,
+        },
+        {
+            "type": "object",
+            "properties": {
+                "ok": {"type": "boolean"},
+                "item_type": {"type": "string"},
+                "id": {"type": "string"},
+                "item": {"type": "object"},
+            },
+            "required": ["ok", "item_type", "id", "item"],
             "additionalProperties": False,
         },
     ),
@@ -879,6 +919,193 @@ def _complete_task(email, arguments):
     }
 
 
+def _validate_update_fields(fields):
+    if not isinstance(fields, dict) or not fields:
+        raise ValueError("fields must be a non-empty object")
+    blocked = sorted(set(fields) & PROTECTED_UPDATE_FIELDS)
+    if blocked:
+        raise ValueError(f"Protected fields cannot be updated: {', '.join(blocked)}")
+    return fields
+
+
+def _update_dynamo_item(table, key_name, item_type, email, item_id, fields):
+    resp = table.get_item(Key={key_name: item_id})
+    item = resp.get("Item")
+    if not item or item.get("user") != email:
+        raise ValueError("Item not found")
+
+    for field in ("assign_datetime", "due_datetime", "start_datetime", "end_datetime"):
+        if field in fields and fields[field] is not None:
+            err = _validate_date_range(fields[field])
+            if err:
+                raise ValueError(err)
+
+    set_parts = []
+    remove_parts = []
+    attr_names = {}
+    attr_values = {}
+    for field, value in fields.items():
+        placeholder = f"#f_{field}"
+        attr_names[placeholder] = field
+        if value is None:
+            remove_parts.append(placeholder)
+            item.pop(field, None)
+        else:
+            value_ph = f":v_{field}"
+            set_parts.append(f"{placeholder} = {value_ph}")
+            attr_values[value_ph] = value
+            item[field] = value
+
+    expr = ""
+    if set_parts:
+        expr += "SET " + ", ".join(set_parts)
+    if remove_parts:
+        expr += (" " if expr else "") + "REMOVE " + ", ".join(remove_parts)
+    if not expr:
+        raise ValueError("No fields to update")
+
+    update_args = {
+        "Key": {key_name: item_id},
+        "UpdateExpression": expr,
+        "ExpressionAttributeNames": attr_names,
+    }
+    if attr_values:
+        update_args["ExpressionAttributeValues"] = attr_values
+    table.update_item(**update_args)
+    return _augment_item(item_type, item)
+
+
+def _update_list_item(email, key, id_field, item_type, item_id, fields):
+    items = _load_s3_json(key, [])
+    if not isinstance(items, list):
+        raise ValueError("Stored item collection is not a list")
+
+    for item in items:
+        if item.get(id_field) == item_id:
+            for field, value in fields.items():
+                if value is None:
+                    item.pop(field, None)
+                else:
+                    item[field] = value
+            s3.put_object(
+                Bucket=PRODUCTIVITY_BUCKET,
+                Key=key,
+                Body=json.dumps(items, indent=2, default=_json_default),
+                ContentType="application/json",
+            )
+            return _augment_item(item_type, item)
+    raise ValueError("Item not found")
+
+
+def _update_note(email, note_id, fields):
+    if "date" in fields and fields["date"] is not None:
+        err = _validate_date_range(fields["date"])
+        if err:
+            raise ValueError(err)
+
+    notes_data = _load_notes(email)
+    notes = notes_data.get("notes", [])
+    for note in notes:
+        if note.get("id") == note_id:
+            for field, value in fields.items():
+                if value is None:
+                    note.pop(field, None)
+                else:
+                    note[field] = value
+            notes_data["notes"] = notes
+            _save_notes(email, notes_data)
+            return _augment_item("notes", note)
+    raise ValueError("Item not found")
+
+
+def _update_folder(email, path, fields):
+    folders_data = _load_folders(email)
+    folders = folders_data.get("folders", [])
+    for folder in folders:
+        if folder.get("path") == path:
+            for field, value in fields.items():
+                if value is None:
+                    folder.pop(field, None)
+                else:
+                    folder[field] = value
+            folders_data["folders"] = folders
+            s3.put_object(
+                Bucket=PRODUCTIVITY_BUCKET,
+                Key=f"{email}/folders.json",
+                Body=json.dumps(folders_data, indent=2, default=_json_default),
+                ContentType="application/json",
+            )
+            return _augment_item("folders", folder)
+    raise ValueError("Item not found")
+
+
+def _update_goal(email, goal_name, fields):
+    key = _goals_prefix(email) + goal_name + ".json"
+    try:
+        body = s3.get_object(
+            Bucket=PRODUCTIVITY_BUCKET, Key=key
+        )["Body"].read().decode("utf-8")
+        goal = json.loads(body)
+    except Exception:
+        raise ValueError("Item not found")
+
+    for field, value in fields.items():
+        if value is None:
+            goal.pop(field, None)
+        else:
+            goal[field] = value
+    s3.put_object(
+        Bucket=PRODUCTIVITY_BUCKET,
+        Key=key,
+        Body=json.dumps(goal, indent=2, default=_json_default),
+        ContentType="application/json",
+    )
+    goal["name"] = goal_name
+    return _augment_item("goals", goal)
+
+
+def _update_item(email, arguments):
+    item_type = _canonical_item_type(_require_nonempty(arguments.get("item_type"), "item_type"))
+    if item_type not in ITEM_TYPES:
+        raise ValueError(f"Unsupported item type: {item_type}")
+    item_id = _require_nonempty(arguments.get("id"), "id")
+    fields = _validate_update_fields(arguments.get("fields"))
+    if item_type == "folders" and "path" in fields:
+        raise ValueError("Folder path cannot be updated; create a new folder path instead")
+
+    if item_type == "tasks":
+        item = _update_dynamo_item(tasks_table, "task_id", "tasks", email, item_id, fields)
+    elif item_type == "actions":
+        item = _update_dynamo_item(actions_table, "action_id", "actions", email, item_id, fields)
+    elif item_type == "notes":
+        item = _update_note(email, item_id, fields)
+    elif item_type == "folders":
+        item = _update_folder(email, item_id, fields)
+    elif item_type == "routines":
+        item = _update_list_item(email, _routines_s3_key(email), "id", "routines", item_id, fields)
+    elif item_type == "schedules":
+        item = _update_list_item(email, _schedules_s3_key(email), "id", "schedules", item_id, fields)
+    elif item_type == "goals":
+        item = _update_goal(email, item_id, fields)
+    else:
+        raise ValueError(f"Unsupported item type: {item_type}")
+
+    return {
+        "structuredContent": {
+            "ok": True,
+            "item_type": item_type,
+            "id": item_id,
+            "item": item,
+        },
+        "content": [
+            {
+                "type": "text",
+                "text": f"Updated {item_type} item: {item.get('name') or item_id}.",
+            }
+        ],
+    }
+
+
 def _tool_result(field_name, items, limit):
     items = items[:limit]
     return {
@@ -914,6 +1141,9 @@ def _call_tool(name, arguments, ctx):
 
     if name == "complete_task":
         return _complete_task(email, arguments)
+
+    if name == "update_item":
+        return _update_item(email, arguments)
 
     if name == "list_tasks":
         items = _filter_folder(_scan_user_items(tasks_table, email), arguments.get("folder"))
