@@ -71,7 +71,6 @@ def api_tasks_create():
         "end_datetime": None,
         "due_status": "pending",
         "routine_id": data.get("routine_id"),
-        "folder": data.get("folder"),
         "folder_id": data.get("folder_id"),
         "created_at": now,
     }
@@ -101,19 +100,15 @@ def api_tasks_update(task_id):
             if err:
                 return jsonify({"error": err}), 400
 
-    if "folder" in data or "folder_id" in data:
+    if "folder_id" in data:
         folder_item = _apply_folder_ref(email=ctx["email"], item={}, data=data)
-        if "folder" in folder_item:
-            data["folder"] = folder_item["folder"]
-        elif data.get("folder") is None:
-            data["folder"] = None
         if "folder_id" in folder_item:
             data["folder_id"] = folder_item["folder_id"]
         elif data.get("folder_id") is None:
             data["folder_id"] = None
 
     allowed = ["name", "path", "assign_datetime", "due_datetime",
-               "end_datetime", "due_status", "folder", "folder_id",
+               "end_datetime", "due_status", "folder_id",
                "ai_draft", "ai_draft_type", "ttl"]
     set_parts = []
     remove_parts = []
@@ -321,6 +316,6 @@ def api_tasks_calendar():
                 "task_id": item["task_id"],
                 "name": item.get("name", ""),
                 "end_datetime": end,
-                "folder": item.get("folder"),
+                "folder_id": item.get("folder_id"),
             })
     return jsonify(by_day)

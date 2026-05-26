@@ -49,10 +49,10 @@ def api_drafts_create():
         "max_instances": data.get("max_instances"),
         # Note draft fields
         "date": data.get("date"),
-        "folder": data.get("folder"),
         "folder_id": data.get("folder_id"),
         # Folder draft fields
         "color": data.get("color"),
+        "parent_id": data.get("parent_id"),
         "created_at": now,
     }
     item = _apply_folder_ref(email, item, data)
@@ -68,12 +68,8 @@ def api_drafts_update(draft_id):
         return err
     data = request.get_json()
 
-    if "folder" in data or "folder_id" in data:
+    if "folder_id" in data:
         folder_item = _apply_folder_ref(email=ctx["email"], item={}, data=data)
-        if "folder" in folder_item:
-            data["folder"] = folder_item["folder"]
-        elif data.get("folder") is None:
-            data["folder"] = None
         if "folder_id" in folder_item:
             data["folder_id"] = folder_item["folder_id"]
         elif data.get("folder_id") is None:
@@ -82,7 +78,7 @@ def api_drafts_update(draft_id):
     allowed = ["name", "is_routine_draft", "draft_type",
                "assign_datetime", "due_datetime",
                "pattern", "due_time", "assign_time", "first_day", "max_instances", "end_date",
-               "date", "folder", "folder_id", "color"]
+               "date", "folder_id", "color", "parent_id"]
     set_parts = []
     remove_parts = []
     attr_names = {}

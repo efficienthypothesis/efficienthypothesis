@@ -127,10 +127,10 @@ function resumeDraft(draftId) {
     const draft=all.find(t=>t.draft_id===draftId);
     if(!draft)return;
     if(draft.draft_type==='note') {
-      var noteData = {name: draft.name||'', date: draft.date||null, folder: draft.folder||null, _draftId: draft.draft_id};
+      var noteData = {name: draft.name||'', date: draft.date||null, folder_id: draft.folder_id||null, _draftId: draft.draft_id};
       openNoteAdd(noteData);
     } else if(draft.draft_type==='folder') {
-      var folderData = {path: draft.name ? '/'+draft.name : '', color: draft.color||DEFAULT_COLOR, _draftId: draft.draft_id};
+      var folderData = {name: draft.name || '', parent_id: draft.parent_id || null, color: draft.color||DEFAULT_COLOR, _draftId: draft.draft_id};
       openFolderModal(folderData);
     } else {
       openSmartModal(!!draft.is_routine_draft,draft);

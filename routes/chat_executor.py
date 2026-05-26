@@ -13,8 +13,7 @@ from routes.routines import _routines_s3_key
 from routes.schedules import _schedules_s3_key
 from routes.notes import _load_notes, _save_notes
 from routes.folders import (
-    _apply_folder_ref, _folder_id_for_path, _load_folders,
-    _normalize_folder, _normalize_folder_path, _normalize_folders_data,
+    _apply_folder_ref, _load_folders, _new_folder_id, _normalize_folders_data,
     _save_folders,
 )
 
@@ -88,7 +87,6 @@ def _create_task(email, data):
         "due_datetime": data.get("due_datetime"),
         "due_status": "pending",
         "routine_id": data.get("routine_id"),
-        "folder": data.get("folder"),
         "folder_id": data.get("folder_id"),
         "created_at": now,
     }
@@ -102,9 +100,9 @@ def _update_task(email, data):
     task_id = data.get("task_id") or _find_task_id(email, data)
     if not task_id:
         return {"ok": False, "error": "Could not find task to update"}
-    if "folder" in data or "folder_id" in data:
+    if "folder_id" in data:
         data = {**data, **_apply_folder_ref(email, {}, data)}
-    allowed = ["name", "path", "assign_datetime", "due_datetime", "folder", "folder_id"]
+    allowed = ["name", "path", "assign_datetime", "due_datetime", "folder_id"]
     expr_parts, attr_names, attr_values = _build_update_expr(data, allowed)
     if not expr_parts:
         return {"ok": False, "error": "No fields to update"}
@@ -151,7 +149,6 @@ def _create_action(email, data):
         "start_datetime": data.get("start_datetime"),
         "end_datetime": data.get("end_datetime"),
         "schedule_id": data.get("schedule_id"),
-        "folder": data.get("folder"),
         "folder_id": data.get("folder_id"),
         "is_planned": data.get("is_planned", False),
         "created_at": now,
@@ -166,9 +163,9 @@ def _update_action(email, data):
     action_id = data.get("action_id") or _find_action_id(email, data)
     if not action_id:
         return {"ok": False, "error": "Could not find action to update"}
-    if "folder" in data or "folder_id" in data:
+    if "folder_id" in data:
         data = {**data, **_apply_folder_ref(email, {}, data)}
-    allowed = ["name", "start_datetime", "end_datetime", "folder", "folder_id", "is_planned"]
+    allowed = ["name", "start_datetime", "end_datetime", "folder_id", "is_planned"]
     expr_parts, attr_names, attr_values = _build_update_expr(data, allowed)
     if not expr_parts:
         return {"ok": False, "error": "No fields to update"}
@@ -215,7 +212,6 @@ def _create_routine(email, data):
         "first_day": data.get("first_day"),
         "pattern": data.get("pattern", "interval:1"),
         "instances": 0,
-        "folder": data.get("folder"),
         "folder_id": data.get("folder_id"),
         "active": True,
         "created_at": datetime.datetime.utcnow().isoformat() + 'Z',
@@ -239,10 +235,10 @@ def _update_routine(email, data):
         return {"ok": False, "error": "Routine not found"}
     for t in templates:
         if t.get("id") == rid:
-            if "folder" in data or "folder_id" in data:
+            if "folder_id" in data:
                 data = {**data, **_apply_folder_ref(email, {}, data)}
             for field in ["name", "assign_time", "due_time", "first_day", "pattern",
-                          "max_instances", "end_date", "active", "folder", "folder_id"]:
+                          "max_instances", "end_date", "active", "folder_id"]:
                 if field in data:
                     t[field] = data[field]
             if "end_date" in data:
@@ -278,7 +274,6 @@ def _create_schedule(email, data):
         "first_day": data.get("first_day"),
         "pattern": data.get("pattern", "interval:1"),
         "instances": 0,
-        "folder": data.get("folder"),
         "folder_id": data.get("folder_id"),
         "active": True,
         "created_at": datetime.datetime.utcnow().isoformat() + 'Z',
@@ -302,10 +297,10 @@ def _update_schedule(email, data):
         return {"ok": False, "error": "Schedule not found"}
     for t in templates:
         if t.get("id") == sid:
-            if "folder" in data or "folder_id" in data:
+            if "folder_id" in data:
                 data = {**data, **_apply_folder_ref(email, {}, data)}
             for field in ["name", "start_time", "end_time", "first_day", "pattern",
-                          "max_instances", "end_date", "active", "folder", "folder_id"]:
+                          "max_instances", "end_date", "active", "folder_id"]:
                 if field in data:
                     t[field] = data[field]
             if "end_date" in data:
@@ -337,7 +332,6 @@ def _create_note(email, data):
         "id": str(uuid.uuid4()),
         "name": data.get("name", ""),
         "date": data.get("date", ""),
-        "folder": data.get("folder"),
         "folder_id": data.get("folder_id"),
         "created_at": datetime.datetime.utcnow().isoformat() + 'Z',
     }
@@ -356,9 +350,9 @@ def _update_note(email, data):
         return {"ok": False, "error": "Note not found"}
     for n in notes:
         if n["id"] == nid:
-            if "folder" in data or "folder_id" in data:
+            if "folder_id" in data:
                 data = {**data, **_apply_folder_ref(email, {}, data)}
-            for field in ["name", "date", "folder", "folder_id"]:
+            for field in ["name", "date", "folder_id"]:
                 if field in data:
                     n[field] = data[field]
             break
@@ -381,63 +375,61 @@ def _delete_note(email, data):
 # --- Folders (S3) ---
 
 def _create_folder(email, data):
-    folders_data = _load_folders(email)
+    folders_data = _normalize_folders_data(email, _load_folders(email))
     folders = folders_data.get("folders", [])
-    path = _normalize_folder_path(data.get("path", ""))
-    # Check if already exists
+    name = (data.get("name") or "").strip()
+    parent_id = data.get("parent_id") or None
+    if not name:
+        return {"ok": False, "error": "name is required"}
+    if parent_id and not any(g.get("id") == parent_id for g in folders):
+        return {"ok": False, "error": "Parent folder not found"}
     for g in folders:
-        if g["path"] == path:
-            return {"ok": True, "note": "Folder already exists", "path": path}
-    folders.append(_normalize_folder(email, {
-        "id": data.get("id") or _folder_id_for_path(email, path),
-        "path": path,
-        "name": data.get("name", path.split("/")[-1]),
+        if g.get("parent_id") == parent_id and g.get("name", "").lower() == name.lower():
+            return {"ok": True, "note": "Folder already exists", "folder": g}
+    folder = {
+        "id": data.get("id") or _new_folder_id(),
+        "name": name,
         "color": data.get("color", "#000000"),
-        "parent_id": data.get("parent_id"),
-    }, {g.get("path"): g.get("id") for g in folders}))
+        "parent_id": parent_id,
+    }
+    folders.append(folder)
     folders_data["folders"] = folders
     _save_folders(email, folders_data)
-    return {"ok": True, "path": path}
+    return {"ok": True, "folder": folder}
 
 
 def _update_folder(email, data):
     folders_data = _normalize_folders_data(email, _load_folders(email))
     folders = folders_data.get("folders", [])
-    path = _normalize_folder_path(data.get("path", ""))
     folder_id = data.get("id") or data.get("folder_id")
-    if not path and not folder_id:
-        return {"ok": False, "error": "path or id is required"}
+    if not folder_id:
+        return {"ok": False, "error": "id is required"}
     for g in folders:
-        if (path and g["path"] == path) or (folder_id and g.get("id") == folder_id):
+        if g.get("id") == folder_id:
             if "name" in data:
                 g["name"] = data["name"]
             if "color" in data:
                 g["color"] = data["color"]
             if "parent_id" in data:
                 g["parent_id"] = data["parent_id"]
-            if path and "path" in data:
-                g["path"] = path
             break
     else:
         return {"ok": False, "error": "Folder not found"}
     folders_data = _normalize_folders_data(email, {**folders_data, "folders": folders})
     _save_folders(email, folders_data)
-    return {"ok": True, "folder": next(
-        (g for g in folders_data.get("folders", []) if (folder_id and g.get("id") == folder_id) or (path and g.get("path") == path)),
-        None,
-    )}
+    return {"ok": True, "folder": next((g for g in folders_data.get("folders", []) if g.get("id") == folder_id), None)}
 
 
 def _delete_folder(email, data):
-    folders_data = _load_folders(email)
+    folders_data = _normalize_folders_data(email, _load_folders(email))
     folders = folders_data.get("folders", [])
-    path = data.get("path", "")
-    new_folders = [g for g in folders if g["path"] != path]
+    folder_id = data.get("id") or data.get("folder_id")
+    new_folders = [g for g in folders if g.get("id") != folder_id]
     if len(new_folders) == len(folders):
         return {"ok": False, "error": "Folder not found"}
     folders_data["folders"] = new_folders
     _save_folders(email, folders_data)
-    return {"ok": True, "path": path}
+    return {"ok": True, "id": folder_id}
 
 
 # --- Goals (S3) ---

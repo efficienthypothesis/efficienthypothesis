@@ -51,7 +51,6 @@ def api_actions_create():
         "start_datetime": data.get("start_datetime"),
         "end_datetime": data.get("end_datetime"),
         "schedule_id": data.get("schedule_id"),
-        "folder": data.get("folder"),
         "folder_id": data.get("folder_id"),
         "is_planned": data.get("is_planned", False),
         "created_at": now,
@@ -81,18 +80,14 @@ def api_actions_update(action_id):
             if err:
                 return jsonify({"error": err}), 400
 
-    if "folder" in data or "folder_id" in data:
+    if "folder_id" in data:
         folder_item = _apply_folder_ref(email=ctx["email"], item={}, data=data)
-        if "folder" in folder_item:
-            data["folder"] = folder_item["folder"]
-        elif data.get("folder") is None:
-            data["folder"] = None
         if "folder_id" in folder_item:
             data["folder_id"] = folder_item["folder_id"]
         elif data.get("folder_id") is None:
             data["folder_id"] = None
 
-    allowed = ["name", "start_datetime", "end_datetime", "folder", "folder_id", "is_planned",
+    allowed = ["name", "start_datetime", "end_datetime", "folder_id", "is_planned",
                "ai_draft", "ai_draft_type", "ttl"]
     set_parts = []
     remove_parts = []

@@ -43,28 +43,24 @@ No delete tools are currently exposed through MCP.
 
 ## Folder identity model
 
-Folders now use stable IDs and parent IDs while preserving legacy path strings
-for compatibility during migration:
+Folders use stable IDs and parent IDs. Folder paths are no longer part of the
+canonical architecture:
 
 ```json
 {
   "id": "fld_...",
   "parent_id": "fld_...",
   "name": "Project",
-  "path": "/work/project",
   "color": "#000000"
 }
 ```
 
-Items should use `folder_id` as the stable folder reference. The legacy
-`folder` path field is still written and returned so existing frontend code and
-older clients continue to work while the migration is in progress.
+Items use `folder_id` as the folder reference. The legacy `folder` path field
+has been removed from new writes and should not be used by MCP tools or clients.
 
-Folder moves should update the folder `path`/`parent_id`; related items remain
-attached by `folder_id`. During the compatibility phase, code should preserve
-or refresh the legacy `folder` path where practical.
+Folder moves update `parent_id`; related items remain attached by `folder_id`.
 
-The migration script is:
+The original folder ID migration script is:
 
 ```sh
 python3 migrate_folder_ids.py --profile eh       # dry run
@@ -75,6 +71,19 @@ python3 migrate_folder_ids.py --profile eh --apply
 
 ```text
 s3://eh-app-data/backups/folder-id-migration/<timestamp>/
+```
+
+The path-removal migration script is:
+
+```sh
+python3 remove_folder_paths.py --profile eh       # dry run
+python3 remove_folder_paths.py --profile eh --apply
+```
+
+`--apply` backs up affected data to:
+
+```text
+s3://eh-app-data/backups/remove-folder-paths/<timestamp>/
 ```
 
 ## Query guidance

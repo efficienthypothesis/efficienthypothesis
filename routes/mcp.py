@@ -26,7 +26,7 @@ MCP_PROTOCOL_VERSION = "2024-11-05"
 ITEM_TYPES = ["tasks", "actions", "notes", "folders", "routines", "schedules", "goals"]
 FILTER_OPS = ["eq", "neq", "contains", "starts_with", "in", "exists", "gte", "lte", "between"]
 DEFAULT_QUERY_FIELDS = [
-    "item_type", "id", "name", "folder", "date", "created_at", "status", "search_score"
+    "item_type", "id", "name", "folder_id", "date", "created_at", "status", "search_score"
 ]
 PROTECTED_UPDATE_FIELDS = {
     "id", "item_type", "user", "created_at", "task_id", "action_id",
@@ -121,9 +121,9 @@ def _list_input_schema():
                 "maximum": 500,
                 "description": "Maximum number of items to return. Defaults to 100.",
             },
-            "folder": {
+            "folder_id": {
                 "type": "string",
-                "description": "Optional folder path to filter by, such as /work.",
+                "description": "Optional stable folder ID to filter by.",
             },
         },
         "additionalProperties": False,
@@ -175,7 +175,7 @@ TOOLS = [
                         "properties": {
                             "field": {
                                 "type": "string",
-                                "description": "Field to filter, such as created_at, date, due_datetime, start_datetime, folder, name, status, item_type, or id.",
+                                "description": "Field to filter, such as created_at, date, due_datetime, start_datetime, folder_id, parent_id, name, status, item_type, or id.",
                             },
                             "op": {
                                 "type": "string",
@@ -192,7 +192,7 @@ TOOLS = [
                 },
                 "search": {
                     "type": "string",
-                    "description": "Optional case-insensitive text search across names, folders, dates, statuses, goal schemas, and other compact item text.",
+                    "description": "Optional case-insensitive text search across names, folder IDs, dates, statuses, goal schemas, and other compact item text.",
                 },
                 "sort": {
                     "type": "array",
@@ -210,7 +210,7 @@ TOOLS = [
                 "fields": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Fields to return. Defaults to compact fields: item_type, id, name, folder, date, created_at, status, search_score.",
+                    "description": "Fields to return. Defaults to compact fields: item_type, id, name, folder_id, date, created_at, status, search_score.",
                 },
                 "limit": {
                     "type": "integer",
@@ -324,7 +324,6 @@ TOOLS = [
             "properties": {
                 "name": {"type": "string", "description": "Note title."},
                 "date": {"type": "string", "description": "Explicit note date in YYYY-MM-DD or ISO format."},
-                "folder": {"type": "string", "description": "Optional folder path, such as /work."},
                 "folder_id": {"type": "string", "description": "Optional stable folder ID."},
             },
             "required": ["name", "date"],
@@ -342,9 +341,8 @@ TOOLS = [
                 "name": {"type": "string", "description": "Task name."},
                 "assign_datetime": {"type": "string", "description": "Explicit ISO datetime when the task is assigned."},
                 "due_datetime": {"type": "string", "description": "Explicit ISO datetime when the task is due."},
-                "folder": {"type": "string", "description": "Optional folder path, such as /work."},
                 "folder_id": {"type": "string", "description": "Optional stable folder ID."},
-                "path": {"type": "string", "description": "Optional legacy path. Defaults to /."},
+                "path": {"type": "string", "description": "Optional task hierarchy path. Defaults to /."},
             },
             "required": ["name", "assign_datetime", "due_datetime"],
             "additionalProperties": False,
@@ -361,7 +359,6 @@ TOOLS = [
                 "name": {"type": "string", "description": "Action name."},
                 "start_datetime": {"type": "string", "description": "Explicit ISO datetime when the action starts."},
                 "end_datetime": {"type": "string", "description": "Explicit ISO datetime when the action ends."},
-                "folder": {"type": "string", "description": "Optional folder path, such as /work."},
                 "folder_id": {"type": "string", "description": "Optional stable folder ID."},
                 "is_planned": {"type": "boolean", "description": "Whether this is a planned action. Defaults to false."},
             },
@@ -407,7 +404,7 @@ TOOLS = [
                 },
                 "id": {
                     "type": "string",
-                    "description": "Exact item ID. For folders use the stable folder ID; legacy folder paths are also accepted during migration. For goals this is the goal name.",
+                    "description": "Exact item ID. For folders use the stable folder ID. For goals this is the goal name.",
                 },
                 "fields": {
                     "type": "object",
@@ -447,10 +444,10 @@ def _query_limit(arguments):
     return _limit(value)
 
 
-def _filter_folder(items, folder):
-    if not folder:
+def _filter_folder(items, folder_id):
+    if not folder_id:
         return items
-    return [item for item in items if item.get("folder") == folder]
+    return [item for item in items if item.get("folder_id") == folder_id]
 
 
 def _scan_user_items(table, email):
@@ -523,7 +520,7 @@ def _item_id(item_type, item):
 
 def _item_name(item_type, item):
     if item_type == "folders":
-        return item.get("name") or item.get("path")
+        return item.get("name")
     if item_type == "goals":
         return item.get("display_name") or item.get("name")
     return item.get("name")
@@ -573,7 +570,7 @@ def _load_items_by_type(email, item_type):
     if item_type == "notes":
         return [_augment_item(item_type, item) for item in _load_notes(email).get("notes", [])]
     if item_type == "folders":
-        return [_augment_item(item_type, item) for item in _load_folders(email).get("folders", [])]
+        return [_augment_item(item_type, item) for item in _normalize_folders_data(email, _load_folders(email)).get("folders", [])]
     if item_type == "routines":
         return [
             _augment_item(item_type, item)
@@ -657,7 +654,7 @@ def _filter_matches(item, flt):
 def _search_text(item):
     searchable = []
     for key in [
-        "item_type", "id", "name", "folder", "date", "created_at", "status",
+        "item_type", "id", "name", "folder_id", "parent_id", "date", "created_at", "status",
         "assign_datetime", "due_datetime", "start_datetime", "end_datetime",
         "first_day", "pattern", "display_name",
     ]:
@@ -676,13 +673,13 @@ def _search_score(item, search):
         return 0
     score = 0
     name = _coerce_text(item.get("name")).lower()
-    folder = _coerce_text(item.get("folder")).lower()
+    folder_id = _coerce_text(item.get("folder_id")).lower()
     for term in terms:
         if term in text:
             score += 1
         if term in name:
             score += 3
-        if term in folder:
+        if term in folder_id:
             score += 2
     return score
 
@@ -804,13 +801,11 @@ def _mutation_result(field_name, item):
 def _create_note(email, arguments):
     name = _require_nonempty(arguments.get("name"), "name")
     date = _validate_date_field(arguments.get("date"), "date")
-    folder = arguments.get("folder")
 
     note = {
         "id": str(uuid.uuid4()),
         "name": name,
         "date": date,
-        "folder": folder,
         "folder_id": arguments.get("folder_id"),
         "created_at": datetime.datetime.utcnow().isoformat() + "Z",
     }
@@ -851,7 +846,6 @@ def _create_task(email, arguments):
         "assign_datetime": assign_datetime,
         "due_datetime": due_datetime,
         "due_status": "pending",
-        "folder": arguments.get("folder"),
         "folder_id": arguments.get("folder_id"),
         "created_at": datetime.datetime.utcnow().isoformat() + "Z",
     }
@@ -872,7 +866,6 @@ def _create_action(email, arguments):
         "name": name,
         "start_datetime": start_datetime,
         "end_datetime": end_datetime,
-        "folder": arguments.get("folder"),
         "folder_id": arguments.get("folder_id"),
         "is_planned": bool(arguments.get("is_planned", False)),
         "created_at": datetime.datetime.utcnow().isoformat() + "Z",
@@ -1031,23 +1024,14 @@ def _update_folder(email, item_id, fields):
     folders_data = _normalize_folders_data(email, _load_folders(email))
     folders = folders_data.get("folders", [])
     for folder in folders:
-        if folder.get("id") == item_id or folder.get("path") == item_id:
-            original_id = folder.get("id")
+        if folder.get("id") == item_id:
             for field, value in fields.items():
                 if value is None:
                     folder.pop(field, None)
                 else:
                     folder[field] = value
             folders_data = _normalize_folders_data(email, folders_data)
-            updated = next(
-                (
-                    f for f in folders_data.get("folders", [])
-                    if (original_id and f.get("id") == original_id)
-                    or f.get("path") == fields.get("path")
-                    or f.get("path") == item_id
-                ),
-                folder,
-            )
+            updated = next((f for f in folders_data.get("folders", []) if f.get("id") == item_id), folder)
             s3.put_object(
                 Bucket=PRODUCTIVITY_BUCKET,
                 Key=f"{email}/folders.json",
@@ -1090,25 +1074,25 @@ def _update_item(email, arguments):
     item_id = _require_nonempty(arguments.get("id"), "id")
     fields = _validate_update_fields(arguments.get("fields"))
     if item_type == "tasks":
-        if "folder" in fields or "folder_id" in fields:
+        if "folder_id" in fields:
             fields = {**fields, **_apply_folder_ref(email, {}, fields)}
         item = _update_dynamo_item(tasks_table, "task_id", "tasks", email, item_id, fields)
     elif item_type == "actions":
-        if "folder" in fields or "folder_id" in fields:
+        if "folder_id" in fields:
             fields = {**fields, **_apply_folder_ref(email, {}, fields)}
         item = _update_dynamo_item(actions_table, "action_id", "actions", email, item_id, fields)
     elif item_type == "notes":
-        if "folder" in fields or "folder_id" in fields:
+        if "folder_id" in fields:
             fields = {**fields, **_apply_folder_ref(email, {}, fields)}
         item = _update_note(email, item_id, fields)
     elif item_type == "folders":
         item = _update_folder(email, item_id, fields)
     elif item_type == "routines":
-        if "folder" in fields or "folder_id" in fields:
+        if "folder_id" in fields:
             fields = {**fields, **_apply_folder_ref(email, {}, fields)}
         item = _update_list_item(email, _routines_s3_key(email), "id", "routines", item_id, fields)
     elif item_type == "schedules":
-        if "folder" in fields or "folder_id" in fields:
+        if "folder_id" in fields:
             fields = {**fields, **_apply_folder_ref(email, {}, fields)}
         item = _update_list_item(email, _schedules_s3_key(email), "id", "schedules", item_id, fields)
     elif item_type == "goals":
@@ -1172,7 +1156,7 @@ def _call_tool(name, arguments, ctx):
         return _update_item(email, arguments)
 
     if name == "list_tasks":
-        items = _filter_folder(_scan_user_items(tasks_table, email), arguments.get("folder"))
+        items = _filter_folder(_scan_user_items(tasks_table, email), arguments.get("folder_id"))
         status = arguments.get("status", "all")
         if status == "complete":
             items = [
@@ -1187,27 +1171,27 @@ def _call_tool(name, arguments, ctx):
         return _tool_result("tasks", items, limit)
 
     if name == "list_actions":
-        items = _filter_folder(_scan_user_items(actions_table, email), arguments.get("folder"))
+        items = _filter_folder(_scan_user_items(actions_table, email), arguments.get("folder_id"))
         return _tool_result("actions", items, limit)
 
     if name == "list_notes":
-        items = _filter_folder(_load_notes(email).get("notes", []), arguments.get("folder"))
+        items = _filter_folder(_load_notes(email).get("notes", []), arguments.get("folder_id"))
         return _tool_result("notes", items, limit)
 
     if name == "list_folders":
-        return _tool_result("folders", _load_folders(email).get("folders", []), limit)
+        return _tool_result("folders", _normalize_folders_data(email, _load_folders(email)).get("folders", []), limit)
 
     if name == "list_routines":
         items = _filter_folder(
             _load_s3_json(_routines_s3_key(email), []),
-            arguments.get("folder"),
+            arguments.get("folder_id"),
         )
         return _tool_result("routines", items, limit)
 
     if name == "list_schedules":
         items = _filter_folder(
             _load_s3_json(_schedules_s3_key(email), []),
-            arguments.get("folder"),
+            arguments.get("folder_id"),
         )
         return _tool_result("schedules", items, limit)
 

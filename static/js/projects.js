@@ -50,22 +50,48 @@ function isItemVisibleByTimeFilter(item) {
   return true;
 }
 
-function getFolderColor(folderPath) {
-  // Returns the color of the deepest (most specific) folder matching this path.
-  // e.g. folderPath="/SCHOOL/CHINESE" → use color of /SCHOOL/CHINESE folder
-  if (!folderPath) return null;
-  var folder = prodFolders.find(function(g) { return g.path === folderPath; });
+function getFolderById(folderId) {
+  if (!folderId) return null;
+  return prodFolders.find(function(g) { return g.id === folderId; }) || null;
+}
+
+function getFolderColor(folderId) {
+  if (!folderId) return null;
+  var folder = getFolderById(folderId);
   if (folder) return folder.color;
   return null;
+}
+
+function getFolderLabel(folder) {
+  if (!folder) return '';
+  var names = [];
+  var current = folder;
+  var guard = 0;
+  while (current && guard < 20) {
+    names.unshift(current.name || '');
+    current = getFolderById(current.parent_id);
+    guard++;
+  }
+  return names.filter(Boolean).join(' / ');
+}
+
+function resolveFolderInput(value) {
+  var raw = (value || '').trim().toLowerCase();
+  if (!raw) return null;
+  return prodFolders.find(function(g) {
+    return (g.id || '').toLowerCase() === raw
+      || (g.name || '').toLowerCase() === raw
+      || getFolderLabel(g).toLowerCase() === raw;
+  }) || null;
 }
 
 function getUnfiledItems() {
   // All non-draft, non-routine-instance tasks + routines + notes without a folder, sorted by created_at desc
   var tasks = (prodAllTasks || []).filter(function(t) {
-    return !t.draft && !t.routine_id && !t.folder;
+    return !t.draft && !t.routine_id && !t.folder_id;
   });
-  var routines = (prodRoutines || []).filter(function(r) { return !r.folder; });
-  var notes = (prodNotes || []).filter(function(n) { return !n.folder; });
+  var routines = (prodRoutines || []).filter(function(r) { return !r.folder_id; });
+  var notes = (prodNotes || []).filter(function(n) { return !n.folder_id; });
   var items = [];
   tasks.forEach(function(t) { items.push({type: 'task', id: t.task_id, name: t.name, assign: t.assign_datetime, due: t.due_datetime, done: !!t.end_datetime, created_at: t.created_at || ''}); });
   routines.forEach(function(r) { items.push({type: 'routine', id: r.id, name: r.name, due: null, done: false, created_at: r.created_at || ''}); });
@@ -74,13 +100,12 @@ function getUnfiledItems() {
   return items;
 }
 
-function getFolderItems(folderPath) {
-  // Items assigned to exactly this folder path
+function getFolderItems(folderId) {
   var tasks = (prodAllTasks || []).filter(function(t) {
-    return !t.draft && !t.routine_id && t.folder === folderPath;
+    return !t.draft && !t.routine_id && t.folder_id === folderId;
   });
-  var routines = (prodRoutines || []).filter(function(r) { return r.folder === folderPath; });
-  var notes = (prodNotes || []).filter(function(n) { return n.folder === folderPath; });
+  var routines = (prodRoutines || []).filter(function(r) { return r.folder_id === folderId; });
+  var notes = (prodNotes || []).filter(function(n) { return n.folder_id === folderId; });
   var items = [];
   tasks.forEach(function(t) { items.push({type: 'task', id: t.task_id, name: t.name, assign: t.assign_datetime, due: t.due_datetime, done: !!t.end_datetime, created_at: t.created_at || ''}); });
   routines.forEach(function(r) { items.push({type: 'routine', id: r.id, name: r.name, due: null, done: false, created_at: r.created_at || ''}); });
@@ -108,21 +133,11 @@ function renderFolderItemHtml(item) {
 }
 
 function getRootFolders() {
-  // Groups whose path has only one segment (e.g., "/STATS" but not "/CS/ML")
-  return prodFolders.filter(function(g) {
-    var segments = g.path.split('/').filter(Boolean);
-    return segments.length === 1;
-  });
+  return prodFolders.filter(function(g) { return !g.parent_id; });
 }
 
-function getChildFolders(parentPath) {
-  // Direct children: parentPath + one more segment
-  var prefix = parentPath.endsWith('/') ? parentPath : parentPath + '/';
-  return prodFolders.filter(function(g) {
-    if (!g.path.startsWith(prefix)) return false;
-    var rest = g.path.slice(prefix.length);
-    return rest.length > 0 && !rest.includes('/');
-  });
+function getChildFolders(parentId) {
+  return prodFolders.filter(function(g) { return g.parent_id === parentId; });
 }
 
 // === Layout Algorithm ===
@@ -132,8 +147,8 @@ var LY_EST_HEADER_H = 36;
 var LY_GAP = 16;
 var projectsNeedsReorganize = false;
 
-function getVisibleItems(folderPath) {
-  return getFolderItems(folderPath).filter(function(item) {
+function getVisibleItems(folderId) {
+  return getFolderItems(folderId).filter(function(item) {
     if (!projectsShowCompleted && item.done) return false;
     if (!projectsShowNotes && item.type === 'note') return false;
     if (!isItemVisibleByTimeFilter(item)) return false;
@@ -144,19 +159,14 @@ function getVisibleItems(folderPath) {
 function buildFolderTree() {
   var nodeMap = {};
   prodFolders.forEach(function(g) {
-    nodeMap[g.path] = { folder: g, children: [], items: getVisibleItems(g.path) };
+    nodeMap[g.id] = { folder: g, children: [], items: getVisibleItems(g.id) };
   });
   prodFolders.forEach(function(g) {
-    var segs = g.path.split('/').filter(Boolean);
-    if (segs.length > 1) {
-      var parentPath = '/' + segs.slice(0, -1).join('/');
-      if (nodeMap[parentPath]) nodeMap[parentPath].children.push(nodeMap[g.path]);
-    }
+    if (g.parent_id && nodeMap[g.parent_id]) nodeMap[g.parent_id].children.push(nodeMap[g.id]);
   });
   var roots = [];
   prodFolders.forEach(function(g) {
-    var segs = g.path.split('/').filter(Boolean);
-    if (segs.length === 1) roots.push(nodeMap[g.path]);
+    if (!g.parent_id) roots.push(nodeMap[g.id]);
   });
   if (!projectsShowEmptyFolders) {
     function hasContent(node) {
@@ -191,21 +201,21 @@ var VIS_CATCHALL_FIXED_H = VIS_MAX_DISPLAY_ITEMS * LY_EST_ITEM_H + 20; // catcha
 var VIS_BOX_PAD = 20; // body padding + border for depth-1 cards
 
 // === Tree helpers ===
-function findNodeByPath(nodes, path) {
+function findNodeById(nodes, folderId) {
   for (var i = 0; i < nodes.length; i++) {
-    if (nodes[i].folder.path === path) return nodes[i];
-    var found = findNodeByPath(nodes[i].children, path);
+    if (nodes[i].folder.id === folderId) return nodes[i];
+    var found = findNodeById(nodes[i].children, folderId);
     if (found) return found;
   }
   return null;
 }
 
-function buildFocusedTree(focusPath) {
+function buildFocusedTree(focusId) {
   var allRoots = buildFolderTree();
-  if (!focusPath) {
+  if (!focusId) {
     return { focusFolder: null, children: allRoots, directItems: getVisibleUnfiledItems() };
   }
-  var focusNode = findNodeByPath(allRoots, focusPath);
+  var focusNode = findNodeById(allRoots, focusId);
   if (!focusNode) {
     projectsFocusPath = null;
     return { focusFolder: null, children: allRoots, directItems: getVisibleUnfiledItems() };
@@ -244,14 +254,14 @@ function renderItemsWithLimit(items, subfolders, limit) {
   }
   if (total > limit) {
     var remaining = total - showCount;
-    html += '<div class="folder-item folder-item-more" onclick="projectsZoomIn(\'' + escHtml((allEntries[0] && allEntries[0]._isSubfolder ? allEntries[0].folder.path : '').replace(/\/[^\/]*$/, '')) + '\')">+' + remaining + ' more</div>';
+    html += '<div class="folder-item folder-item-more">+' + remaining + ' more</div>';
   }
   return html;
 }
 
 function renderSubfolderAsItem(entry) {
-  var path = escHtml(entry.folder.path);
-  return '<div class="folder-item folder-item-subfolder" ondblclick="event.stopPropagation();projectsZoomIn(\'' + path + '\')">' +
+  var id = escHtml(entry.folder.id);
+  return '<div class="folder-item folder-item-subfolder" ondblclick="event.stopPropagation();projectsZoomIn(\'' + id + '\')">' +
     '<span class="material-symbols-outlined folder-item-icon">folder</span>' +
     '<span class="folder-item-name">' + escHtml(entry.folder.name) + '</span>' +
     '<span class="folder-item-due" style="color:#80868b">' + entry._totalItems + '</span></div>';
@@ -266,26 +276,26 @@ function renderDepth2Card(node) {
   var items = node.items || [];
   var bodyHtml = renderItemsWithLimit(items, depth3Folders, VIS_MAX_DISPLAY_ITEMS);
 
-  return '<div class="folder-box folder-box-d2" data-folder-path="' + escHtml(folder.path) +
+  return '<div class="folder-box folder-box-d2" data-folder-id="' + escHtml(folder.id) +
     '" style="--folder-color:' + folderColor + ';border-color:' + folderColor +
     ';height:' + VIS_D2_FIXED_H + 'px"' +
-    ' ondblclick="event.stopPropagation();projectsZoomIn(\'' + escHtml(folder.path) + '\')"' +
+    ' ondblclick="event.stopPropagation();projectsZoomIn(\'' + escHtml(folder.id) + '\')"' +
     ' ondragover="onFolderBoxDragOver(event)" ondragleave="onFolderBoxDragLeave(event)" ondrop="onFolderBoxDrop(event)">' +
     '<div class="folder-box-header">' +
     '<span class="folder-box-name">' + escHtml(folder.name) + '</span>' +
     '<div class="folder-box-actions" onclick="event.stopPropagation()">' +
     '<button class="folder-box-actions-btn" onclick="event.stopPropagation();toggleFolderDropdown(this)"><span class="material-symbols-outlined">more_vert</span></button>' +
     '<div class="folder-box-dropdown">' +
-    '<button class="folder-box-dd-item" onclick="event.stopPropagation();editFolder(\'' + escHtml(folder.path) + '\')"><span class="material-symbols-outlined">edit</span> Edit</button>' +
-    '<button class="folder-box-dd-item danger" onclick="event.stopPropagation();deleteFolder(\'' + escHtml(folder.path) + '\')"><span class="material-symbols-outlined">delete</span> Delete</button>' +
+    '<button class="folder-box-dd-item" onclick="event.stopPropagation();editFolder(\'' + escHtml(folder.id) + '\')"><span class="material-symbols-outlined">edit</span> Edit</button>' +
+    '<button class="folder-box-dd-item danger" onclick="event.stopPropagation();deleteFolder(\'' + escHtml(folder.id) + '\')"><span class="material-symbols-outlined">delete</span> Delete</button>' +
     '</div></div></div>' +
     '<div class="folder-box-body">' + bodyHtml + '</div></div>';
 }
 
 // === Catchall card (no header, for direct items) ===
-function renderCatchallCard(items, parentPath) {
+function renderCatchallCard(items, parentId) {
   var bodyHtml = renderItemsWithLimit(items, [], VIS_MAX_DISPLAY_ITEMS);
-  return '<div class="folder-box-catchall" data-folder-path="' + escHtml(parentPath || '') + '"' +
+  return '<div class="folder-box-catchall" data-folder-id="' + escHtml(parentId || '') + '"' +
     ' style="height:' + VIS_CATCHALL_FIXED_H + 'px"' +
     ' ondragover="onFolderBoxDragOver(event)" ondragleave="onFolderBoxDragLeave(event)" ondrop="onFolderBoxDrop(event)">' +
     '<div class="folder-box-body">' + bodyHtml + '</div></div>';
@@ -323,23 +333,23 @@ function renderDepth1Card(node, directItems) {
       // Direct items alongside subfolders — render without catchall styling
       var catchallBody = renderItemsWithLimit(directItems, [], VIS_MAX_DISPLAY_ITEMS);
       innerHtml += '<div style="height:' + VIS_D2_FIXED_H + 'px;overflow:hidden"' +
-        ' data-folder-path="' + escHtml(folder.path) + '"' +
+        ' data-folder-id="' + escHtml(folder.id) + '"' +
         ' ondragover="onFolderBoxDragOver(event)" ondragleave="onFolderBoxDragLeave(event)" ondrop="onFolderBoxDrop(event)">' +
         '<div class="folder-box-body">' + catchallBody + '</div></div>';
     }
   }
 
-  return '<div class="folder-box" data-folder-path="' + escHtml(folder.path) +
+  return '<div class="folder-box" data-folder-id="' + escHtml(folder.id) +
     '" style="--folder-color:' + folderColor + ';border-color:' + folderColor + ';min-height:' + d1Height + 'px"' +
-    ' ondblclick="projectsZoomIn(\'' + escHtml(folder.path) + '\')"' +
+    ' ondblclick="projectsZoomIn(\'' + escHtml(folder.id) + '\')"' +
     ' ondragover="onFolderBoxDragOver(event)" ondragleave="onFolderBoxDragLeave(event)" ondrop="onFolderBoxDrop(event)">' +
     '<div class="folder-box-header">' +
     '<span class="folder-box-name">' + escHtml(folder.name) + '</span>' +
     '<div class="folder-box-actions" onclick="event.stopPropagation()">' +
     '<button class="folder-box-actions-btn" onclick="event.stopPropagation();toggleFolderDropdown(this)"><span class="material-symbols-outlined">more_vert</span></button>' +
     '<div class="folder-box-dropdown">' +
-    '<button class="folder-box-dd-item" onclick="event.stopPropagation();editFolder(\'' + escHtml(folder.path) + '\')"><span class="material-symbols-outlined">edit</span> Edit</button>' +
-    '<button class="folder-box-dd-item danger" onclick="event.stopPropagation();deleteFolder(\'' + escHtml(folder.path) + '\')"><span class="material-symbols-outlined">delete</span> Delete</button>' +
+    '<button class="folder-box-dd-item" onclick="event.stopPropagation();editFolder(\'' + escHtml(folder.id) + '\')"><span class="material-symbols-outlined">edit</span> Edit</button>' +
+    '<button class="folder-box-dd-item danger" onclick="event.stopPropagation();deleteFolder(\'' + escHtml(folder.id) + '\')"><span class="material-symbols-outlined">delete</span> Delete</button>' +
     '</div></div></div>' +
     '<div class="folder-box-body layout-packed-body" style="grid-template-columns:repeat(' + cols + ',1fr)">' +
     innerHtml + '</div></div>';
@@ -459,9 +469,9 @@ function renderListTreeNode(node, depth) {
   var colorDot = (folder.color && folder.color !== '#000000' && folder.color !== DEFAULT_COLOR)
     ? '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + escHtml(folder.color) + ';margin-right:2px;flex-shrink:0"></span>' : '';
 
-  var html = '<div class="list-tree-node" data-path="' + escHtml(folder.path) + '"' +
+  var html = '<div class="list-tree-node" data-folder-id="' + escHtml(folder.id) + '"' +
     ' ondragover="onListTreeDragOver(event)" ondragleave="onListTreeDragLeave(event)" ondrop="onListTreeDrop(event)">';
-  html += '<div class="list-tree-row" onclick="toggleListNode(this)" ondblclick="projectsZoomIn(\'' + escHtml(folder.path) + '\')">';
+  html += '<div class="list-tree-row" onclick="toggleListNode(this)" ondblclick="projectsZoomIn(\'' + escHtml(folder.id) + '\')">';
   html += '<span style="width:' + indent + 'px" class="list-tree-indent"></span>';
   if (hasChildren) {
     html += '<span class="list-tree-chevron material-symbols-outlined">chevron_right</span>';
@@ -524,8 +534,8 @@ function onListTreeDrop(e) {
   var node = e.target.closest('.list-tree-node');
   if (!node || !folderDraggedItemId) return;
   node.querySelector('.list-tree-row').style.background = '';
-  var targetPath = node.dataset.path;
-  if (targetPath) assignItemFolder(folderDraggedItemId, folderDraggedItemType, targetPath);
+  var targetFolderId = node.dataset.folderId;
+  if (targetFolderId) assignItemFolder(folderDraggedItemId, folderDraggedItemType, targetFolderId);
 }
 
 // === Main render dispatcher ===
@@ -564,18 +574,20 @@ document.addEventListener('click', function(e) {
   }
 });
 
-function deleteFolder(path) {
+function deleteFolder(folderId) {
   document.querySelectorAll('.folder-box-dropdown.open').forEach(function(d) { d.classList.remove('open'); });
-  if (!confirm('Delete folder "' + path + '" and all subfolders? Items will become unclassified.')) return;
-  fetch('/api/folders', {method: 'DELETE', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({path: path})})
+  var folder = getFolderById(folderId);
+  var label = folder ? getFolderLabel(folder) : folderId;
+  if (!confirm('Delete folder "' + label + '" and all subfolders? Items will become unclassified.')) return;
+  fetch('/api/folders', {method: 'DELETE', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({id: folderId})})
     .then(function(r) { if (!r.ok) throw 0; return r.json(); })
     .then(function() { refreshData(); })
     .catch(function() { alert('Failed to delete folder.'); });
 }
 
-function editFolder(path) {
+function editFolder(folderId) {
   document.querySelectorAll('.folder-box-dropdown.open').forEach(function(d) { d.classList.remove('open'); });
-  var folder = prodFolders.find(function(g) { return g.path === path; });
+  var folder = getFolderById(folderId);
   if (!folder) return;
   openFolderModal(folder);
 }
@@ -622,8 +634,8 @@ function onFolderBoxDrop(e) {
   var box = e.target.closest('.folder-box');
   if (!box || !folderDraggedItemId) return;
   box.classList.remove('drag-over-folder');
-  var targetPath = box.dataset.folderPath;
-  assignItemFolder(folderDraggedItemId, folderDraggedItemType, targetPath);
+  var targetFolderId = box.dataset.folderId;
+  assignItemFolder(folderDraggedItemId, folderDraggedItemType, targetFolderId);
 }
 
 function onProjectsWhitespaceDragOver(e) {
@@ -640,19 +652,19 @@ function onProjectsWhitespaceDrop(e) {
   assignItemFolder(folderDraggedItemId, folderDraggedItemType, null);
 }
 
-function assignItemFolder(itemId, itemType, folderPath) {
+function assignItemFolder(itemId, itemType, folderId) {
   if (itemType === 'routine') {
-    fetch('/api/routines/' + itemId, {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({folder: folderPath})})
+    fetch('/api/routines/' + itemId, {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({folder_id: folderId})})
       .then(function(r) { if (!r.ok) throw 0; return r.json(); })
       .then(function() { refreshData(); })
       .catch(function() { alert('Failed to assign routine to folder.'); });
   } else if (itemType === 'note') {
-    fetch('/api/notes/' + itemId, {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({folder: folderPath})})
+    fetch('/api/notes/' + itemId, {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({folder_id: folderId})})
       .then(function(r) { if (!r.ok) throw 0; return r.json(); })
       .then(function() { refreshData(); })
       .catch(function() { alert('Failed to assign note to folder.'); });
   } else {
-    fetch('/api/tasks/' + itemId, {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({folder: folderPath})})
+    fetch('/api/tasks/' + itemId, {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({folder_id: folderId})})
       .then(function(r) { if (!r.ok) throw 0; return r.json(); })
       .then(function() { refreshData(); })
       .catch(function() { alert('Failed to assign task to folder.'); });
@@ -686,15 +698,8 @@ var GA_PALETTE = [
   '#5b0f00','#660000','#783f04','#7f6000','#274e13','#0c343d','#1c4587','#073763','#20124d','#4c1130'
 ];
 
-function _formatPathForDisplay(value) {
-  return value.replace(/\s*\/\s*/g, ' / ').replace(/\s+/g, ' ').trim();
-}
-function _normalizePathForSave(value) {
-  return value.replace(/\s*\/\s*/g, '/').replace(/^\/+/, '').replace(/\/+$/, '').trim();
-}
-
 function createFolderCard(existingFolder) {
-  var editingFolderPath = existingFolder ? existingFolder.path : null;
+  var editingFolderId = existingFolder ? existingFolder.id : null;
   var selectedColor = existingFolder ? (existingFolder.color || DEFAULT_COLOR) : DEFAULT_COLOR;
   var draftId = null;
   var draftSaveTimer = null;
@@ -704,11 +709,8 @@ function createFolderCard(existingFolder) {
   cardEl.innerHTML =
     '<div class="quickadd-header ga-header">Group</div>' +
     '<div class="quickadd-body">' +
-      '<div class="ga-path-wrap">' +
-        '<span class="ga-path-prefix">/</span>' +
-        '<input class="ga-path-input gm-path" autocomplete="off">' +
-        '<span class="ga-path-ghost"></span>' +
-      '</div>' +
+      '<input class="quickadd-input gm-name" placeholder="Folder name" autocomplete="off">' +
+      '<select class="quickadd-input gm-parent"></select>' +
       '<div class="ga-color-btn">' +
         '<div class="ga-color-circle"></div>' +
       '</div>' +
@@ -722,8 +724,8 @@ function createFolderCard(existingFolder) {
     '</div>';
 
   var header = _q(cardEl, 'ga-header');
-  var pathInput = _q(cardEl, 'gm-path');
-  var ghost = _q(cardEl, 'ga-path-ghost');
+  var nameInput = _q(cardEl, 'gm-name');
+  var parentSelect = _q(cardEl, 'gm-parent');
   var circle = _q(cardEl, 'ga-color-circle');
   var colorBtn = _q(cardEl, 'ga-color-btn');
   var colorPicker = _q(cardEl, 'ga-color-picker');
@@ -733,46 +735,20 @@ function createFolderCard(existingFolder) {
   header.textContent = existingFolder ? 'Edit Folder' : 'Group';
 
   if (existingFolder) {
-    pathInput.value = _formatPathForDisplay(existingFolder.path.slice(1));
-    pathInput.disabled = true;
+    nameInput.value = existingFolder.name || '';
   }
+
+  parentSelect.innerHTML = '<option value="">No parent</option>' + prodFolders
+    .filter(function(g) { return !existingFolder || g.id !== existingFolder.id; })
+    .map(function(g) {
+      return '<option value="' + escHtml(g.id) + '"' + (existingFolder && existingFolder.parent_id === g.id ? ' selected' : '') + '>' + escHtml(getFolderLabel(g)) + '</option>';
+    }).join('');
 
   function updateCardColor() {
     if (circle) circle.style.backgroundColor = selectedColor;
     cardEl.style.borderColor = selectedColor;
     cardEl.style.setProperty('--qa-border-color', selectedColor);
     header.style.backgroundColor = selectedColor;
-  }
-
-  function autoSize() {
-    if (!pathInput.value) { pathInput.style.width = '2px'; return; }
-    var m = document.getElementById('ga-path-measurer');
-    if (!m) {
-      m = document.createElement('span');
-      m.id = 'ga-path-measurer';
-      m.style.cssText = 'position:absolute;visibility:hidden;white-space:pre;font-size:0.9rem;font-family:inherit;letter-spacing:0.5px;';
-      document.body.appendChild(m);
-    }
-    m.textContent = pathInput.value;
-    pathInput.style.width = Math.ceil(m.offsetWidth + 2) + 'px';
-  }
-
-  function updateGhost() {
-    var raw = _normalizePathForSave(pathInput.value);
-    var trimmed = pathInput.value.trim();
-    var endsWithSlash = trimmed.endsWith('/');
-    var parentPath;
-    if (!raw || raw === '') { parentPath = null; }
-    else if (endsWithSlash) { parentPath = '/' + raw; }
-    else { ghost.textContent = ''; return; }
-    var children = parentPath === null ? getRootFolders() : getChildFolders(parentPath);
-    if (children.length === 0) { ghost.textContent = ''; }
-    else {
-      ghost.textContent = children.map(function(g) {
-        var segs = g.path.split('/').filter(Boolean);
-        return segs[segs.length - 1];
-      }).join(', ');
-    }
   }
 
   function selectColor(color) {
@@ -786,24 +762,6 @@ function createFolderCard(existingFolder) {
   }
 
   updateCardColor();
-  updateGhost();
-  autoSize();
-
-  pathInput.oninput = function() {
-    var start = pathInput.selectionStart;
-    var oldVal = pathInput.value;
-    var formatted = _formatPathForDisplay(oldVal);
-    if (formatted !== oldVal) {
-      var diff = formatted.length - oldVal.length;
-      pathInput.value = formatted;
-      pathInput.setSelectionRange(Math.max(0, start + diff), Math.max(0, start + diff));
-    }
-    autoSize();
-    updateGhost();
-  };
-
-  var wrap = cardEl.querySelector('.ga-path-wrap');
-  if (wrap) wrap.onclick = function() { pathInput.focus(); };
 
   // Build palette
   paletteEl.innerHTML = GA_PALETTE.map(function(c) {
@@ -836,11 +794,12 @@ function createFolderCard(existingFolder) {
   var draftCreated = false;
   function saveFolderDraft() {
     if (!draftId) return;
-    var pathVal = _normalizePathForSave(pathInput.value) || '';
-    if (!pathVal && !draftCreated) return; // don't create draft for empty content
+    var nameVal = nameInput.value.trim() || '';
+    if (!nameVal && !draftCreated) return; // don't create draft for empty content
     var data = {
-      name: pathVal,
+      name: nameVal,
       draft_type: 'folder',
+      parent_id: parentSelect.value || null,
       color: selectedColor
     };
     if (!draftCreated) {
@@ -855,11 +814,13 @@ function createFolderCard(existingFolder) {
     // Resuming a draft — reuse existing draft ID
     draftId = existingFolder._draftId;
     draftCreated = true;
-    editingFolderPath = null;
-    pathInput.addEventListener('input', scheduleDraftSave);
+    editingFolderId = null;
+    nameInput.addEventListener('input', scheduleDraftSave);
+    parentSelect.addEventListener('change', scheduleDraftSave);
   } else if (!existingFolder) {
     draftId = crypto.randomUUID ? crypto.randomUUID() : 'draft-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
-    pathInput.addEventListener('input', scheduleDraftSave);
+    nameInput.addEventListener('input', scheduleDraftSave);
+    parentSelect.addEventListener('change', scheduleDraftSave);
   }
 
   var card = {
@@ -874,7 +835,7 @@ function createFolderCard(existingFolder) {
     onDismiss: function() {
       if (draftSaveTimer) { clearTimeout(draftSaveTimer); draftSaveTimer = null; }
       if (draftId && draftCreated) {
-        var hasContent = _normalizePathForSave(pathInput.value);
+        var hasContent = nameInput.value.trim();
         if (!hasContent) {
           fetch('/api/drafts/' + draftId, {method: 'DELETE'});
         } else {
@@ -885,53 +846,27 @@ function createFolderCard(existingFolder) {
   };
 
   function saveThisFolder() {
-    var rawPath = _normalizePathForSave(pathInput.value);
-    var path = '/' + rawPath;
+    var name = nameInput.value.trim();
+    var parentId = parentSelect.value || null;
     var color = selectedColor || DEFAULT_COLOR;
+    if (!name) { alert('Name is required.'); nameInput.focus(); return; }
 
-    if (editingFolderPath) {
-      fetch('/api/folders', {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({path: editingFolderPath, color: color})})
+    if (editingFolderId) {
+      fetch('/api/folders', {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({id: editingFolderId, name: name, parent_id: parentId, color: color})})
         .then(function(r) { if (!r.ok) return r.json().then(function(d) { throw new Error(d.error || 'Failed'); }); return r.json(); })
         .then(function() { CardStack.remove(card); refreshData(); })
         .catch(function(err) { alert(err.message || 'Failed.'); });
     } else {
-      if (!path.startsWith('/')) path = '/' + path;
-      if (path.endsWith('/')) path = path.slice(0, -1);
-      if (!path || path === '') { alert('Path is required.'); return; }
-
-      var segments = path.split('/').filter(Boolean);
-      if (segments.length === 0) { alert('Path is required.'); return; }
-      var pathsToCreate = [];
-      var existingPaths = prodFolders.map(function(g) { return g.path; });
-      for (var i = 0; i < segments.length; i++) {
-        var partial = '/' + segments.slice(0, i + 1).join('/');
-        if (existingPaths.indexOf(partial) < 0) pathsToCreate.push(partial);
-      }
-
-      if (pathsToCreate.length === 0) { alert('Folder already exists.'); return; }
-
-      // Enforce max 12 subfolders per parent
-      var parentPath = segments.length > 1 ? '/' + segments.slice(0, segments.length - 1).join('/') : null;
-      var siblings = parentPath ? getChildFolders(parentPath) : getRootFolders();
+      var siblings = parentId ? getChildFolders(parentId) : getRootFolders();
       if (siblings.length >= 12) { alert('A folder can have at most 12 subfolders.'); return; }
-
-      var createNext = function(idx) {
-        if (idx >= pathsToCreate.length) {
+      fetch('/api/folders', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({name: name, parent_id: parentId, color: color})})
+        .then(function(r) { if (!r.ok) return r.json().then(function(d) { throw new Error(d.error || 'Failed'); }); return r.json(); })
+        .then(function() {
           if (draftId) fetch('/api/drafts/' + draftId, {method: 'DELETE'});
           CardStack.remove(card);
           refreshData();
-          return;
-        }
-        var p = pathsToCreate[idx];
-        var segs = p.split('/').filter(Boolean);
-        var name = segs[segs.length - 1];
-        var c = (idx === pathsToCreate.length - 1) ? color : DEFAULT_COLOR;
-        fetch('/api/folders', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({path: p, name: name, color: c})})
-          .then(function(r) { if (!r.ok) return r.json().then(function(d) { throw new Error(d.error || 'Failed'); }); return r.json(); })
-          .then(function() { createNext(idx + 1); })
-          .catch(function(err) { alert(err.message || 'Failed.'); });
-      };
-      createNext(0);
+        })
+        .catch(function(err) { alert(err.message || 'Failed.'); });
     }
   }
 

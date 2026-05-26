@@ -20,8 +20,8 @@ let accountCreatedYear = null; // year of account creation (integer)
 let accessibleStartDate = null; // "YYYY-01-01" of creation year
 let accessibleEndDate = null; // "YYYY-12-31" of next year
 let nowLineInterval = null; // interval ID for updating the current-time line
-let prodFolders = []; // folder objects [{path, name, color}]
-let prodNotes = []; // note objects [{id, name, date, folder, created_at}]
+let prodFolders = []; // folder objects [{id, parent_id, name, color}]
+let prodNotes = []; // note objects [{id, name, date, folder_id, created_at}]
 let prodActions = []; // action objects [{action_id, name, start_datetime, end_datetime, ...}]
 let prodSchedules = []; // schedule template objects [{id, name, start_time, end_time, pattern, ...}]
 let prodTimelogs = []; // timelog objects [{log_id, parent_id, parent_type, start, end}]
@@ -34,7 +34,7 @@ let projectsTimeFilter = {
   empty: { past: true, present: true, future: true }
 };
 let projectsViewMode = 'visual'; // 'list' | 'visual'
-let projectsFocusPath = null; // null = root, or a folder path like '/SCHOOL'
+let projectsFocusPath = null; // null = root, or a folder id
 let userEmail = null; // populated from session, used as root label
 let monthlyShowNotes = true; // toggle for showing notes on monthly calendar
 let monthlyShowPlanned = false; // toggle for showing planned (incomplete) tasks on monthly calendar

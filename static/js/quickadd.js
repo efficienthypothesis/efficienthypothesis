@@ -37,10 +37,8 @@ function createQuickAddCard() {
     var folderVal = folderInput.value.trim();
     var color = DEFAULT_COLOR;
     if (folderVal) {
-      var path = folderVal.startsWith('/') ? folderVal : '/' + folderVal;
-      if (path.endsWith('/')) path = path.slice(0, -1);
-      var found = getFolderColor(path);
-      if (found) color = found;
+      var folder = resolveFolderInput(folderVal);
+      if (folder && folder.color) color = folder.color;
     }
     cardEl.style.borderColor = color;
     cardEl.style.setProperty('--qa-border-color', color);
@@ -143,14 +141,9 @@ function createQuickAddCard() {
     }
     if (!dueDt) { alert('Could not parse due date. Try: "today", "friday 10 am", "next monday", etc.'); _q(cardEl, 'qa-due').focus(); return; }
 
-    var folder = null;
-    if (folderVal) {
-      if (!folderVal.startsWith('/')) folderVal = '/' + folderVal;
-      if (folderVal.endsWith('/')) folderVal = folderVal.slice(0, -1);
-      folder = folderVal;
-    }
-
-    var data = { name: nameVal, assign_datetime: assignDt, due_datetime: dueDt, folder: folder, path: '/', draft: false };
+    var folder = folderVal ? resolveFolderInput(folderVal) : null;
+    if (folderVal && !folder) { alert('Folder not found. Create it first or use its exact name.'); _q(cardEl, 'qa-folder').focus(); return; }
+    var data = { name: nameVal, assign_datetime: assignDt, due_datetime: dueDt, folder_id: folder ? folder.id : null, path: '/', draft: false };
 
     var createFoldersThenTask = function() {
       fetch('/api/tasks', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data)})
@@ -159,29 +152,7 @@ function createQuickAddCard() {
         .catch(function(err) { alert(err.message || 'Failed to create task.'); });
     };
 
-    if (folder) {
-      var segments = folder.split('/').filter(Boolean);
-      var existingPaths = prodFolders.map(function(g) { return g.path; });
-      var pathsToCreate = [];
-      for (var qi = 0; qi < segments.length; qi++) {
-        var partial = '/' + segments.slice(0, qi + 1).join('/');
-        if (existingPaths.indexOf(partial) < 0) pathsToCreate.push(partial);
-      }
-      if (pathsToCreate.length === 0) { createFoldersThenTask(); return; }
-      var createNext = function(idx) {
-        if (idx >= pathsToCreate.length) { createFoldersThenTask(); return; }
-        var p = pathsToCreate[idx];
-        var segs = p.split('/').filter(Boolean);
-        var gName = segs[segs.length - 1];
-        fetch('/api/folders', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({path: p, name: gName, color: DEFAULT_COLOR})})
-          .then(function(r) { if (!r.ok) return r.json().then(function(d) { throw new Error(d.error || 'Failed'); }); return r.json(); })
-          .then(function() { createNext(idx + 1); })
-          .catch(function() { createNext(idx + 1); });
-      };
-      createNext(0);
-    } else {
-      createFoldersThenTask();
-    }
+    createFoldersThenTask();
   }
 
   return card;
@@ -224,7 +195,7 @@ function submitQuickAddRoutine(card, cardEl, nameVal, assignVal, dueVal, folderV
 
   var routineData = {
     name: nameVal, assign_time: assignTime || '00:00', due_time: dueTime || '23:59',
-    first_day: firstDay, pattern: pattern, folder: null
+    first_day: firstDay, pattern: pattern, folder_id: null
   };
 
   if (isEndDateMode) {
@@ -241,11 +212,9 @@ function submitQuickAddRoutine(card, cardEl, nameVal, assignVal, dueVal, folderV
     routineData.max_instances = instVal;
   }
 
-  if (folderVal) {
-    if (!folderVal.startsWith('/')) folderVal = '/' + folderVal;
-    if (folderVal.endsWith('/')) folderVal = folderVal.slice(0, -1);
-    routineData.folder = folderVal;
-  }
+  var routineFolder = folderVal ? resolveFolderInput(folderVal) : null;
+  if (folderVal && !routineFolder) { alert('Folder not found. Create it first or use its exact name.'); _q(cardEl, 'qa-folder').focus(); return; }
+  routineData.folder_id = routineFolder ? routineFolder.id : null;
 
   var createRoutine = function() {
     fetch('/api/routines', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(routineData)})
@@ -254,29 +223,7 @@ function submitQuickAddRoutine(card, cardEl, nameVal, assignVal, dueVal, folderV
       .catch(function(err) { alert(err.message || 'Failed to create routine.'); });
   };
 
-  if (routineData.folder) {
-    var segments = routineData.folder.split('/').filter(Boolean);
-    var existingPaths = prodFolders.map(function(g) { return g.path; });
-    var pathsToCreate = [];
-    for (var qi = 0; qi < segments.length; qi++) {
-      var partial = '/' + segments.slice(0, qi + 1).join('/');
-      if (existingPaths.indexOf(partial) < 0) pathsToCreate.push(partial);
-    }
-    if (pathsToCreate.length === 0) { createRoutine(); return; }
-    var createNext = function(idx) {
-      if (idx >= pathsToCreate.length) { createRoutine(); return; }
-      var p = pathsToCreate[idx];
-      var segs = p.split('/').filter(Boolean);
-      var gName = segs[segs.length - 1];
-      fetch('/api/folders', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({path: p, name: gName, color: DEFAULT_COLOR})})
-        .then(function(r) { return r.json(); })
-        .then(function() { createNext(idx + 1); })
-        .catch(function() { createNext(idx + 1); });
-    };
-    createNext(0);
-  } else {
-    createRoutine();
-  }
+  createRoutine();
 }
 
 window.openQuickAdd = function() {
@@ -325,10 +272,8 @@ function createActionCard() {
     var folderVal = folderInput.value.trim();
     var color = '#5f6368';
     if (folderVal) {
-      var path = folderVal.startsWith('/') ? folderVal : '/' + folderVal;
-      if (path.endsWith('/')) path = path.slice(0, -1);
-      var found = getFolderColor(path);
-      if (found) color = found;
+      var folder = resolveFolderInput(folderVal);
+      if (folder && folder.color) color = folder.color;
     }
     cardEl.style.borderColor = color;
     cardEl.style.setProperty('--qa-border-color', color);
@@ -429,14 +374,9 @@ function createActionCard() {
     }
     if (!endDt) { alert('Could not parse end time. Try: "today 10 am", "tomorrow 5 pm", etc.'); _q(cardEl, 'qa-end-dt').focus(); return; }
 
-    var folder = null;
-    if (folderVal) {
-      if (!folderVal.startsWith('/')) folderVal = '/' + folderVal;
-      if (folderVal.endsWith('/')) folderVal = folderVal.slice(0, -1);
-      folder = folderVal;
-    }
-
-    var data = { name: nameVal, start_datetime: startDt, end_datetime: endDt, folder: folder, is_planned: false };
+    var folder = folderVal ? resolveFolderInput(folderVal) : null;
+    if (folderVal && !folder) { alert('Folder not found. Create it first or use its exact name.'); _q(cardEl, 'qa-folder').focus(); return; }
+    var data = { name: nameVal, start_datetime: startDt, end_datetime: endDt, folder_id: folder ? folder.id : null, is_planned: false };
 
     var createFoldersThenAction = function() {
       fetch('/api/actions', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data)})
@@ -445,29 +385,7 @@ function createActionCard() {
         .catch(function(err) { alert(err.message || 'Failed to create action.'); });
     };
 
-    if (folder) {
-      var segments = folder.split('/').filter(Boolean);
-      var existingPaths = prodFolders.map(function(g) { return g.path; });
-      var pathsToCreate = [];
-      for (var qi = 0; qi < segments.length; qi++) {
-        var partial = '/' + segments.slice(0, qi + 1).join('/');
-        if (existingPaths.indexOf(partial) < 0) pathsToCreate.push(partial);
-      }
-      if (pathsToCreate.length === 0) { createFoldersThenAction(); return; }
-      var createNext = function(idx) {
-        if (idx >= pathsToCreate.length) { createFoldersThenAction(); return; }
-        var p = pathsToCreate[idx];
-        var segs = p.split('/').filter(Boolean);
-        var gName = segs[segs.length - 1];
-        fetch('/api/folders', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({path: p, name: gName, color: DEFAULT_COLOR})})
-          .then(function(r) { return r.json(); })
-          .then(function() { createNext(idx + 1); })
-          .catch(function() { createNext(idx + 1); });
-      };
-      createNext(0);
-    } else {
-      createFoldersThenAction();
-    }
+    createFoldersThenAction();
   }
 
   return card;
@@ -511,7 +429,7 @@ function submitActionSchedule(card, cardEl, nameVal, startVal, endVal, folderVal
 
   var scheduleData = {
     name: nameVal, start_time: startTime || '08:00', end_time: endTime || '09:00',
-    first_day: firstDay, pattern: pattern, folder: null
+    first_day: firstDay, pattern: pattern, folder_id: null
   };
 
   if (isEndDateMode) {
@@ -528,11 +446,9 @@ function submitActionSchedule(card, cardEl, nameVal, startVal, endVal, folderVal
     scheduleData.max_instances = instVal;
   }
 
-  if (folderVal) {
-    if (!folderVal.startsWith('/')) folderVal = '/' + folderVal;
-    if (folderVal.endsWith('/')) folderVal = folderVal.slice(0, -1);
-    scheduleData.folder = folderVal;
-  }
+  var scheduleFolder = folderVal ? resolveFolderInput(folderVal) : null;
+  if (folderVal && !scheduleFolder) { alert('Folder not found. Create it first or use its exact name.'); _q(cardEl, 'qa-folder').focus(); return; }
+  scheduleData.folder_id = scheduleFolder ? scheduleFolder.id : null;
 
   var createSchedule = function() {
     fetch('/api/schedules', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(scheduleData)})
@@ -541,29 +457,7 @@ function submitActionSchedule(card, cardEl, nameVal, startVal, endVal, folderVal
       .catch(function(err) { alert(err.message || 'Failed to create schedule.'); });
   };
 
-  if (scheduleData.folder) {
-    var segments = scheduleData.folder.split('/').filter(Boolean);
-    var existingPaths = prodFolders.map(function(g) { return g.path; });
-    var pathsToCreate = [];
-    for (var qi = 0; qi < segments.length; qi++) {
-      var partial = '/' + segments.slice(0, qi + 1).join('/');
-      if (existingPaths.indexOf(partial) < 0) pathsToCreate.push(partial);
-    }
-    if (pathsToCreate.length === 0) { createSchedule(); return; }
-    var createNext = function(idx) {
-      if (idx >= pathsToCreate.length) { createSchedule(); return; }
-      var p = pathsToCreate[idx];
-      var segs = p.split('/').filter(Boolean);
-      var gName = segs[segs.length - 1];
-      fetch('/api/folders', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({path: p, name: gName, color: DEFAULT_COLOR})})
-        .then(function(r) { return r.json(); })
-        .then(function() { createNext(idx + 1); })
-        .catch(function() { createNext(idx + 1); });
-    };
-    createNext(0);
-  } else {
-    createSchedule();
-  }
+  createSchedule();
 }
 
 window.openActionAdd = function() {
@@ -619,10 +513,8 @@ function createNoteAddCard(existingNote) {
     var folderVal = folderInput.value.trim();
     var color = DEFAULT_COLOR;
     if (folderVal) {
-      var path = folderVal.startsWith('/') ? folderVal : '/' + folderVal;
-      if (path.endsWith('/')) path = path.slice(0, -1);
-      var found = getFolderColor(path);
-      if (found) color = found;
+      var folder = resolveFolderInput(folderVal);
+      if (folder && folder.color) color = folder.color;
     }
     cardEl.style.borderColor = color;
     cardEl.style.setProperty('--qa-border-color', color);
@@ -685,7 +577,7 @@ function createNoteAddCard(existingNote) {
       dd.value = parseInt(parts[2], 10) || '';
       yy.value = parts[0] ? parts[0].slice(2) : '';
     }
-    folderInput.value = existingNote.folder || '';
+    folderInput.value = existingNote.folder_id && getFolderById(existingNote.folder_id) ? getFolderLabel(getFolderById(existingNote.folder_id)) : '';
   }
 
   updateColor();
@@ -704,7 +596,7 @@ function createNoteAddCard(existingNote) {
       name: nameVal,
       draft_type: 'note',
       date: null,
-      folder: folderInput.value.trim() || null
+      folder_id: resolveFolderInput(folderInput.value.trim()) ? resolveFolderInput(folderInput.value.trim()).id : null
     };
     var mmV = mm.value.trim(), ddV = dd.value.trim(), yyV = yy.value.trim();
     if (mmV && ddV && yyV) {
@@ -774,14 +666,9 @@ function createNoteAddCard(existingNote) {
     if (isNaN(yyyy)) { alert('Invalid year.'); yy.focus(); return; }
 
     var dateStr = yyyy + '-' + String(mmI).padStart(2, '0') + '-' + String(ddI).padStart(2, '0');
-    var folder = null;
-    if (folderVal) {
-      if (!folderVal.startsWith('/')) folderVal = '/' + folderVal;
-      if (folderVal.endsWith('/')) folderVal = folderVal.slice(0, -1);
-      folder = folderVal;
-    }
-
-    var noteData = { name: nameVal, date: dateStr, folder: folder };
+    var folder = folderVal ? resolveFolderInput(folderVal) : null;
+    if (folderVal && !folder) { alert('Folder not found. Create it first or use its exact name.'); folderInput.focus(); return; }
+    var noteData = { name: nameVal, date: dateStr, folder_id: folder ? folder.id : null };
 
     var saveNote = function() {
       var url = editingNoteId ? '/api/notes/' + editingNoteId : '/api/notes';
@@ -796,29 +683,7 @@ function createNoteAddCard(existingNote) {
         .catch(function(err) { alert(err.message || 'Failed to save note.'); });
     };
 
-    if (folder) {
-      var segments = folder.split('/').filter(Boolean);
-      var existingPaths = prodFolders.map(function(g) { return g.path; });
-      var pathsToCreate = [];
-      for (var i = 0; i < segments.length; i++) {
-        var partial = '/' + segments.slice(0, i + 1).join('/');
-        if (existingPaths.indexOf(partial) < 0) pathsToCreate.push(partial);
-      }
-      if (pathsToCreate.length === 0) { saveNote(); return; }
-      var createNext = function(idx) {
-        if (idx >= pathsToCreate.length) { saveNote(); return; }
-        var p = pathsToCreate[idx];
-        var segs = p.split('/').filter(Boolean);
-        var gName = segs[segs.length - 1];
-        fetch('/api/folders', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({path: p, name: gName, color: DEFAULT_COLOR})})
-          .then(function(r) { if (!r.ok) return r.json().then(function(d) { throw new Error(d.error || 'Failed'); }); return r.json(); })
-          .then(function() { createNext(idx + 1); })
-          .catch(function() { createNext(idx + 1); });
-      };
-      createNext(0);
-    } else {
-      saveNote();
-    }
+    saveNote();
   }
 
   return card;

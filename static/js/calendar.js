@@ -43,7 +43,7 @@ function renderCalendar(el, monthData) {
     (prodAllTasks || []).forEach(function(t) {
       if (!t.end_datetime || t.draft) return;
       if (utcToLocalDate(t.end_datetime) === dateStr) {
-        results.push({task_id: t.task_id, name: t.name, end_datetime: t.end_datetime, folder: t.folder});
+        results.push({task_id: t.task_id, name: t.name, end_datetime: t.end_datetime, folder_id: t.folder_id});
       }
     });
     return results;
@@ -63,15 +63,15 @@ function renderCalendar(el, monthData) {
     html += '<div class="mo-day-num">' + prevD + '</div>';
     html += '<div class="mo-day-tasks">';
     for (var pi = 0; pi < prevTasks.length; pi++) {
-      var ptColor = getFolderColor(prevTasks[pi].folder) || DEFAULT_COLOR;
+      var ptColor = getFolderColor(prevTasks[pi].folder_id) || DEFAULT_COLOR;
       html += '<div class="mo-day-task mo-day-note" style="background:' + escHtml(ptColor) + '">' + escHtml(prevTasks[pi].name) + '</div>';
     }
     for (var pni = 0; pni < prevNotes.length; pni++) {
-      var pnColor = getFolderColor(prevNotes[pni].folder) || DEFAULT_COLOR;
+      var pnColor = getFolderColor(prevNotes[pni].folder_id) || DEFAULT_COLOR;
       html += '<div class="mo-day-task mo-day-note" style="background:' + escHtml(pnColor) + '">' + escHtml(prevNotes[pni].name) + '</div>';
     }
     for (var ppi = 0; ppi < prevPlanned.length; ppi++) {
-      var ppColor = getFolderColor(prevPlanned[ppi].folder) || DEFAULT_COLOR;
+      var ppColor = getFolderColor(prevPlanned[ppi].folder_id) || DEFAULT_COLOR;
       html += '<div class="mo-day-task mo-day-planned" style="border-color:' + escHtml(ppColor) + ';color:' + escHtml(ppColor) + '">' + escHtml(prevPlanned[ppi].name) + '</div>';
     }
     html += '</div></div>';
@@ -107,15 +107,15 @@ function renderCalendar(el, monthData) {
     html += '<div class="mo-day-num">' + d + '</div>';
     html += '<div class="mo-day-tasks">';
     for (var ti = 0; ti < dayTasks.length; ti++) {
-      var tColor = getFolderColor(dayTasks[ti].folder) || DEFAULT_COLOR;
+      var tColor = getFolderColor(dayTasks[ti].folder_id) || DEFAULT_COLOR;
       html += '<div class="mo-day-task mo-day-note" style="background:' + escHtml(tColor) + '">' + escHtml(dayTasks[ti].name) + '</div>';
     }
     for (var ni = 0; ni < dayNotes.length; ni++) {
-      var nColor = getFolderColor(dayNotes[ni].folder) || DEFAULT_COLOR;
+      var nColor = getFolderColor(dayNotes[ni].folder_id) || DEFAULT_COLOR;
       html += '<div class="mo-day-task mo-day-note" style="background:' + escHtml(nColor) + '">' + escHtml(dayNotes[ni].name) + '</div>';
     }
     for (var pli = 0; pli < dayPlanned.length; pli++) {
-      var plColor = getFolderColor(dayPlanned[pli].folder) || DEFAULT_COLOR;
+      var plColor = getFolderColor(dayPlanned[pli].folder_id) || DEFAULT_COLOR;
       html += '<div class="mo-day-task mo-day-planned" style="border-color:' + escHtml(plColor) + ';color:' + escHtml(plColor) + '">' + escHtml(dayPlanned[pli].name) + '</div>';
     }
     html += '</div></div>';
@@ -135,15 +135,15 @@ function renderCalendar(el, monthData) {
     html += '<div class="mo-day-num">' + nextD + '</div>';
     html += '<div class="mo-day-tasks">';
     for (var tni = 0; tni < nextTasks.length; tni++) {
-      var ntColor = getFolderColor(nextTasks[tni].folder) || DEFAULT_COLOR;
+      var ntColor = getFolderColor(nextTasks[tni].folder_id) || DEFAULT_COLOR;
       html += '<div class="mo-day-task mo-day-note" style="background:' + escHtml(ntColor) + '">' + escHtml(nextTasks[tni].name) + '</div>';
     }
     for (var nni = 0; nni < nextNotes.length; nni++) {
-      var nnColor = getFolderColor(nextNotes[nni].folder) || DEFAULT_COLOR;
+      var nnColor = getFolderColor(nextNotes[nni].folder_id) || DEFAULT_COLOR;
       html += '<div class="mo-day-task mo-day-note" style="background:' + escHtml(nnColor) + '">' + escHtml(nextNotes[nni].name) + '</div>';
     }
     for (var npli = 0; npli < nextPlanned.length; npli++) {
-      var nplColor = getFolderColor(nextPlanned[npli].folder) || DEFAULT_COLOR;
+      var nplColor = getFolderColor(nextPlanned[npli].folder_id) || DEFAULT_COLOR;
       html += '<div class="mo-day-task mo-day-planned" style="border-color:' + escHtml(nplColor) + ';color:' + escHtml(nplColor) + '">' + escHtml(nextPlanned[npli].name) + '</div>';
     }
     html += '</div></div>';
@@ -231,7 +231,7 @@ function renderWeekView() {
       let endFrac = endIso ? getLocalHourFrac(endIso) : startFrac + 0.25;
       if (endFrac <= startFrac) endFrac = startFrac + (1/60);
       const durationMin = (endFrac - startFrac) * 60;
-      sessions.push({ taskId: t.task_id, taskName: t.name, path: t.path || '/', dayStr, startFrac, endFrac, durationMin, sessionIndex: idx + 1, totalSessions, color: getFolderColor(t.folder) });
+      sessions.push({ taskId: t.task_id, taskName: t.name, path: t.path || '/', dayStr, startFrac, endFrac, durationMin, sessionIndex: idx + 1, totalSessions, color: getFolderColor(t.folder_id) });
     });
   });
 
@@ -461,7 +461,7 @@ function renderWeekView() {
         var aTop = TICK_MARGIN + aStartFrac * HOUR_PX;
         var aHeight = Math.max(4, (aEndFrac - aStartFrac) * HOUR_PX - 2);
         var showLabel = aHeight >= 14;
-        var aColor = getFolderColor(a.folder) || '#5f6368';
+        var aColor = getFolderColor(a.folder_id) || '#5f6368';
         var isPlanned = !!a.is_planned;
         var cssClass = isPlanned ? 'wk-action wk-action-planned' : 'wk-action';
         var style = 'top:' + aTop.toFixed(1) + 'px;height:' + aHeight.toFixed(1) + 'px;';

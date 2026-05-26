@@ -399,8 +399,8 @@ function updateProjectsSubtab() {
   var focusLabel = userEmail || 'Projects';
   var atRoot = !projectsFocusPath;
   if (!atRoot) {
-    var segments = projectsFocusPath.split('/').filter(Boolean);
-    focusLabel = segments[segments.length - 1];
+    var focusFolder = getFolderById(projectsFocusPath);
+    focusLabel = focusFolder ? focusFolder.name : 'Projects';
   }
   var displayLabel = truncateToFit(focusLabel, 130, '500 0.88rem sans-serif');
   var arrowColor = atRoot ? 'color:#bdc1c6' : '';
@@ -526,19 +526,15 @@ function toggleProjectsVisualSidebar(el) {
 
 function projectsNavigateUp() {
   if (!projectsFocusPath) return;
-  var segments = projectsFocusPath.split('/').filter(Boolean);
-  if (segments.length <= 1) {
-    projectsFocusPath = null;
-  } else {
-    projectsFocusPath = '/' + segments.slice(0, -1).join('/');
-  }
+  var folder = getFolderById(projectsFocusPath);
+  projectsFocusPath = folder ? (folder.parent_id || null) : null;
   savePreferences();
   renderProjects();
   updateProjectsSubtab();
 }
 
-function projectsZoomIn(folderPath) {
-  projectsFocusPath = folderPath;
+function projectsZoomIn(folderId) {
+  projectsFocusPath = folderId;
   savePreferences();
   renderProjects();
   updateProjectsSubtab();

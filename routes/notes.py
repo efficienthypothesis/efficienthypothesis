@@ -48,7 +48,6 @@ def api_notes_create():
     data = request.get_json()
     name = data.get("name", "").strip()
     date = data.get("date", "").strip()
-    folder = data.get("folder")
 
     if not name:
         return jsonify({"error": "name is required"}), 400
@@ -62,7 +61,6 @@ def api_notes_create():
         "id": str(uuid.uuid4()),
         "name": name,
         "date": date,
-        "folder": folder,
         "folder_id": data.get("folder_id"),
         "created_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
     }
@@ -99,11 +97,9 @@ def api_notes_update(note_id):
                 n["name"] = data["name"]
             if "date" in data:
                 n["date"] = data["date"]
-            if "folder" in data:
-                n["folder"] = data["folder"]
             if "folder_id" in data:
                 n["folder_id"] = data["folder_id"]
-            if "folder" in data or "folder_id" in data:
+            if "folder_id" in data:
                 _apply_folder_ref(email, n, data)
             found = True
             break

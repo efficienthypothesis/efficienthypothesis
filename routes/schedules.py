@@ -53,7 +53,6 @@ def api_schedules_create():
         "first_day": data.get("first_day"),
         "pattern": data.get("pattern", "interval:1"),
         "instances": 0,
-        "folder": data.get("folder"),
         "folder_id": data.get("folder_id"),
         "active": True,
         "created_at": datetime.datetime.utcnow().isoformat() + 'Z',
@@ -92,10 +91,10 @@ def api_schedules_update(template_id):
 
     for t in templates:
         if t.get("id") == template_id:
-            if "folder" in data or "folder_id" in data:
+            if "folder_id" in data:
                 data = {**data, **_apply_folder_ref(email, {}, data)}
             for field in ["name", "start_time", "end_time", "first_day", "pattern",
-                          "max_instances", "end_date", "active", "folder", "folder_id"]:
+                          "max_instances", "end_date", "active", "folder_id"]:
                 if field in data:
                     t[field] = data[field]
             if "end_date" in data:
@@ -298,7 +297,7 @@ def api_schedules_materialize():
                 "start_datetime": utc_start,
                 "end_datetime": utc_end,
                 "schedule_id": tpl_id,
-                "folder": tpl.get("folder"),
+                "folder_id": tpl.get("folder_id"),
                 "is_planned": True,
                 "created_at": datetime.datetime.utcnow().isoformat() + 'Z',
             }

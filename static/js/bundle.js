@@ -20,21 +20,21 @@ let accountCreatedYear = null; // year of account creation (integer)
 let accessibleStartDate = null; // "YYYY-01-01" of creation year
 let accessibleEndDate = null; // "YYYY-12-31" of next year
 let nowLineInterval = null; // interval ID for updating the current-time line
-let prodFolders = []; // folder objects [{path, name, color}]
-let prodNotes = []; // note objects [{id, name, date, folder, created_at}]
+let prodFolders = []; // folder objects [{id, parent_id, name, color}]
+let prodNotes = []; // note objects [{id, name, date, folder_id, created_at}]
 let prodActions = []; // action objects [{action_id, name, start_datetime, end_datetime, ...}]
 let prodSchedules = []; // schedule template objects [{id, name, start_time, end_time, pattern, ...}]
 let prodTimelogs = []; // timelog objects [{log_id, parent_id, parent_type, start, end}]
 let projectsShowCompleted = true; // toggle for showing completed items in projects
 let projectsShowNotes = true; // toggle for showing notes in projects
-let projectsShowEmptyFolders = true; // toggle for showing empty groups in projects
+let projectsShowEmptyFolders = true; // toggle for showing empty folders in projects
 let projectsTimeFilter = {
   completed: { past: true, present: true, future: true },
   notes: { past: true, present: true, future: true },
   empty: { past: true, present: true, future: true }
 };
 let projectsViewMode = 'visual'; // 'list' | 'visual'
-let projectsFocusPath = null; // null = root, or a folder path like '/SCHOOL'
+let projectsFocusPath = null; // null = root, or a folder id
 let userEmail = null; // populated from session, used as root label
 let monthlyShowNotes = true; // toggle for showing notes on monthly calendar
 let monthlyShowPlanned = false; // toggle for showing planned (incomplete) tasks on monthly calendar
@@ -76,6 +76,7 @@ function savePreferences() {
   } catch(e) {}
 }
 loadPreferences();
+
 // --- Timezone init (returns Promise) ---
 function initTimezone() {
   return fetch('/api/user/timezone')
@@ -207,6 +208,7 @@ function formatHourLabel(h) {
   const h12 = h % 12 || 12;
   return h12 + ' ' + ampm;
 }
+
 // === SPA Page Rendering Functions ===
 
 function renderProjectsContent() {
@@ -283,13 +285,13 @@ function renderSettingsContent() {
       </div></div>
     <div class="settings-section"><div class="settings-section-header"><span class="material-symbols-outlined">folder</span> Projects</div>
       <div class="settings-section-body">
-        <div class="settings-row"><span class="settings-label">Completed</span><span class="settings-value"><label class="settings-toggle"><input type="checkbox" ${projectsShowCompleted ? 'checked' : ''} onchange="toggleProjectsCompleted(this.checked);renderSettingsPrefs()"><span class="settings-toggle-slider"></span></label></span></div>
-        <div class="settings-row"><span class="settings-label">Notes</span><span class="settings-value"><label class="settings-toggle"><input type="checkbox" ${projectsShowNotes ? 'checked' : ''} onchange="projectsShowNotes=this.checked;savePreferences();renderProjects();renderSettingsPrefs()"><span class="settings-toggle-slider"></span></label></span></div>
-        <div class="settings-row"><span class="settings-label">Show Empty Groups</span><span class="settings-value"><label class="settings-toggle"><input type="checkbox" ${projectsShowEmptyFolders ? 'checked' : ''} onchange="projectsShowEmptyFolders=this.checked;savePreferences();renderProjects();renderSettingsPrefs()"><span class="settings-toggle-slider"></span></label></span></div>
+        <div class="settings-row"><span class="settings-label">Show Completed</span><span class="settings-value"><label class="settings-toggle"><input type="checkbox" ${projectsShowCompleted ? 'checked' : ''} onchange="toggleProjectsCompleted(this.checked);renderSettingsPrefs()"><span class="settings-toggle-slider"></span></label></span></div>
+        <div class="settings-row"><span class="settings-label">Show Notes</span><span class="settings-value"><label class="settings-toggle"><input type="checkbox" ${projectsShowNotes ? 'checked' : ''} onchange="projectsShowNotes=this.checked;savePreferences();renderProjects();renderSettingsPrefs()"><span class="settings-toggle-slider"></span></label></span></div>
+        <div class="settings-row"><span class="settings-label">Show Empty Folders</span><span class="settings-value"><label class="settings-toggle"><input type="checkbox" ${projectsShowEmptyFolders ? 'checked' : ''} onchange="projectsShowEmptyFolders=this.checked;savePreferences();renderProjects();renderSettingsPrefs()"><span class="settings-toggle-slider"></span></label></span></div>
       </div></div>
     <div class="settings-section"><div class="settings-section-header"><span class="material-symbols-outlined">calendar_month</span> Monthly View</div>
       <div class="settings-section-body">
-        <div class="settings-row"><span class="settings-label">Notes</span><span class="settings-value"><label class="settings-toggle"><input type="checkbox" ${monthlyShowNotes ? 'checked' : ''} onchange="monthlyShowNotes=this.checked;savePreferences();renderCalendarFromCache();renderSettingsPrefs()"><span class="settings-toggle-slider"></span></label></span></div>
+        <div class="settings-row"><span class="settings-label">Show Notes</span><span class="settings-value"><label class="settings-toggle"><input type="checkbox" ${monthlyShowNotes ? 'checked' : ''} onchange="monthlyShowNotes=this.checked;savePreferences();renderCalendarFromCache();renderSettingsPrefs()"><span class="settings-toggle-slider"></span></label></span></div>
         <div class="settings-row"><span class="settings-label">Show Planned</span><span class="settings-value"><label class="settings-toggle"><input type="checkbox" ${monthlyShowPlanned ? 'checked' : ''} onchange="monthlyShowPlanned=this.checked;savePreferences();renderCalendarFromCache();renderSettingsPrefs()"><span class="settings-toggle-slider"></span></label></span></div>
       </div></div>
     <div class="settings-section"><div class="settings-section-header"><span class="material-symbols-outlined">wallpaper</span> Homescreen Background</div>
@@ -321,6 +323,7 @@ function renderSettingsPrefs() {
     renderSettingsFromCache();
   }
 }
+
 // === Homescreen ===
 
 var homescreenSettings = null; // cached {has_image, scale, translateX, translateY}
@@ -576,6 +579,7 @@ function renderSettingsBgPreview() {
     container.innerHTML = '<p style="font-size:0.85rem;color:#9aa0a6;margin:0 0 12px">No background set</p>';
   }
 }
+
 // === SPA Navigation ===
 
 function sidebarNav(page) {
@@ -977,8 +981,8 @@ function updateProjectsSubtab() {
   var focusLabel = userEmail || 'Projects';
   var atRoot = !projectsFocusPath;
   if (!atRoot) {
-    var segments = projectsFocusPath.split('/').filter(Boolean);
-    focusLabel = segments[segments.length - 1];
+    var focusFolder = getFolderById(projectsFocusPath);
+    focusLabel = focusFolder ? focusFolder.name : 'Projects';
   }
   var displayLabel = truncateToFit(focusLabel, 130, '500 0.88rem sans-serif');
   var arrowColor = atRoot ? 'color:#bdc1c6' : '';
@@ -1008,9 +1012,12 @@ function toggleProjectsRulesPopup() {
   popup.className = 'projects-rules-popup';
   popup.innerHTML = buildProjectsRulesContent();
 
+  // Position near sidebar
   popup.style.left = '180px';
   popup.style.top = '120px';
 
+  // Dragging
+  var header = null;
   popup.addEventListener('mousedown', function(e) {
     if (e.target.closest('.rules-popup-header')) {
       e.preventDefault();
@@ -1084,6 +1091,7 @@ function refreshProjectsRulesPopup() {
   if (!popup) return;
   var body = popup.querySelector('.rules-popup-body');
   if (body) {
+    // Rebuild just the body content
     var tmp = document.createElement('div');
     tmp.innerHTML = buildProjectsRulesContent();
     body.innerHTML = tmp.querySelector('.rules-popup-body').innerHTML;
@@ -1100,19 +1108,15 @@ function toggleProjectsVisualSidebar(el) {
 
 function projectsNavigateUp() {
   if (!projectsFocusPath) return;
-  var segments = projectsFocusPath.split('/').filter(Boolean);
-  if (segments.length <= 1) {
-    projectsFocusPath = null;
-  } else {
-    projectsFocusPath = '/' + segments.slice(0, -1).join('/');
-  }
+  var folder = getFolderById(projectsFocusPath);
+  projectsFocusPath = folder ? (folder.parent_id || null) : null;
   savePreferences();
   renderProjects();
   updateProjectsSubtab();
 }
 
-function projectsZoomIn(folderPath) {
-  projectsFocusPath = folderPath;
+function projectsZoomIn(folderId) {
+  projectsFocusPath = folderId;
   savePreferences();
   renderProjects();
   updateProjectsSubtab();
@@ -1138,6 +1142,7 @@ function initApp(initialPage, email) {
     history.replaceState({ page: initialPage }, '', '/' + initialPage);
   });
 }
+
 // --- (Data loading is now handled by fetchAllData/refreshData above) ---
 
 // --- Task Card HTML ---
@@ -1419,6 +1424,7 @@ function moveTaskAndChildren(taskId, newPath) {
   children.forEach(c=>{const cp=c.path||'/';promises.push(fetch('/api/tasks/'+c.task_id+'/move',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:newParent+cp.slice(oldPath.length)})}));});
   Promise.all(promises).then(()=>loadProductivityData()).catch(()=>alert('Failed.'));
 }
+
 function getItemTemporalStatus(item) {
   var today = getTodayStr();
   if (item.type === 'task' || item.type === 'routine') {
@@ -1467,23 +1473,52 @@ function isItemVisibleByTimeFilter(item) {
     var tf = projectsTimeFilter.notes;
     return tf[status];
   }
+  // tasks, routines, actions — no time filter rule yet, always show
   return true;
 }
 
-function getFolderColor(folderPath) {
-  if (!folderPath) return null;
-  var folder = prodFolders.find(function(g) { return g.path === folderPath; });
+function getFolderById(folderId) {
+  if (!folderId) return null;
+  return prodFolders.find(function(g) { return g.id === folderId; }) || null;
+}
+
+function getFolderColor(folderId) {
+  if (!folderId) return null;
+  var folder = getFolderById(folderId);
   if (folder) return folder.color;
   return null;
+}
+
+function getFolderLabel(folder) {
+  if (!folder) return '';
+  var names = [];
+  var current = folder;
+  var guard = 0;
+  while (current && guard < 20) {
+    names.unshift(current.name || '');
+    current = getFolderById(current.parent_id);
+    guard++;
+  }
+  return names.filter(Boolean).join(' / ');
+}
+
+function resolveFolderInput(value) {
+  var raw = (value || '').trim().toLowerCase();
+  if (!raw) return null;
+  return prodFolders.find(function(g) {
+    return (g.id || '').toLowerCase() === raw
+      || (g.name || '').toLowerCase() === raw
+      || getFolderLabel(g).toLowerCase() === raw;
+  }) || null;
 }
 
 function getUnfiledItems() {
   // All non-draft, non-routine-instance tasks + routines + notes without a folder, sorted by created_at desc
   var tasks = (prodAllTasks || []).filter(function(t) {
-    return !t.draft && !t.routine_id && !t.folder;
+    return !t.draft && !t.routine_id && !t.folder_id;
   });
-  var routines = (prodRoutines || []).filter(function(r) { return !r.folder; });
-  var notes = (prodNotes || []).filter(function(n) { return !n.folder; });
+  var routines = (prodRoutines || []).filter(function(r) { return !r.folder_id; });
+  var notes = (prodNotes || []).filter(function(n) { return !n.folder_id; });
   var items = [];
   tasks.forEach(function(t) { items.push({type: 'task', id: t.task_id, name: t.name, assign: t.assign_datetime, due: t.due_datetime, done: !!t.end_datetime, created_at: t.created_at || ''}); });
   routines.forEach(function(r) { items.push({type: 'routine', id: r.id, name: r.name, due: null, done: false, created_at: r.created_at || ''}); });
@@ -1492,13 +1527,12 @@ function getUnfiledItems() {
   return items;
 }
 
-function getFolderItems(folderPath) {
-  // Items assigned to exactly this folder path
+function getFolderItems(folderId) {
   var tasks = (prodAllTasks || []).filter(function(t) {
-    return !t.draft && !t.routine_id && t.folder === folderPath;
+    return !t.draft && !t.routine_id && t.folder_id === folderId;
   });
-  var routines = (prodRoutines || []).filter(function(r) { return r.folder === folderPath; });
-  var notes = (prodNotes || []).filter(function(n) { return n.folder === folderPath; });
+  var routines = (prodRoutines || []).filter(function(r) { return r.folder_id === folderId; });
+  var notes = (prodNotes || []).filter(function(n) { return n.folder_id === folderId; });
   var items = [];
   tasks.forEach(function(t) { items.push({type: 'task', id: t.task_id, name: t.name, assign: t.assign_datetime, due: t.due_datetime, done: !!t.end_datetime, created_at: t.created_at || ''}); });
   routines.forEach(function(r) { items.push({type: 'routine', id: r.id, name: r.name, due: null, done: false, created_at: r.created_at || ''}); });
@@ -1526,21 +1560,11 @@ function renderFolderItemHtml(item) {
 }
 
 function getRootFolders() {
-  // Groups whose path has only one segment (e.g., "/STATS" but not "/CS/ML")
-  return prodFolders.filter(function(g) {
-    var segments = g.path.split('/').filter(Boolean);
-    return segments.length === 1;
-  });
+  return prodFolders.filter(function(g) { return !g.parent_id; });
 }
 
-function getChildFolders(parentPath) {
-  // Direct children: parentPath + one more segment
-  var prefix = parentPath.endsWith('/') ? parentPath : parentPath + '/';
-  return prodFolders.filter(function(g) {
-    if (!g.path.startsWith(prefix)) return false;
-    var rest = g.path.slice(prefix.length);
-    return rest.length > 0 && !rest.includes('/');
-  });
+function getChildFolders(parentId) {
+  return prodFolders.filter(function(g) { return g.parent_id === parentId; });
 }
 
 // === Layout Algorithm ===
@@ -1550,8 +1574,8 @@ var LY_EST_HEADER_H = 36;
 var LY_GAP = 16;
 var projectsNeedsReorganize = false;
 
-function getVisibleItems(folderPath) {
-  return getFolderItems(folderPath).filter(function(item) {
+function getVisibleItems(folderId) {
+  return getFolderItems(folderId).filter(function(item) {
     if (!projectsShowCompleted && item.done) return false;
     if (!projectsShowNotes && item.type === 'note') return false;
     if (!isItemVisibleByTimeFilter(item)) return false;
@@ -1562,19 +1586,14 @@ function getVisibleItems(folderPath) {
 function buildFolderTree() {
   var nodeMap = {};
   prodFolders.forEach(function(g) {
-    nodeMap[g.path] = { folder: g, children: [], items: getVisibleItems(g.path) };
+    nodeMap[g.id] = { folder: g, children: [], items: getVisibleItems(g.id) };
   });
   prodFolders.forEach(function(g) {
-    var segs = g.path.split('/').filter(Boolean);
-    if (segs.length > 1) {
-      var parentPath = '/' + segs.slice(0, -1).join('/');
-      if (nodeMap[parentPath]) nodeMap[parentPath].children.push(nodeMap[g.path]);
-    }
+    if (g.parent_id && nodeMap[g.parent_id]) nodeMap[g.parent_id].children.push(nodeMap[g.id]);
   });
   var roots = [];
   prodFolders.forEach(function(g) {
-    var segs = g.path.split('/').filter(Boolean);
-    if (segs.length === 1) roots.push(nodeMap[g.path]);
+    if (!g.parent_id) roots.push(nodeMap[g.id]);
   });
   if (!projectsShowEmptyFolders) {
     function hasContent(node) {
@@ -1609,21 +1628,21 @@ var VIS_CATCHALL_FIXED_H = VIS_MAX_DISPLAY_ITEMS * LY_EST_ITEM_H + 20; // catcha
 var VIS_BOX_PAD = 20; // body padding + border for depth-1 cards
 
 // === Tree helpers ===
-function findNodeByPath(nodes, path) {
+function findNodeById(nodes, folderId) {
   for (var i = 0; i < nodes.length; i++) {
-    if (nodes[i].folder.path === path) return nodes[i];
-    var found = findNodeByPath(nodes[i].children, path);
+    if (nodes[i].folder.id === folderId) return nodes[i];
+    var found = findNodeById(nodes[i].children, folderId);
     if (found) return found;
   }
   return null;
 }
 
-function buildFocusedTree(focusPath) {
+function buildFocusedTree(focusId) {
   var allRoots = buildFolderTree();
-  if (!focusPath) {
+  if (!focusId) {
     return { focusFolder: null, children: allRoots, directItems: getVisibleUnfiledItems() };
   }
-  var focusNode = findNodeByPath(allRoots, focusPath);
+  var focusNode = findNodeById(allRoots, focusId);
   if (!focusNode) {
     projectsFocusPath = null;
     return { focusFolder: null, children: allRoots, directItems: getVisibleUnfiledItems() };
@@ -1662,14 +1681,14 @@ function renderItemsWithLimit(items, subfolders, limit) {
   }
   if (total > limit) {
     var remaining = total - showCount;
-    html += '<div class="folder-item folder-item-more" onclick="projectsZoomIn(\'' + escHtml((allEntries[0] && allEntries[0]._isSubfolder ? allEntries[0].folder.path : '').replace(/\/[^\/]*$/, '')) + '\')">+' + remaining + ' more</div>';
+    html += '<div class="folder-item folder-item-more">+' + remaining + ' more</div>';
   }
   return html;
 }
 
 function renderSubfolderAsItem(entry) {
-  var path = escHtml(entry.folder.path);
-  return '<div class="folder-item folder-item-subfolder" ondblclick="event.stopPropagation();projectsZoomIn(\'' + path + '\')">' +
+  var id = escHtml(entry.folder.id);
+  return '<div class="folder-item folder-item-subfolder" ondblclick="event.stopPropagation();projectsZoomIn(\'' + id + '\')">' +
     '<span class="material-symbols-outlined folder-item-icon">folder</span>' +
     '<span class="folder-item-name">' + escHtml(entry.folder.name) + '</span>' +
     '<span class="folder-item-due" style="color:#80868b">' + entry._totalItems + '</span></div>';
@@ -1684,26 +1703,26 @@ function renderDepth2Card(node) {
   var items = node.items || [];
   var bodyHtml = renderItemsWithLimit(items, depth3Folders, VIS_MAX_DISPLAY_ITEMS);
 
-  return '<div class="folder-box folder-box-d2" data-folder-path="' + escHtml(folder.path) +
+  return '<div class="folder-box folder-box-d2" data-folder-id="' + escHtml(folder.id) +
     '" style="--folder-color:' + folderColor + ';border-color:' + folderColor +
     ';height:' + VIS_D2_FIXED_H + 'px"' +
-    ' ondblclick="event.stopPropagation();projectsZoomIn(\'' + escHtml(folder.path) + '\')"' +
+    ' ondblclick="event.stopPropagation();projectsZoomIn(\'' + escHtml(folder.id) + '\')"' +
     ' ondragover="onFolderBoxDragOver(event)" ondragleave="onFolderBoxDragLeave(event)" ondrop="onFolderBoxDrop(event)">' +
     '<div class="folder-box-header">' +
     '<span class="folder-box-name">' + escHtml(folder.name) + '</span>' +
     '<div class="folder-box-actions" onclick="event.stopPropagation()">' +
     '<button class="folder-box-actions-btn" onclick="event.stopPropagation();toggleFolderDropdown(this)"><span class="material-symbols-outlined">more_vert</span></button>' +
     '<div class="folder-box-dropdown">' +
-    '<button class="folder-box-dd-item" onclick="event.stopPropagation();editFolder(\'' + escHtml(folder.path) + '\')"><span class="material-symbols-outlined">edit</span> Edit</button>' +
-    '<button class="folder-box-dd-item danger" onclick="event.stopPropagation();deleteFolder(\'' + escHtml(folder.path) + '\')"><span class="material-symbols-outlined">delete</span> Delete</button>' +
+    '<button class="folder-box-dd-item" onclick="event.stopPropagation();editFolder(\'' + escHtml(folder.id) + '\')"><span class="material-symbols-outlined">edit</span> Edit</button>' +
+    '<button class="folder-box-dd-item danger" onclick="event.stopPropagation();deleteFolder(\'' + escHtml(folder.id) + '\')"><span class="material-symbols-outlined">delete</span> Delete</button>' +
     '</div></div></div>' +
     '<div class="folder-box-body">' + bodyHtml + '</div></div>';
 }
 
 // === Catchall card (no header, for direct items) ===
-function renderCatchallCard(items, parentPath) {
+function renderCatchallCard(items, parentId) {
   var bodyHtml = renderItemsWithLimit(items, [], VIS_MAX_DISPLAY_ITEMS);
-  return '<div class="folder-box-catchall" data-folder-path="' + escHtml(parentPath || '') + '"' +
+  return '<div class="folder-box-catchall" data-folder-id="' + escHtml(parentId || '') + '"' +
     ' style="height:' + VIS_CATCHALL_FIXED_H + 'px"' +
     ' ondragover="onFolderBoxDragOver(event)" ondragleave="onFolderBoxDragLeave(event)" ondrop="onFolderBoxDrop(event)">' +
     '<div class="folder-box-body">' + bodyHtml + '</div></div>';
@@ -1741,23 +1760,23 @@ function renderDepth1Card(node, directItems) {
       // Direct items alongside subfolders — render without catchall styling
       var catchallBody = renderItemsWithLimit(directItems, [], VIS_MAX_DISPLAY_ITEMS);
       innerHtml += '<div style="height:' + VIS_D2_FIXED_H + 'px;overflow:hidden"' +
-        ' data-folder-path="' + escHtml(folder.path) + '"' +
+        ' data-folder-id="' + escHtml(folder.id) + '"' +
         ' ondragover="onFolderBoxDragOver(event)" ondragleave="onFolderBoxDragLeave(event)" ondrop="onFolderBoxDrop(event)">' +
         '<div class="folder-box-body">' + catchallBody + '</div></div>';
     }
   }
 
-  return '<div class="folder-box" data-folder-path="' + escHtml(folder.path) +
+  return '<div class="folder-box" data-folder-id="' + escHtml(folder.id) +
     '" style="--folder-color:' + folderColor + ';border-color:' + folderColor + ';min-height:' + d1Height + 'px"' +
-    ' ondblclick="projectsZoomIn(\'' + escHtml(folder.path) + '\')"' +
+    ' ondblclick="projectsZoomIn(\'' + escHtml(folder.id) + '\')"' +
     ' ondragover="onFolderBoxDragOver(event)" ondragleave="onFolderBoxDragLeave(event)" ondrop="onFolderBoxDrop(event)">' +
     '<div class="folder-box-header">' +
     '<span class="folder-box-name">' + escHtml(folder.name) + '</span>' +
     '<div class="folder-box-actions" onclick="event.stopPropagation()">' +
     '<button class="folder-box-actions-btn" onclick="event.stopPropagation();toggleFolderDropdown(this)"><span class="material-symbols-outlined">more_vert</span></button>' +
     '<div class="folder-box-dropdown">' +
-    '<button class="folder-box-dd-item" onclick="event.stopPropagation();editFolder(\'' + escHtml(folder.path) + '\')"><span class="material-symbols-outlined">edit</span> Edit</button>' +
-    '<button class="folder-box-dd-item danger" onclick="event.stopPropagation();deleteFolder(\'' + escHtml(folder.path) + '\')"><span class="material-symbols-outlined">delete</span> Delete</button>' +
+    '<button class="folder-box-dd-item" onclick="event.stopPropagation();editFolder(\'' + escHtml(folder.id) + '\')"><span class="material-symbols-outlined">edit</span> Edit</button>' +
+    '<button class="folder-box-dd-item danger" onclick="event.stopPropagation();deleteFolder(\'' + escHtml(folder.id) + '\')"><span class="material-symbols-outlined">delete</span> Delete</button>' +
     '</div></div></div>' +
     '<div class="folder-box-body layout-packed-body" style="grid-template-columns:repeat(' + cols + ',1fr)">' +
     innerHtml + '</div></div>';
@@ -1877,9 +1896,9 @@ function renderListTreeNode(node, depth) {
   var colorDot = (folder.color && folder.color !== '#000000' && folder.color !== DEFAULT_COLOR)
     ? '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + escHtml(folder.color) + ';margin-right:2px;flex-shrink:0"></span>' : '';
 
-  var html = '<div class="list-tree-node" data-path="' + escHtml(folder.path) + '"' +
+  var html = '<div class="list-tree-node" data-folder-id="' + escHtml(folder.id) + '"' +
     ' ondragover="onListTreeDragOver(event)" ondragleave="onListTreeDragLeave(event)" ondrop="onListTreeDrop(event)">';
-  html += '<div class="list-tree-row" onclick="toggleListNode(this)" ondblclick="projectsZoomIn(\'' + escHtml(folder.path) + '\')">';
+  html += '<div class="list-tree-row" onclick="toggleListNode(this)" ondblclick="projectsZoomIn(\'' + escHtml(folder.id) + '\')">';
   html += '<span style="width:' + indent + 'px" class="list-tree-indent"></span>';
   if (hasChildren) {
     html += '<span class="list-tree-chevron material-symbols-outlined">chevron_right</span>';
@@ -1942,8 +1961,8 @@ function onListTreeDrop(e) {
   var node = e.target.closest('.list-tree-node');
   if (!node || !folderDraggedItemId) return;
   node.querySelector('.list-tree-row').style.background = '';
-  var targetPath = node.dataset.path;
-  if (targetPath) assignItemFolder(folderDraggedItemId, folderDraggedItemType, targetPath);
+  var targetFolderId = node.dataset.folderId;
+  if (targetFolderId) assignItemFolder(folderDraggedItemId, folderDraggedItemType, targetFolderId);
 }
 
 // === Main render dispatcher ===
@@ -1982,18 +2001,20 @@ document.addEventListener('click', function(e) {
   }
 });
 
-function deleteFolder(path) {
+function deleteFolder(folderId) {
   document.querySelectorAll('.folder-box-dropdown.open').forEach(function(d) { d.classList.remove('open'); });
-  if (!confirm('Delete folder "' + path + '" and all subfolders? Items will become unclassified.')) return;
-  fetch('/api/folders', {method: 'DELETE', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({path: path})})
+  var folder = getFolderById(folderId);
+  var label = folder ? getFolderLabel(folder) : folderId;
+  if (!confirm('Delete folder "' + label + '" and all subfolders? Items will become unclassified.')) return;
+  fetch('/api/folders', {method: 'DELETE', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({id: folderId})})
     .then(function(r) { if (!r.ok) throw 0; return r.json(); })
     .then(function() { refreshData(); })
     .catch(function() { alert('Failed to delete folder.'); });
 }
 
-function editFolder(path) {
+function editFolder(folderId) {
   document.querySelectorAll('.folder-box-dropdown.open').forEach(function(d) { d.classList.remove('open'); });
-  var folder = prodFolders.find(function(g) { return g.path === path; });
+  var folder = getFolderById(folderId);
   if (!folder) return;
   openFolderModal(folder);
 }
@@ -2040,8 +2061,8 @@ function onFolderBoxDrop(e) {
   var box = e.target.closest('.folder-box');
   if (!box || !folderDraggedItemId) return;
   box.classList.remove('drag-over-folder');
-  var targetPath = box.dataset.folderPath;
-  assignItemFolder(folderDraggedItemId, folderDraggedItemType, targetPath);
+  var targetFolderId = box.dataset.folderId;
+  assignItemFolder(folderDraggedItemId, folderDraggedItemType, targetFolderId);
 }
 
 function onProjectsWhitespaceDragOver(e) {
@@ -2058,19 +2079,19 @@ function onProjectsWhitespaceDrop(e) {
   assignItemFolder(folderDraggedItemId, folderDraggedItemType, null);
 }
 
-function assignItemFolder(itemId, itemType, folderPath) {
+function assignItemFolder(itemId, itemType, folderId) {
   if (itemType === 'routine') {
-    fetch('/api/routines/' + itemId, {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({folder: folderPath})})
+    fetch('/api/routines/' + itemId, {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({folder_id: folderId})})
       .then(function(r) { if (!r.ok) throw 0; return r.json(); })
       .then(function() { refreshData(); })
       .catch(function() { alert('Failed to assign routine to folder.'); });
   } else if (itemType === 'note') {
-    fetch('/api/notes/' + itemId, {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({folder: folderPath})})
+    fetch('/api/notes/' + itemId, {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({folder_id: folderId})})
       .then(function(r) { if (!r.ok) throw 0; return r.json(); })
       .then(function() { refreshData(); })
       .catch(function() { alert('Failed to assign note to folder.'); });
   } else {
-    fetch('/api/tasks/' + itemId, {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({folder: folderPath})})
+    fetch('/api/tasks/' + itemId, {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({folder_id: folderId})})
       .then(function(r) { if (!r.ok) throw 0; return r.json(); })
       .then(function() { refreshData(); })
       .catch(function() { alert('Failed to assign task to folder.'); });
@@ -2104,15 +2125,8 @@ var GA_PALETTE = [
   '#5b0f00','#660000','#783f04','#7f6000','#274e13','#0c343d','#1c4587','#073763','#20124d','#4c1130'
 ];
 
-function _formatPathForDisplay(value) {
-  return value.replace(/\s*\/\s*/g, ' / ').replace(/\s+/g, ' ').trim();
-}
-function _normalizePathForSave(value) {
-  return value.replace(/\s*\/\s*/g, '/').replace(/^\/+/, '').replace(/\/+$/, '').trim();
-}
-
 function createFolderCard(existingFolder) {
-  var editingFolderPath = existingFolder ? existingFolder.path : null;
+  var editingFolderId = existingFolder ? existingFolder.id : null;
   var selectedColor = existingFolder ? (existingFolder.color || DEFAULT_COLOR) : DEFAULT_COLOR;
   var draftId = null;
   var draftSaveTimer = null;
@@ -2122,11 +2136,8 @@ function createFolderCard(existingFolder) {
   cardEl.innerHTML =
     '<div class="quickadd-header ga-header">Group</div>' +
     '<div class="quickadd-body">' +
-      '<div class="ga-path-wrap">' +
-        '<span class="ga-path-prefix">/</span>' +
-        '<input class="ga-path-input gm-path" autocomplete="off">' +
-        '<span class="ga-path-ghost"></span>' +
-      '</div>' +
+      '<input class="quickadd-input gm-name" placeholder="Folder name" autocomplete="off">' +
+      '<select class="quickadd-input gm-parent"></select>' +
       '<div class="ga-color-btn">' +
         '<div class="ga-color-circle"></div>' +
       '</div>' +
@@ -2140,8 +2151,8 @@ function createFolderCard(existingFolder) {
     '</div>';
 
   var header = _q(cardEl, 'ga-header');
-  var pathInput = _q(cardEl, 'gm-path');
-  var ghost = _q(cardEl, 'ga-path-ghost');
+  var nameInput = _q(cardEl, 'gm-name');
+  var parentSelect = _q(cardEl, 'gm-parent');
   var circle = _q(cardEl, 'ga-color-circle');
   var colorBtn = _q(cardEl, 'ga-color-btn');
   var colorPicker = _q(cardEl, 'ga-color-picker');
@@ -2151,46 +2162,20 @@ function createFolderCard(existingFolder) {
   header.textContent = existingFolder ? 'Edit Folder' : 'Group';
 
   if (existingFolder) {
-    pathInput.value = _formatPathForDisplay(existingFolder.path.slice(1));
-    pathInput.disabled = true;
+    nameInput.value = existingFolder.name || '';
   }
+
+  parentSelect.innerHTML = '<option value="">No parent</option>' + prodFolders
+    .filter(function(g) { return !existingFolder || g.id !== existingFolder.id; })
+    .map(function(g) {
+      return '<option value="' + escHtml(g.id) + '"' + (existingFolder && existingFolder.parent_id === g.id ? ' selected' : '') + '>' + escHtml(getFolderLabel(g)) + '</option>';
+    }).join('');
 
   function updateCardColor() {
     if (circle) circle.style.backgroundColor = selectedColor;
     cardEl.style.borderColor = selectedColor;
     cardEl.style.setProperty('--qa-border-color', selectedColor);
     header.style.backgroundColor = selectedColor;
-  }
-
-  function autoSize() {
-    if (!pathInput.value) { pathInput.style.width = '2px'; return; }
-    var m = document.getElementById('ga-path-measurer');
-    if (!m) {
-      m = document.createElement('span');
-      m.id = 'ga-path-measurer';
-      m.style.cssText = 'position:absolute;visibility:hidden;white-space:pre;font-size:0.9rem;font-family:inherit;letter-spacing:0.5px;';
-      document.body.appendChild(m);
-    }
-    m.textContent = pathInput.value;
-    pathInput.style.width = Math.ceil(m.offsetWidth + 2) + 'px';
-  }
-
-  function updateGhost() {
-    var raw = _normalizePathForSave(pathInput.value);
-    var trimmed = pathInput.value.trim();
-    var endsWithSlash = trimmed.endsWith('/');
-    var parentPath;
-    if (!raw || raw === '') { parentPath = null; }
-    else if (endsWithSlash) { parentPath = '/' + raw; }
-    else { ghost.textContent = ''; return; }
-    var children = parentPath === null ? getRootFolders() : getChildFolders(parentPath);
-    if (children.length === 0) { ghost.textContent = ''; }
-    else {
-      ghost.textContent = children.map(function(g) {
-        var segs = g.path.split('/').filter(Boolean);
-        return segs[segs.length - 1];
-      }).join(', ');
-    }
   }
 
   function selectColor(color) {
@@ -2204,24 +2189,6 @@ function createFolderCard(existingFolder) {
   }
 
   updateCardColor();
-  updateGhost();
-  autoSize();
-
-  pathInput.oninput = function() {
-    var start = pathInput.selectionStart;
-    var oldVal = pathInput.value;
-    var formatted = _formatPathForDisplay(oldVal);
-    if (formatted !== oldVal) {
-      var diff = formatted.length - oldVal.length;
-      pathInput.value = formatted;
-      pathInput.setSelectionRange(Math.max(0, start + diff), Math.max(0, start + diff));
-    }
-    autoSize();
-    updateGhost();
-  };
-
-  var wrap = cardEl.querySelector('.ga-path-wrap');
-  if (wrap) wrap.onclick = function() { pathInput.focus(); };
 
   // Build palette
   paletteEl.innerHTML = GA_PALETTE.map(function(c) {
@@ -2254,11 +2221,12 @@ function createFolderCard(existingFolder) {
   var draftCreated = false;
   function saveFolderDraft() {
     if (!draftId) return;
-    var pathVal = _normalizePathForSave(pathInput.value) || '';
-    if (!pathVal && !draftCreated) return; // don't create draft for empty content
+    var nameVal = nameInput.value.trim() || '';
+    if (!nameVal && !draftCreated) return; // don't create draft for empty content
     var data = {
-      name: pathVal,
+      name: nameVal,
       draft_type: 'folder',
+      parent_id: parentSelect.value || null,
       color: selectedColor
     };
     if (!draftCreated) {
@@ -2273,11 +2241,13 @@ function createFolderCard(existingFolder) {
     // Resuming a draft — reuse existing draft ID
     draftId = existingFolder._draftId;
     draftCreated = true;
-    editingFolderPath = null;
-    pathInput.addEventListener('input', scheduleDraftSave);
+    editingFolderId = null;
+    nameInput.addEventListener('input', scheduleDraftSave);
+    parentSelect.addEventListener('change', scheduleDraftSave);
   } else if (!existingFolder) {
     draftId = crypto.randomUUID ? crypto.randomUUID() : 'draft-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
-    pathInput.addEventListener('input', scheduleDraftSave);
+    nameInput.addEventListener('input', scheduleDraftSave);
+    parentSelect.addEventListener('change', scheduleDraftSave);
   }
 
   var card = {
@@ -2292,7 +2262,7 @@ function createFolderCard(existingFolder) {
     onDismiss: function() {
       if (draftSaveTimer) { clearTimeout(draftSaveTimer); draftSaveTimer = null; }
       if (draftId && draftCreated) {
-        var hasContent = _normalizePathForSave(pathInput.value);
+        var hasContent = nameInput.value.trim();
         if (!hasContent) {
           fetch('/api/drafts/' + draftId, {method: 'DELETE'});
         } else {
@@ -2303,53 +2273,27 @@ function createFolderCard(existingFolder) {
   };
 
   function saveThisFolder() {
-    var rawPath = _normalizePathForSave(pathInput.value);
-    var path = '/' + rawPath;
+    var name = nameInput.value.trim();
+    var parentId = parentSelect.value || null;
     var color = selectedColor || DEFAULT_COLOR;
+    if (!name) { alert('Name is required.'); nameInput.focus(); return; }
 
-    if (editingFolderPath) {
-      fetch('/api/folders', {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({path: editingFolderPath, color: color})})
+    if (editingFolderId) {
+      fetch('/api/folders', {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({id: editingFolderId, name: name, parent_id: parentId, color: color})})
         .then(function(r) { if (!r.ok) return r.json().then(function(d) { throw new Error(d.error || 'Failed'); }); return r.json(); })
         .then(function() { CardStack.remove(card); refreshData(); })
         .catch(function(err) { alert(err.message || 'Failed.'); });
     } else {
-      if (!path.startsWith('/')) path = '/' + path;
-      if (path.endsWith('/')) path = path.slice(0, -1);
-      if (!path || path === '') { alert('Path is required.'); return; }
-
-      var segments = path.split('/').filter(Boolean);
-      if (segments.length === 0) { alert('Path is required.'); return; }
-      var pathsToCreate = [];
-      var existingPaths = prodFolders.map(function(g) { return g.path; });
-      for (var i = 0; i < segments.length; i++) {
-        var partial = '/' + segments.slice(0, i + 1).join('/');
-        if (existingPaths.indexOf(partial) < 0) pathsToCreate.push(partial);
-      }
-
-      if (pathsToCreate.length === 0) { alert('Folder already exists.'); return; }
-
-      // Enforce max 12 subfolders per parent
-      var parentPath = segments.length > 1 ? '/' + segments.slice(0, segments.length - 1).join('/') : null;
-      var siblings = parentPath ? getChildFolders(parentPath) : getRootFolders();
+      var siblings = parentId ? getChildFolders(parentId) : getRootFolders();
       if (siblings.length >= 12) { alert('A folder can have at most 12 subfolders.'); return; }
-
-      var createNext = function(idx) {
-        if (idx >= pathsToCreate.length) {
+      fetch('/api/folders', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({name: name, parent_id: parentId, color: color})})
+        .then(function(r) { if (!r.ok) return r.json().then(function(d) { throw new Error(d.error || 'Failed'); }); return r.json(); })
+        .then(function() {
           if (draftId) fetch('/api/drafts/' + draftId, {method: 'DELETE'});
           CardStack.remove(card);
           refreshData();
-          return;
-        }
-        var p = pathsToCreate[idx];
-        var segs = p.split('/').filter(Boolean);
-        var name = segs[segs.length - 1];
-        var c = (idx === pathsToCreate.length - 1) ? color : DEFAULT_COLOR;
-        fetch('/api/folders', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({path: p, name: name, color: c})})
-          .then(function(r) { if (!r.ok) return r.json().then(function(d) { throw new Error(d.error || 'Failed'); }); return r.json(); })
-          .then(function() { createNext(idx + 1); })
-          .catch(function(err) { alert(err.message || 'Failed.'); });
-      };
-      createNext(0);
+        })
+        .catch(function(err) { alert(err.message || 'Failed.'); });
     }
   }
 
@@ -2363,6 +2307,7 @@ function openFolderModal(existingFolder) {
 function closeFolderModal() {
   CardStack.dismissTop();
 }
+
 // --- Pattern helpers (new format: "set:0,1,3" or "interval:2") ---
 var PATTERN_DAY_LETTERS = ['M','T','W','R','F','S','U']; // index 0-6 = Mon-Sun
 
@@ -2727,6 +2672,168 @@ function parseFirstDay(text) {
 }
 function parseTimeStr(s){s=s.trim().toLowerCase();let m=s.match(/^(\d{1,2}):(\d{2})\s*(am|pm)$/i);if(m){let h=parseInt(m[1]);if(m[3]==='pm'&&h<12)h+=12;if(m[3]==='am'&&h===12)h=0;return String(h).padStart(2,'0')+':'+m[2];}m=s.match(/^(\d{1,2}):(\d{2})$/);if(m)return m[1].padStart(2,'0')+':'+m[2];m=s.match(/^(\d{1,2})\s*(am|pm)$/i);if(m){let h=parseInt(m[1]);if(m[2]==='pm'&&h<12)h+=12;if(m[2]==='am'&&h===12)h=0;return String(h).padStart(2,'0')+':00';}return null;}
 function dateTimeToLocal(dateStr, timeStr) { return dateStr + 'T' + timeStr; }
+
+/* ============================================================
+   TIME EXPRESSION PREPROCESSOR
+   Converts natural language time expressions to UTC ISO strings
+   before sending to the LLM, saving tokens on simple calendar math.
+   ============================================================ */
+
+/**
+ * Preprocess a user message, replacing recognized time expressions
+ * with UTC ISO datetime strings. Returns the modified message.
+ * Uses the user's timezone from prodUserTimezone global.
+ */
+function preprocessTimeExpressions(text) {
+  var tz = (typeof prodUserTimezone !== 'undefined' && prodUserTimezone) || 'UTC';
+  var now = new Date();
+
+  // Build "today" in user's local perspective
+  var todayLocal = localDate(now, tz);
+
+  var replacements = [
+    // "today" / "today at 3pm"
+    { pattern: /\btoday(?:\s+at\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm)?))?/gi, fn: function(m, time) {
+      if (time) return toUTCISO(todayLocal, parseTimeStr(time), tz);
+      return '[today=' + todayLocal.toISOString().slice(0,10) + ']';
+    }},
+    // "tomorrow" / "tomorrow at 5pm"
+    { pattern: /\btomorrow(?:\s+at\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm)?))?/gi, fn: function(m, time) {
+      var d = addDays(todayLocal, 1);
+      if (time) return toUTCISO(d, parseTimeStr(time), tz);
+      return '[tomorrow=' + d.toISOString().slice(0,10) + ']';
+    }},
+    // "yesterday"
+    { pattern: /\byesterday\b/gi, fn: function() {
+      var d = addDays(todayLocal, -1);
+      return '[yesterday=' + d.toISOString().slice(0,10) + ']';
+    }},
+    // "next Monday" / "next Tuesday" etc
+    { pattern: /\bnext\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)(?:\s+at\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm)?))?/gi, fn: function(m, day, time) {
+      var d = nextWeekday(todayLocal, dayNameToNum(day));
+      if (time) return toUTCISO(d, parseTimeStr(time), tz);
+      return '[next ' + day + '=' + d.toISOString().slice(0,10) + ']';
+    }},
+    // "this Monday" / "this Friday" etc
+    { pattern: /\bthis\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)(?:\s+at\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm)?))?/gi, fn: function(m, day, time) {
+      var d = thisWeekday(todayLocal, dayNameToNum(day));
+      if (time) return toUTCISO(d, parseTimeStr(time), tz);
+      return '[this ' + day + '=' + d.toISOString().slice(0,10) + ']';
+    }},
+    // "in N hours"
+    { pattern: /\bin\s+(\d+)\s+hours?\b/gi, fn: function(m, n) {
+      var d = new Date(now.getTime() + parseInt(n) * 3600000);
+      return d.toISOString();
+    }},
+    // "in N minutes"
+    { pattern: /\bin\s+(\d+)\s+minutes?\b/gi, fn: function(m, n) {
+      var d = new Date(now.getTime() + parseInt(n) * 60000);
+      return d.toISOString();
+    }},
+    // "in N days"
+    { pattern: /\bin\s+(\d+)\s+days?\b/gi, fn: function(m, n) {
+      var d = addDays(todayLocal, parseInt(n));
+      return '[in ' + n + ' days=' + d.toISOString().slice(0,10) + ']';
+    }},
+    // Standalone time: "at 3pm", "at 14:30", "at 9:00 am"
+    { pattern: /\bat\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)\b/gi, fn: function(m, time) {
+      var parsed = parseTimeStr(time);
+      if (parsed !== null) return '[at ' + formatTime24(parsed) + ']';
+      return m;
+    }},
+  ];
+
+  for (var i = 0; i < replacements.length; i++) {
+    text = text.replace(replacements[i].pattern, replacements[i].fn);
+  }
+  return text;
+}
+
+// --- Helpers ---
+
+function parseTimeStr(str) {
+  // Parse "3pm", "3:30pm", "15:00", "9 am", "9:30 AM" → minutes since midnight
+  if (!str) return null;
+  str = str.trim().toLowerCase();
+  var pm = str.indexOf('pm') >= 0;
+  var am = str.indexOf('am') >= 0;
+  str = str.replace(/[ap]m/i, '').trim();
+
+  var parts = str.split(':');
+  var h = parseInt(parts[0]);
+  var m = parts.length > 1 ? parseInt(parts[1]) : 0;
+  if (isNaN(h)) return null;
+
+  if (pm && h < 12) h += 12;
+  if (am && h === 12) h = 0;
+
+  return h * 60 + m;
+}
+
+function formatTime24(minutes) {
+  var h = Math.floor(minutes / 60);
+  var m = minutes % 60;
+  return (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m;
+}
+
+function dayNameToNum(name) {
+  var map = { 'sunday': 0, 'monday': 1, 'tuesday': 2, 'wednesday': 3, 'thursday': 4, 'friday': 5, 'saturday': 6 };
+  return map[name.toLowerCase()] || 0;
+}
+
+function nextWeekday(fromDate, targetDay) {
+  // Returns the NEXT occurrence of targetDay (0=Sun, 1=Mon, ...) after fromDate
+  var d = new Date(fromDate);
+  var current = d.getDay();
+  var diff = targetDay - current;
+  if (diff <= 0) diff += 7;
+  d.setDate(d.getDate() + diff);
+  return d;
+}
+
+function thisWeekday(fromDate, targetDay) {
+  // Returns the occurrence of targetDay in the current week
+  var d = new Date(fromDate);
+  var current = d.getDay();
+  var diff = targetDay - current;
+  d.setDate(d.getDate() + diff);
+  return d;
+}
+
+function addDays(date, n) {
+  var d = new Date(date);
+  d.setDate(d.getDate() + n);
+  return d;
+}
+
+function localDate(date, tz) {
+  // Get "today" as a Date object in the user's timezone
+  try {
+    var str = date.toLocaleDateString('en-CA', { timeZone: tz }); // YYYY-MM-DD
+    return new Date(str + 'T00:00:00');
+  } catch (e) {
+    return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  }
+}
+
+function toUTCISO(dateObj, minutesSinceMidnight, tz) {
+  // Combine a date + time-of-day → UTC ISO string
+  if (minutesSinceMidnight === null) return dateObj.toISOString().slice(0,10);
+  var h = Math.floor(minutesSinceMidnight / 60);
+  var m = minutesSinceMidnight % 60;
+  // Create a date string in the user's timezone, then convert to UTC
+  var localStr = dateObj.toISOString().slice(0,10) + 'T' + formatTime24(minutesSinceMidnight) + ':00';
+  try {
+    // Use Intl to figure out the offset
+    var testDate = new Date(localStr + 'Z');
+    var formatter = new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: 'numeric', hour12: false, timeZoneName: 'shortOffset' });
+    // Approximate: just return the local string with a note for the LLM
+    return localStr + ' [' + tz + ']';
+  } catch (e) {
+    return localStr + 'Z';
+  }
+}
+
 // --- Smart Input Modal ---
 let smartIsRoutine = false;
 let draftAutoSaveTimer = null;
@@ -2856,10 +2963,10 @@ function resumeDraft(draftId) {
     const draft=all.find(t=>t.draft_id===draftId);
     if(!draft)return;
     if(draft.draft_type==='note') {
-      var noteData = {name: draft.name||'', date: draft.date||null, folder: draft.folder||null, _draftId: draft.draft_id};
+      var noteData = {name: draft.name||'', date: draft.date||null, folder_id: draft.folder_id||null, _draftId: draft.draft_id};
       openNoteAdd(noteData);
     } else if(draft.draft_type==='folder') {
-      var folderData = {path: draft.name ? '/'+draft.name : '', color: draft.color||DEFAULT_COLOR, _draftId: draft.draft_id};
+      var folderData = {name: draft.name || '', parent_id: draft.parent_id || null, color: draft.color||DEFAULT_COLOR, _draftId: draft.draft_id};
       openFolderModal(folderData);
     } else {
       openSmartModal(!!draft.is_routine_draft,draft);
@@ -2994,6 +3101,7 @@ function saveSmartTask() {
 function openSnoozeTask(taskId) { closeProdDropdowns();const t=prodAllTasks.find(x=>x.task_id===taskId);if(!t)return;document.getElementById('psm-id').value=taskId;document.getElementById('psm-name-display').textContent=t.name;document.getElementById('psm-assign').value=t.assign_datetime?toLocalDatetimeValue(t.assign_datetime):'';document.getElementById('psm-due').value=t.due_datetime?toLocalDatetimeValue(t.due_datetime):'';document.getElementById('prod-snooze-modal').classList.add('open'); }
 function closeSnoozeModal() { document.getElementById('prod-snooze-modal').classList.remove('open'); }
 function saveSnooze() { const taskId=document.getElementById('psm-id').value;const data={assign_datetime:localInputToUTC(document.getElementById('psm-assign').value),due_datetime:localInputToUTC(document.getElementById('psm-due').value),due_status:'pending'};fetch('/api/tasks/'+taskId,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(r=>{if(!r.ok)throw 0;return r.json();}).then(()=>{closeSnoozeModal();loadProductivityData();}).catch(()=>alert('Failed.')); }
+
 // --- Goals & Data Collection ---
 // loadGoalsData — kept for backward compat from goal save/delete actions
 function loadGoalsData() { refreshData(); }
@@ -3054,6 +3162,7 @@ function renderGoalChart(area,displayName,unit,goalName,dailyData) {
   const statsHtml=`<div style="display:flex;gap:24px;margin-top:12px;font-size:0.85rem;color:#5f6368"><span><b>Min:</b> ${minVal.toFixed(1)} ${escHtml(unit)}</span><span><b>Max:</b> ${maxVal.toFixed(1)} ${escHtml(unit)}</span><span><b>Avg:</b> ${avgVal.toFixed(1)} ${escHtml(unit)}</span><span><b>Days:</b> ${n}</span></div>`;
   area.innerHTML=`<div class="productivity-container"><div class="prod-toolbar"><h2>${escHtml(displayName)}</h2><div class="prod-toolbar-btns"><button class="prod-add-btn secondary" onclick="openLogModal('${escHtml(goalName)}')"><span class="material-symbols-outlined">add</span> Log</button><button class="prod-add-btn secondary" onclick="loadProductivityData()"><span class="material-symbols-outlined">arrow_back</span> Back</button></div></div><div class="prod-section"><div class="prod-section-header"><span class="material-symbols-outlined">show_chart</span> ${escHtml(displayName)} over time${unit?' ('+escHtml(unit)+')':''}</div><div class="prod-section-body" style="overflow-x:auto"><svg width="${chartW}" height="${chartH}" style="display:block;max-width:100%">${yLabels}<path d="${pathD}" fill="none" stroke="#1a73e8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>${dots}${xLabels}<line x1="${padL}" x2="${chartW-padR}" y1="${padT+plotH}" y2="${padT+plotH}" stroke="#dadce0" stroke-width="1"/><line x1="${padL}" x2="${padL}" y1="${padT}" y2="${padT+plotH}" stroke="#dadce0" stroke-width="1"/></svg>${statsHtml}</div></div><div class="prod-section"><div class="prod-section-header"><span class="material-symbols-outlined">table_view</span> Recent Entries</div><div class="prod-section-body"><table class="users-table" style="font-size:0.85rem"><thead><tr><th>Date</th><th>Value${unit?' ('+escHtml(unit)+')':''}</th></tr></thead><tbody>${dailyData.slice().reverse().slice(0,30).map(d=>`<tr><td>${d.date}</td><td>${d.value}</td></tr>`).join('')}</tbody></table></div></div></div>`;
 }
+
 // --- Calendar ---
 function initWeekStart() {
   const todayParts=getTodayStr().split('-').map(Number);const d=new Date(todayParts[0],todayParts[1]-1,todayParts[2]);const day=d.getDay();weekCalStart=new Date(d);weekCalStart.setDate(weekCalStart.getDate()-day);
@@ -3099,7 +3208,7 @@ function renderCalendar(el, monthData) {
     (prodAllTasks || []).forEach(function(t) {
       if (!t.end_datetime || t.draft) return;
       if (utcToLocalDate(t.end_datetime) === dateStr) {
-        results.push({task_id: t.task_id, name: t.name, end_datetime: t.end_datetime, folder: t.folder});
+        results.push({task_id: t.task_id, name: t.name, end_datetime: t.end_datetime, folder_id: t.folder_id});
       }
     });
     return results;
@@ -3119,15 +3228,15 @@ function renderCalendar(el, monthData) {
     html += '<div class="mo-day-num">' + prevD + '</div>';
     html += '<div class="mo-day-tasks">';
     for (var pi = 0; pi < prevTasks.length; pi++) {
-      var ptColor = getFolderColor(prevTasks[pi].folder) || DEFAULT_COLOR;
+      var ptColor = getFolderColor(prevTasks[pi].folder_id) || DEFAULT_COLOR;
       html += '<div class="mo-day-task mo-day-note" style="background:' + escHtml(ptColor) + '">' + escHtml(prevTasks[pi].name) + '</div>';
     }
     for (var pni = 0; pni < prevNotes.length; pni++) {
-      var pnColor = getFolderColor(prevNotes[pni].folder) || DEFAULT_COLOR;
+      var pnColor = getFolderColor(prevNotes[pni].folder_id) || DEFAULT_COLOR;
       html += '<div class="mo-day-task mo-day-note" style="background:' + escHtml(pnColor) + '">' + escHtml(prevNotes[pni].name) + '</div>';
     }
     for (var ppi = 0; ppi < prevPlanned.length; ppi++) {
-      var ppColor = getFolderColor(prevPlanned[ppi].folder) || DEFAULT_COLOR;
+      var ppColor = getFolderColor(prevPlanned[ppi].folder_id) || DEFAULT_COLOR;
       html += '<div class="mo-day-task mo-day-planned" style="border-color:' + escHtml(ppColor) + ';color:' + escHtml(ppColor) + '">' + escHtml(prevPlanned[ppi].name) + '</div>';
     }
     html += '</div></div>';
@@ -3163,15 +3272,15 @@ function renderCalendar(el, monthData) {
     html += '<div class="mo-day-num">' + d + '</div>';
     html += '<div class="mo-day-tasks">';
     for (var ti = 0; ti < dayTasks.length; ti++) {
-      var tColor = getFolderColor(dayTasks[ti].folder) || DEFAULT_COLOR;
+      var tColor = getFolderColor(dayTasks[ti].folder_id) || DEFAULT_COLOR;
       html += '<div class="mo-day-task mo-day-note" style="background:' + escHtml(tColor) + '">' + escHtml(dayTasks[ti].name) + '</div>';
     }
     for (var ni = 0; ni < dayNotes.length; ni++) {
-      var nColor = getFolderColor(dayNotes[ni].folder) || DEFAULT_COLOR;
+      var nColor = getFolderColor(dayNotes[ni].folder_id) || DEFAULT_COLOR;
       html += '<div class="mo-day-task mo-day-note" style="background:' + escHtml(nColor) + '">' + escHtml(dayNotes[ni].name) + '</div>';
     }
     for (var pli = 0; pli < dayPlanned.length; pli++) {
-      var plColor = getFolderColor(dayPlanned[pli].folder) || DEFAULT_COLOR;
+      var plColor = getFolderColor(dayPlanned[pli].folder_id) || DEFAULT_COLOR;
       html += '<div class="mo-day-task mo-day-planned" style="border-color:' + escHtml(plColor) + ';color:' + escHtml(plColor) + '">' + escHtml(dayPlanned[pli].name) + '</div>';
     }
     html += '</div></div>';
@@ -3191,15 +3300,15 @@ function renderCalendar(el, monthData) {
     html += '<div class="mo-day-num">' + nextD + '</div>';
     html += '<div class="mo-day-tasks">';
     for (var tni = 0; tni < nextTasks.length; tni++) {
-      var ntColor = getFolderColor(nextTasks[tni].folder) || DEFAULT_COLOR;
+      var ntColor = getFolderColor(nextTasks[tni].folder_id) || DEFAULT_COLOR;
       html += '<div class="mo-day-task mo-day-note" style="background:' + escHtml(ntColor) + '">' + escHtml(nextTasks[tni].name) + '</div>';
     }
     for (var nni = 0; nni < nextNotes.length; nni++) {
-      var nnColor = getFolderColor(nextNotes[nni].folder) || DEFAULT_COLOR;
+      var nnColor = getFolderColor(nextNotes[nni].folder_id) || DEFAULT_COLOR;
       html += '<div class="mo-day-task mo-day-note" style="background:' + escHtml(nnColor) + '">' + escHtml(nextNotes[nni].name) + '</div>';
     }
     for (var npli = 0; npli < nextPlanned.length; npli++) {
-      var nplColor = getFolderColor(nextPlanned[npli].folder) || DEFAULT_COLOR;
+      var nplColor = getFolderColor(nextPlanned[npli].folder_id) || DEFAULT_COLOR;
       html += '<div class="mo-day-task mo-day-planned" style="border-color:' + escHtml(nplColor) + ';color:' + escHtml(nplColor) + '">' + escHtml(nextPlanned[npli].name) + '</div>';
     }
     html += '</div></div>';
@@ -3287,7 +3396,7 @@ function renderWeekView() {
       let endFrac = endIso ? getLocalHourFrac(endIso) : startFrac + 0.25;
       if (endFrac <= startFrac) endFrac = startFrac + (1/60);
       const durationMin = (endFrac - startFrac) * 60;
-      sessions.push({ taskId: t.task_id, taskName: t.name, path: t.path || '/', dayStr, startFrac, endFrac, durationMin, sessionIndex: idx + 1, totalSessions, color: getFolderColor(t.folder) });
+      sessions.push({ taskId: t.task_id, taskName: t.name, path: t.path || '/', dayStr, startFrac, endFrac, durationMin, sessionIndex: idx + 1, totalSessions, color: getFolderColor(t.folder_id) });
     });
   });
 
@@ -3517,7 +3626,7 @@ function renderWeekView() {
         var aTop = TICK_MARGIN + aStartFrac * HOUR_PX;
         var aHeight = Math.max(4, (aEndFrac - aStartFrac) * HOUR_PX - 2);
         var showLabel = aHeight >= 14;
-        var aColor = getFolderColor(a.folder) || '#5f6368';
+        var aColor = getFolderColor(a.folder_id) || '#5f6368';
         var isPlanned = !!a.is_planned;
         var cssClass = isPlanned ? 'wk-action wk-action-planned' : 'wk-action';
         var style = 'top:' + aTop.toFixed(1) + 'px;height:' + aHeight.toFixed(1) + 'px;';
@@ -3737,6 +3846,7 @@ function changeWeek(delta) {
   if (currentPage === 'weekly') { renderWeekView(); updateWeeklySubtab(); }
   else if (currentPage !== 'dashboard') loadCalendar();
 }
+
 // === Right-click context menu ===
 (function() {
   var menu = null;
@@ -3789,7 +3899,7 @@ function changeWeek(delta) {
       submenu.innerHTML = prodDrafts.map(function(d) {
         var icon, label;
         if (d.draft_type === 'note') { icon = 'note'; label = 'Note'; }
-        else if (d.draft_type === 'folder') { icon = 'folder'; label = 'Group'; }
+        else if (d.draft_type === 'folder') { icon = 'folder'; label = 'Folder'; }
         else if (d.is_routine_draft) { icon = 'repeat'; label = 'Routine'; }
         else { icon = 'draft'; label = 'Task'; }
         return '<button class="ctx-submenu-item" data-draft-id="' + d.draft_id + '">' +
@@ -3852,6 +3962,7 @@ function changeWeek(delta) {
     if (e.key === 'Escape') closeCtxMenu();
   });
 })();
+
 // === Card Stack Manager ===
 var CardStack = {
   stack: [],
@@ -3983,6 +4094,7 @@ window.CardStack = CardStack;
 
 // Helper: scoped query inside a card element
 function _q(el, cls) { return el.querySelector('.' + cls); }
+
 // === QuickAdd Factory ===
 function createQuickAddCard() {
   var cardEl = document.createElement('div');
@@ -4022,10 +4134,8 @@ function createQuickAddCard() {
     var folderVal = folderInput.value.trim();
     var color = DEFAULT_COLOR;
     if (folderVal) {
-      var path = folderVal.startsWith('/') ? folderVal : '/' + folderVal;
-      if (path.endsWith('/')) path = path.slice(0, -1);
-      var found = getFolderColor(path);
-      if (found) color = found;
+      var folder = resolveFolderInput(folderVal);
+      if (folder && folder.color) color = folder.color;
     }
     cardEl.style.borderColor = color;
     cardEl.style.setProperty('--qa-border-color', color);
@@ -4128,14 +4238,9 @@ function createQuickAddCard() {
     }
     if (!dueDt) { alert('Could not parse due date. Try: "today", "friday 10 am", "next monday", etc.'); _q(cardEl, 'qa-due').focus(); return; }
 
-    var folder = null;
-    if (folderVal) {
-      if (!folderVal.startsWith('/')) folderVal = '/' + folderVal;
-      if (folderVal.endsWith('/')) folderVal = folderVal.slice(0, -1);
-      folder = folderVal;
-    }
-
-    var data = { name: nameVal, assign_datetime: assignDt, due_datetime: dueDt, folder: folder, path: '/', draft: false };
+    var folder = folderVal ? resolveFolderInput(folderVal) : null;
+    if (folderVal && !folder) { alert('Folder not found. Create it first or use its exact name.'); _q(cardEl, 'qa-folder').focus(); return; }
+    var data = { name: nameVal, assign_datetime: assignDt, due_datetime: dueDt, folder_id: folder ? folder.id : null, path: '/', draft: false };
 
     var createFoldersThenTask = function() {
       fetch('/api/tasks', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data)})
@@ -4144,29 +4249,7 @@ function createQuickAddCard() {
         .catch(function(err) { alert(err.message || 'Failed to create task.'); });
     };
 
-    if (folder) {
-      var segments = folder.split('/').filter(Boolean);
-      var existingPaths = prodFolders.map(function(g) { return g.path; });
-      var pathsToCreate = [];
-      for (var qi = 0; qi < segments.length; qi++) {
-        var partial = '/' + segments.slice(0, qi + 1).join('/');
-        if (existingPaths.indexOf(partial) < 0) pathsToCreate.push(partial);
-      }
-      if (pathsToCreate.length === 0) { createFoldersThenTask(); return; }
-      var createNext = function(idx) {
-        if (idx >= pathsToCreate.length) { createFoldersThenTask(); return; }
-        var p = pathsToCreate[idx];
-        var segs = p.split('/').filter(Boolean);
-        var gName = segs[segs.length - 1];
-        fetch('/api/folders', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({path: p, name: gName, color: DEFAULT_COLOR})})
-          .then(function(r) { if (!r.ok) return r.json().then(function(d) { throw new Error(d.error || 'Failed'); }); return r.json(); })
-          .then(function() { createNext(idx + 1); })
-          .catch(function() { createNext(idx + 1); });
-      };
-      createNext(0);
-    } else {
-      createFoldersThenTask();
-    }
+    createFoldersThenTask();
   }
 
   return card;
@@ -4209,7 +4292,7 @@ function submitQuickAddRoutine(card, cardEl, nameVal, assignVal, dueVal, folderV
 
   var routineData = {
     name: nameVal, assign_time: assignTime || '00:00', due_time: dueTime || '23:59',
-    first_day: firstDay, pattern: pattern, folder: null
+    first_day: firstDay, pattern: pattern, folder_id: null
   };
 
   if (isEndDateMode) {
@@ -4226,11 +4309,9 @@ function submitQuickAddRoutine(card, cardEl, nameVal, assignVal, dueVal, folderV
     routineData.max_instances = instVal;
   }
 
-  if (folderVal) {
-    if (!folderVal.startsWith('/')) folderVal = '/' + folderVal;
-    if (folderVal.endsWith('/')) folderVal = folderVal.slice(0, -1);
-    routineData.folder = folderVal;
-  }
+  var routineFolder = folderVal ? resolveFolderInput(folderVal) : null;
+  if (folderVal && !routineFolder) { alert('Folder not found. Create it first or use its exact name.'); _q(cardEl, 'qa-folder').focus(); return; }
+  routineData.folder_id = routineFolder ? routineFolder.id : null;
 
   var createRoutine = function() {
     fetch('/api/routines', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(routineData)})
@@ -4239,29 +4320,7 @@ function submitQuickAddRoutine(card, cardEl, nameVal, assignVal, dueVal, folderV
       .catch(function(err) { alert(err.message || 'Failed to create routine.'); });
   };
 
-  if (routineData.folder) {
-    var segments = routineData.folder.split('/').filter(Boolean);
-    var existingPaths = prodFolders.map(function(g) { return g.path; });
-    var pathsToCreate = [];
-    for (var qi = 0; qi < segments.length; qi++) {
-      var partial = '/' + segments.slice(0, qi + 1).join('/');
-      if (existingPaths.indexOf(partial) < 0) pathsToCreate.push(partial);
-    }
-    if (pathsToCreate.length === 0) { createRoutine(); return; }
-    var createNext = function(idx) {
-      if (idx >= pathsToCreate.length) { createRoutine(); return; }
-      var p = pathsToCreate[idx];
-      var segs = p.split('/').filter(Boolean);
-      var gName = segs[segs.length - 1];
-      fetch('/api/folders', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({path: p, name: gName, color: DEFAULT_COLOR})})
-        .then(function(r) { return r.json(); })
-        .then(function() { createNext(idx + 1); })
-        .catch(function() { createNext(idx + 1); });
-    };
-    createNext(0);
-  } else {
-    createRoutine();
-  }
+  createRoutine();
 }
 
 window.openQuickAdd = function() {
@@ -4310,10 +4369,8 @@ function createActionCard() {
     var folderVal = folderInput.value.trim();
     var color = '#5f6368';
     if (folderVal) {
-      var path = folderVal.startsWith('/') ? folderVal : '/' + folderVal;
-      if (path.endsWith('/')) path = path.slice(0, -1);
-      var found = getFolderColor(path);
-      if (found) color = found;
+      var folder = resolveFolderInput(folderVal);
+      if (folder && folder.color) color = folder.color;
     }
     cardEl.style.borderColor = color;
     cardEl.style.setProperty('--qa-border-color', color);
@@ -4414,14 +4471,9 @@ function createActionCard() {
     }
     if (!endDt) { alert('Could not parse end time. Try: "today 10 am", "tomorrow 5 pm", etc.'); _q(cardEl, 'qa-end-dt').focus(); return; }
 
-    var folder = null;
-    if (folderVal) {
-      if (!folderVal.startsWith('/')) folderVal = '/' + folderVal;
-      if (folderVal.endsWith('/')) folderVal = folderVal.slice(0, -1);
-      folder = folderVal;
-    }
-
-    var data = { name: nameVal, start_datetime: startDt, end_datetime: endDt, folder: folder, is_planned: false };
+    var folder = folderVal ? resolveFolderInput(folderVal) : null;
+    if (folderVal && !folder) { alert('Folder not found. Create it first or use its exact name.'); _q(cardEl, 'qa-folder').focus(); return; }
+    var data = { name: nameVal, start_datetime: startDt, end_datetime: endDt, folder_id: folder ? folder.id : null, is_planned: false };
 
     var createFoldersThenAction = function() {
       fetch('/api/actions', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data)})
@@ -4430,29 +4482,7 @@ function createActionCard() {
         .catch(function(err) { alert(err.message || 'Failed to create action.'); });
     };
 
-    if (folder) {
-      var segments = folder.split('/').filter(Boolean);
-      var existingPaths = prodFolders.map(function(g) { return g.path; });
-      var pathsToCreate = [];
-      for (var qi = 0; qi < segments.length; qi++) {
-        var partial = '/' + segments.slice(0, qi + 1).join('/');
-        if (existingPaths.indexOf(partial) < 0) pathsToCreate.push(partial);
-      }
-      if (pathsToCreate.length === 0) { createFoldersThenAction(); return; }
-      var createNext = function(idx) {
-        if (idx >= pathsToCreate.length) { createFoldersThenAction(); return; }
-        var p = pathsToCreate[idx];
-        var segs = p.split('/').filter(Boolean);
-        var gName = segs[segs.length - 1];
-        fetch('/api/folders', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({path: p, name: gName, color: DEFAULT_COLOR})})
-          .then(function(r) { return r.json(); })
-          .then(function() { createNext(idx + 1); })
-          .catch(function() { createNext(idx + 1); });
-      };
-      createNext(0);
-    } else {
-      createFoldersThenAction();
-    }
+    createFoldersThenAction();
   }
 
   return card;
@@ -4496,7 +4526,7 @@ function submitActionSchedule(card, cardEl, nameVal, startVal, endVal, folderVal
 
   var scheduleData = {
     name: nameVal, start_time: startTime || '08:00', end_time: endTime || '09:00',
-    first_day: firstDay, pattern: pattern, folder: null
+    first_day: firstDay, pattern: pattern, folder_id: null
   };
 
   if (isEndDateMode) {
@@ -4513,11 +4543,9 @@ function submitActionSchedule(card, cardEl, nameVal, startVal, endVal, folderVal
     scheduleData.max_instances = instVal;
   }
 
-  if (folderVal) {
-    if (!folderVal.startsWith('/')) folderVal = '/' + folderVal;
-    if (folderVal.endsWith('/')) folderVal = folderVal.slice(0, -1);
-    scheduleData.folder = folderVal;
-  }
+  var scheduleFolder = folderVal ? resolveFolderInput(folderVal) : null;
+  if (folderVal && !scheduleFolder) { alert('Folder not found. Create it first or use its exact name.'); _q(cardEl, 'qa-folder').focus(); return; }
+  scheduleData.folder_id = scheduleFolder ? scheduleFolder.id : null;
 
   var createSchedule = function() {
     fetch('/api/schedules', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(scheduleData)})
@@ -4526,29 +4554,7 @@ function submitActionSchedule(card, cardEl, nameVal, startVal, endVal, folderVal
       .catch(function(err) { alert(err.message || 'Failed to create schedule.'); });
   };
 
-  if (scheduleData.folder) {
-    var segments = scheduleData.folder.split('/').filter(Boolean);
-    var existingPaths = prodFolders.map(function(g) { return g.path; });
-    var pathsToCreate = [];
-    for (var qi = 0; qi < segments.length; qi++) {
-      var partial = '/' + segments.slice(0, qi + 1).join('/');
-      if (existingPaths.indexOf(partial) < 0) pathsToCreate.push(partial);
-    }
-    if (pathsToCreate.length === 0) { createSchedule(); return; }
-    var createNext = function(idx) {
-      if (idx >= pathsToCreate.length) { createSchedule(); return; }
-      var p = pathsToCreate[idx];
-      var segs = p.split('/').filter(Boolean);
-      var gName = segs[segs.length - 1];
-      fetch('/api/folders', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({path: p, name: gName, color: DEFAULT_COLOR})})
-        .then(function(r) { return r.json(); })
-        .then(function() { createNext(idx + 1); })
-        .catch(function() { createNext(idx + 1); });
-    };
-    createNext(0);
-  } else {
-    createSchedule();
-  }
+  createSchedule();
 }
 
 window.openActionAdd = function() {
@@ -4604,10 +4610,8 @@ function createNoteAddCard(existingNote) {
     var folderVal = folderInput.value.trim();
     var color = DEFAULT_COLOR;
     if (folderVal) {
-      var path = folderVal.startsWith('/') ? folderVal : '/' + folderVal;
-      if (path.endsWith('/')) path = path.slice(0, -1);
-      var found = getFolderColor(path);
-      if (found) color = found;
+      var folder = resolveFolderInput(folderVal);
+      if (folder && folder.color) color = folder.color;
     }
     cardEl.style.borderColor = color;
     cardEl.style.setProperty('--qa-border-color', color);
@@ -4670,7 +4674,7 @@ function createNoteAddCard(existingNote) {
       dd.value = parseInt(parts[2], 10) || '';
       yy.value = parts[0] ? parts[0].slice(2) : '';
     }
-    folderInput.value = existingNote.folder || '';
+    folderInput.value = existingNote.folder_id && getFolderById(existingNote.folder_id) ? getFolderLabel(getFolderById(existingNote.folder_id)) : '';
   }
 
   updateColor();
@@ -4689,7 +4693,7 @@ function createNoteAddCard(existingNote) {
       name: nameVal,
       draft_type: 'note',
       date: null,
-      folder: folderInput.value.trim() || null
+      folder_id: resolveFolderInput(folderInput.value.trim()) ? resolveFolderInput(folderInput.value.trim()).id : null
     };
     var mmV = mm.value.trim(), ddV = dd.value.trim(), yyV = yy.value.trim();
     if (mmV && ddV && yyV) {
@@ -4759,14 +4763,9 @@ function createNoteAddCard(existingNote) {
     if (isNaN(yyyy)) { alert('Invalid year.'); yy.focus(); return; }
 
     var dateStr = yyyy + '-' + String(mmI).padStart(2, '0') + '-' + String(ddI).padStart(2, '0');
-    var folder = null;
-    if (folderVal) {
-      if (!folderVal.startsWith('/')) folderVal = '/' + folderVal;
-      if (folderVal.endsWith('/')) folderVal = folderVal.slice(0, -1);
-      folder = folderVal;
-    }
-
-    var noteData = { name: nameVal, date: dateStr, folder: folder };
+    var folder = folderVal ? resolveFolderInput(folderVal) : null;
+    if (folderVal && !folder) { alert('Folder not found. Create it first or use its exact name.'); folderInput.focus(); return; }
+    var noteData = { name: nameVal, date: dateStr, folder_id: folder ? folder.id : null };
 
     var saveNote = function() {
       var url = editingNoteId ? '/api/notes/' + editingNoteId : '/api/notes';
@@ -4781,29 +4780,7 @@ function createNoteAddCard(existingNote) {
         .catch(function(err) { alert(err.message || 'Failed to save note.'); });
     };
 
-    if (folder) {
-      var segments = folder.split('/').filter(Boolean);
-      var existingPaths = prodFolders.map(function(g) { return g.path; });
-      var pathsToCreate = [];
-      for (var i = 0; i < segments.length; i++) {
-        var partial = '/' + segments.slice(0, i + 1).join('/');
-        if (existingPaths.indexOf(partial) < 0) pathsToCreate.push(partial);
-      }
-      if (pathsToCreate.length === 0) { saveNote(); return; }
-      var createNext = function(idx) {
-        if (idx >= pathsToCreate.length) { saveNote(); return; }
-        var p = pathsToCreate[idx];
-        var segs = p.split('/').filter(Boolean);
-        var gName = segs[segs.length - 1];
-        fetch('/api/folders', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({path: p, name: gName, color: DEFAULT_COLOR})})
-          .then(function(r) { if (!r.ok) return r.json().then(function(d) { throw new Error(d.error || 'Failed'); }); return r.json(); })
-          .then(function() { createNext(idx + 1); })
-          .catch(function() { createNext(idx + 1); });
-      };
-      createNext(0);
-    } else {
-      saveNote();
-    }
+    saveNote();
   }
 
   return card;
@@ -4829,166 +4806,7 @@ window.editNote = function(noteId) {
   var note = prodNotes.find(function(n) { return n.id === noteId; });
   if (note) openNoteAdd(note);
 };
-/* ============================================================
-   TIME EXPRESSION PREPROCESSOR
-   Converts natural language time expressions to UTC ISO strings
-   before sending to the LLM, saving tokens on simple calendar math.
-   ============================================================ */
 
-/**
- * Preprocess a user message, replacing recognized time expressions
- * with UTC ISO datetime strings. Returns the modified message.
- * Uses the user's timezone from prodUserTimezone global.
- */
-function preprocessTimeExpressions(text) {
-  var tz = (typeof prodUserTimezone !== 'undefined' && prodUserTimezone) || 'UTC';
-  var now = new Date();
-
-  // Build "today" in user's local perspective
-  var todayLocal = localDate(now, tz);
-
-  var replacements = [
-    // "today" / "today at 3pm"
-    { pattern: /\btoday(?:\s+at\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm)?))?/gi, fn: function(m, time) {
-      if (time) return toUTCISO(todayLocal, parseTimeStr(time), tz);
-      return '[today=' + todayLocal.toISOString().slice(0,10) + ']';
-    }},
-    // "tomorrow" / "tomorrow at 5pm"
-    { pattern: /\btomorrow(?:\s+at\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm)?))?/gi, fn: function(m, time) {
-      var d = addDays(todayLocal, 1);
-      if (time) return toUTCISO(d, parseTimeStr(time), tz);
-      return '[tomorrow=' + d.toISOString().slice(0,10) + ']';
-    }},
-    // "yesterday"
-    { pattern: /\byesterday\b/gi, fn: function() {
-      var d = addDays(todayLocal, -1);
-      return '[yesterday=' + d.toISOString().slice(0,10) + ']';
-    }},
-    // "next Monday" / "next Tuesday" etc
-    { pattern: /\bnext\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)(?:\s+at\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm)?))?/gi, fn: function(m, day, time) {
-      var d = nextWeekday(todayLocal, dayNameToNum(day));
-      if (time) return toUTCISO(d, parseTimeStr(time), tz);
-      return '[next ' + day + '=' + d.toISOString().slice(0,10) + ']';
-    }},
-    // "this Monday" / "this Friday" etc
-    { pattern: /\bthis\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)(?:\s+at\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm)?))?/gi, fn: function(m, day, time) {
-      var d = thisWeekday(todayLocal, dayNameToNum(day));
-      if (time) return toUTCISO(d, parseTimeStr(time), tz);
-      return '[this ' + day + '=' + d.toISOString().slice(0,10) + ']';
-    }},
-    // "in N hours"
-    { pattern: /\bin\s+(\d+)\s+hours?\b/gi, fn: function(m, n) {
-      var d = new Date(now.getTime() + parseInt(n) * 3600000);
-      return d.toISOString();
-    }},
-    // "in N minutes"
-    { pattern: /\bin\s+(\d+)\s+minutes?\b/gi, fn: function(m, n) {
-      var d = new Date(now.getTime() + parseInt(n) * 60000);
-      return d.toISOString();
-    }},
-    // "in N days"
-    { pattern: /\bin\s+(\d+)\s+days?\b/gi, fn: function(m, n) {
-      var d = addDays(todayLocal, parseInt(n));
-      return '[in ' + n + ' days=' + d.toISOString().slice(0,10) + ']';
-    }},
-    // Standalone time: "at 3pm", "at 14:30", "at 9:00 am"
-    { pattern: /\bat\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)\b/gi, fn: function(m, time) {
-      var parsed = parseTimeStr(time);
-      if (parsed !== null) return '[at ' + formatTime24(parsed) + ']';
-      return m;
-    }},
-  ];
-
-  for (var i = 0; i < replacements.length; i++) {
-    text = text.replace(replacements[i].pattern, replacements[i].fn);
-  }
-  return text;
-}
-
-// --- Helpers ---
-
-function parseTimeStr(str) {
-  // Parse "3pm", "3:30pm", "15:00", "9 am", "9:30 AM" → minutes since midnight
-  if (!str) return null;
-  str = str.trim().toLowerCase();
-  var pm = str.indexOf('pm') >= 0;
-  var am = str.indexOf('am') >= 0;
-  str = str.replace(/[ap]m/i, '').trim();
-
-  var parts = str.split(':');
-  var h = parseInt(parts[0]);
-  var m = parts.length > 1 ? parseInt(parts[1]) : 0;
-  if (isNaN(h)) return null;
-
-  if (pm && h < 12) h += 12;
-  if (am && h === 12) h = 0;
-
-  return h * 60 + m;
-}
-
-function formatTime24(minutes) {
-  var h = Math.floor(minutes / 60);
-  var m = minutes % 60;
-  return (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m;
-}
-
-function dayNameToNum(name) {
-  var map = { 'sunday': 0, 'monday': 1, 'tuesday': 2, 'wednesday': 3, 'thursday': 4, 'friday': 5, 'saturday': 6 };
-  return map[name.toLowerCase()] || 0;
-}
-
-function nextWeekday(fromDate, targetDay) {
-  // Returns the NEXT occurrence of targetDay (0=Sun, 1=Mon, ...) after fromDate
-  var d = new Date(fromDate);
-  var current = d.getDay();
-  var diff = targetDay - current;
-  if (diff <= 0) diff += 7;
-  d.setDate(d.getDate() + diff);
-  return d;
-}
-
-function thisWeekday(fromDate, targetDay) {
-  // Returns the occurrence of targetDay in the current week
-  var d = new Date(fromDate);
-  var current = d.getDay();
-  var diff = targetDay - current;
-  d.setDate(d.getDate() + diff);
-  return d;
-}
-
-function addDays(date, n) {
-  var d = new Date(date);
-  d.setDate(d.getDate() + n);
-  return d;
-}
-
-function localDate(date, tz) {
-  // Get "today" as a Date object in the user's timezone
-  try {
-    var str = date.toLocaleDateString('en-CA', { timeZone: tz }); // YYYY-MM-DD
-    return new Date(str + 'T00:00:00');
-  } catch (e) {
-    return new Date(date.getFullYear(), date.getMonth(), date.getDate());
-  }
-}
-
-function toUTCISO(dateObj, minutesSinceMidnight, tz) {
-  // Combine a date + time-of-day → UTC ISO string
-  if (minutesSinceMidnight === null) return dateObj.toISOString().slice(0,10);
-  var h = Math.floor(minutesSinceMidnight / 60);
-  var m = minutesSinceMidnight % 60;
-  // Create a date string in the user's timezone, then convert to UTC
-  var localStr = dateObj.toISOString().slice(0,10) + 'T' + formatTime24(minutesSinceMidnight) + ':00';
-  try {
-    // Use Intl to figure out the offset
-    var testDate = new Date(localStr + 'Z');
-    var formatter = new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: 'numeric', hour12: false, timeZoneName: 'shortOffset' });
-    // Approximate: just return the local string with a note for the LLM
-    return localStr + ' [' + tz + ']';
-  } catch (e) {
-    return localStr + 'Z';
-  }
-}
 /* ============================================================
    AI TERMINAL — VS Code-style terminal for EfficientHypothesis
    ============================================================ */
