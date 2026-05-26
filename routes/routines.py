@@ -7,6 +7,7 @@ from config import (
     s3, PRODUCTIVITY_BUCKET, tasks_table, user_table,
     _require_auth, _pattern_matches_date,
 )
+from routes.folders import _apply_folder_ref
 
 routines_bp = Blueprint('routines', __name__)
 
@@ -54,9 +55,11 @@ def api_routines_create():
         "pattern": data.get("pattern", "interval:1"),
         "instances": 0,
         "folder": data.get("folder"),
+        "folder_id": data.get("folder_id"),
         "active": True,
         "created_at": datetime.datetime.utcnow().isoformat() + 'Z',
     }
+    template = _apply_folder_ref(email, template, data)
     # Store either max_instances or end_date, never both
     if data.get("end_date"):
         template["end_date"] = data["end_date"]
@@ -90,8 +93,10 @@ def api_routines_update(template_id):
 
     for t in templates:
         if t.get("id") == template_id:
+            if "folder" in data or "folder_id" in data:
+                data = {**data, **_apply_folder_ref(email, {}, data)}
             for field in ["name", "assign_time", "due_time", "first_day", "pattern",
-                          "max_instances", "end_date", "active", "folder"]:
+                          "max_instances", "end_date", "active", "folder", "folder_id"]:
                 if field in data:
                     t[field] = data[field]
             # If switching modes, remove the other field

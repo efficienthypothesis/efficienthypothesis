@@ -2,6 +2,7 @@ from flask import Blueprint, request, jsonify
 import datetime
 import uuid
 from config import actions_table, _require_auth, _validate_date_range
+from routes.folders import _apply_folder_ref
 
 actions_bp = Blueprint('actions', __name__)
 
@@ -51,9 +52,11 @@ def api_actions_create():
         "end_datetime": data.get("end_datetime"),
         "schedule_id": data.get("schedule_id"),
         "folder": data.get("folder"),
+        "folder_id": data.get("folder_id"),
         "is_planned": data.get("is_planned", False),
         "created_at": now,
     }
+    item = _apply_folder_ref(email, item, data)
     # AI draft support: mark as draft with TTL for auto-cleanup
     if data.get("ai_draft"):
         item["ai_draft"] = True
@@ -78,7 +81,18 @@ def api_actions_update(action_id):
             if err:
                 return jsonify({"error": err}), 400
 
-    allowed = ["name", "start_datetime", "end_datetime", "folder", "is_planned",
+    if "folder" in data or "folder_id" in data:
+        folder_item = _apply_folder_ref(email=ctx["email"], item={}, data=data)
+        if "folder" in folder_item:
+            data["folder"] = folder_item["folder"]
+        elif data.get("folder") is None:
+            data["folder"] = None
+        if "folder_id" in folder_item:
+            data["folder_id"] = folder_item["folder_id"]
+        elif data.get("folder_id") is None:
+            data["folder_id"] = None
+
+    allowed = ["name", "start_datetime", "end_datetime", "folder", "folder_id", "is_planned",
                "ai_draft", "ai_draft_type", "ttl"]
     set_parts = []
     remove_parts = []

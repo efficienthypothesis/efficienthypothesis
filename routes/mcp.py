@@ -14,7 +14,7 @@ from config import (
     _get_auth_context,
     _validate_date_range,
 )
-from routes.folders import _load_folders
+from routes.folders import _apply_folder_ref, _load_folders, _normalize_folders_data
 from routes.goals import _goals_prefix
 from routes.notes import _load_notes, _save_notes
 from routes.routines import _routines_s3_key
@@ -325,6 +325,7 @@ TOOLS = [
                 "name": {"type": "string", "description": "Note title."},
                 "date": {"type": "string", "description": "Explicit note date in YYYY-MM-DD or ISO format."},
                 "folder": {"type": "string", "description": "Optional folder path, such as /work."},
+                "folder_id": {"type": "string", "description": "Optional stable folder ID."},
             },
             "required": ["name", "date"],
             "additionalProperties": False,
@@ -342,6 +343,7 @@ TOOLS = [
                 "assign_datetime": {"type": "string", "description": "Explicit ISO datetime when the task is assigned."},
                 "due_datetime": {"type": "string", "description": "Explicit ISO datetime when the task is due."},
                 "folder": {"type": "string", "description": "Optional folder path, such as /work."},
+                "folder_id": {"type": "string", "description": "Optional stable folder ID."},
                 "path": {"type": "string", "description": "Optional legacy path. Defaults to /."},
             },
             "required": ["name", "assign_datetime", "due_datetime"],
@@ -360,6 +362,7 @@ TOOLS = [
                 "start_datetime": {"type": "string", "description": "Explicit ISO datetime when the action starts."},
                 "end_datetime": {"type": "string", "description": "Explicit ISO datetime when the action ends."},
                 "folder": {"type": "string", "description": "Optional folder path, such as /work."},
+                "folder_id": {"type": "string", "description": "Optional stable folder ID."},
                 "is_planned": {"type": "boolean", "description": "Whether this is a planned action. Defaults to false."},
             },
             "required": ["name", "start_datetime", "end_datetime"],
@@ -510,7 +513,7 @@ def _item_id(item_type, item):
         "tasks": "task_id",
         "actions": "action_id",
         "notes": "id",
-        "folders": "path",
+        "folders": "id",
         "routines": "id",
         "schedules": "id",
         "goals": "name",
@@ -808,8 +811,10 @@ def _create_note(email, arguments):
         "name": name,
         "date": date,
         "folder": folder,
+        "folder_id": arguments.get("folder_id"),
         "created_at": datetime.datetime.utcnow().isoformat() + "Z",
     }
+    note = _apply_folder_ref(email, note, arguments)
     note = {key: value for key, value in note.items() if value is not None}
 
     notes_data = _load_notes(email)
@@ -847,8 +852,10 @@ def _create_task(email, arguments):
         "due_datetime": due_datetime,
         "due_status": "pending",
         "folder": arguments.get("folder"),
+        "folder_id": arguments.get("folder_id"),
         "created_at": datetime.datetime.utcnow().isoformat() + "Z",
     }
+    task = _apply_folder_ref(email, task, arguments)
     task = {key: value for key, value in task.items() if value is not None}
     tasks_table.put_item(Item=task)
     return _mutation_result("task", _augment_item("tasks", task))
@@ -866,9 +873,11 @@ def _create_action(email, arguments):
         "start_datetime": start_datetime,
         "end_datetime": end_datetime,
         "folder": arguments.get("folder"),
+        "folder_id": arguments.get("folder_id"),
         "is_planned": bool(arguments.get("is_planned", False)),
         "created_at": datetime.datetime.utcnow().isoformat() + "Z",
     }
+    action = _apply_folder_ref(email, action, arguments)
     action = {key: value for key, value in action.items() if value is not None}
     actions_table.put_item(Item=action)
     return _mutation_result("action", _augment_item("actions", action))
@@ -1018,24 +1027,34 @@ def _update_note(email, note_id, fields):
     raise ValueError("Item not found")
 
 
-def _update_folder(email, path, fields):
-    folders_data = _load_folders(email)
+def _update_folder(email, item_id, fields):
+    folders_data = _normalize_folders_data(email, _load_folders(email))
     folders = folders_data.get("folders", [])
     for folder in folders:
-        if folder.get("path") == path:
+        if folder.get("id") == item_id or folder.get("path") == item_id:
+            original_id = folder.get("id")
             for field, value in fields.items():
                 if value is None:
                     folder.pop(field, None)
                 else:
                     folder[field] = value
-            folders_data["folders"] = folders
+            folders_data = _normalize_folders_data(email, folders_data)
+            updated = next(
+                (
+                    f for f in folders_data.get("folders", [])
+                    if (original_id and f.get("id") == original_id)
+                    or f.get("path") == fields.get("path")
+                    or f.get("path") == item_id
+                ),
+                folder,
+            )
             s3.put_object(
                 Bucket=PRODUCTIVITY_BUCKET,
                 Key=f"{email}/folders.json",
                 Body=json.dumps(folders_data, indent=2, default=_json_default),
                 ContentType="application/json",
             )
-            return _augment_item("folders", folder)
+            return _augment_item("folders", updated)
     raise ValueError("Item not found")
 
 
@@ -1070,20 +1089,27 @@ def _update_item(email, arguments):
         raise ValueError(f"Unsupported item type: {item_type}")
     item_id = _require_nonempty(arguments.get("id"), "id")
     fields = _validate_update_fields(arguments.get("fields"))
-    if item_type == "folders" and "path" in fields:
-        raise ValueError("Folder path cannot be updated; create a new folder path instead")
-
     if item_type == "tasks":
+        if "folder" in fields or "folder_id" in fields:
+            fields = {**fields, **_apply_folder_ref(email, {}, fields)}
         item = _update_dynamo_item(tasks_table, "task_id", "tasks", email, item_id, fields)
     elif item_type == "actions":
+        if "folder" in fields or "folder_id" in fields:
+            fields = {**fields, **_apply_folder_ref(email, {}, fields)}
         item = _update_dynamo_item(actions_table, "action_id", "actions", email, item_id, fields)
     elif item_type == "notes":
+        if "folder" in fields or "folder_id" in fields:
+            fields = {**fields, **_apply_folder_ref(email, {}, fields)}
         item = _update_note(email, item_id, fields)
     elif item_type == "folders":
         item = _update_folder(email, item_id, fields)
     elif item_type == "routines":
+        if "folder" in fields or "folder_id" in fields:
+            fields = {**fields, **_apply_folder_ref(email, {}, fields)}
         item = _update_list_item(email, _routines_s3_key(email), "id", "routines", item_id, fields)
     elif item_type == "schedules":
+        if "folder" in fields or "folder_id" in fields:
+            fields = {**fields, **_apply_folder_ref(email, {}, fields)}
         item = _update_list_item(email, _schedules_s3_key(email), "id", "schedules", item_id, fields)
     elif item_type == "goals":
         item = _update_goal(email, item_id, fields)

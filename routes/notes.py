@@ -3,6 +3,7 @@ import datetime
 import uuid
 import json
 from config import s3, PRODUCTIVITY_BUCKET, _require_auth, _validate_date_range
+from routes.folders import _apply_folder_ref
 
 notes_bp = Blueprint('notes', __name__)
 
@@ -62,8 +63,10 @@ def api_notes_create():
         "name": name,
         "date": date,
         "folder": folder,
+        "folder_id": data.get("folder_id"),
         "created_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
     }
+    note = _apply_folder_ref(email, note, data)
 
     notes_data = _load_notes(email)
     notes = notes_data.get("notes", [])
@@ -98,6 +101,10 @@ def api_notes_update(note_id):
                 n["date"] = data["date"]
             if "folder" in data:
                 n["folder"] = data["folder"]
+            if "folder_id" in data:
+                n["folder_id"] = data["folder_id"]
+            if "folder" in data or "folder_id" in data:
+                _apply_folder_ref(email, n, data)
             found = True
             break
 

@@ -2,6 +2,7 @@ from flask import Blueprint, request, jsonify
 import datetime
 import uuid
 from config import tasks_table, timelogs_table, user_table, _require_auth, _validate_date_range
+from routes.folders import _apply_folder_ref
 
 tasks_bp = Blueprint('tasks', __name__)
 
@@ -71,8 +72,10 @@ def api_tasks_create():
         "due_status": "pending",
         "routine_id": data.get("routine_id"),
         "folder": data.get("folder"),
+        "folder_id": data.get("folder_id"),
         "created_at": now,
     }
+    item = _apply_folder_ref(email, item, data)
     # AI draft support: mark as draft with TTL for auto-cleanup
     if data.get("ai_draft"):
         item["ai_draft"] = True
@@ -98,8 +101,19 @@ def api_tasks_update(task_id):
             if err:
                 return jsonify({"error": err}), 400
 
+    if "folder" in data or "folder_id" in data:
+        folder_item = _apply_folder_ref(email=ctx["email"], item={}, data=data)
+        if "folder" in folder_item:
+            data["folder"] = folder_item["folder"]
+        elif data.get("folder") is None:
+            data["folder"] = None
+        if "folder_id" in folder_item:
+            data["folder_id"] = folder_item["folder_id"]
+        elif data.get("folder_id") is None:
+            data["folder_id"] = None
+
     allowed = ["name", "path", "assign_datetime", "due_datetime",
-               "end_datetime", "due_status", "folder",
+               "end_datetime", "due_status", "folder", "folder_id",
                "ai_draft", "ai_draft_type", "ttl"]
     set_parts = []
     remove_parts = []

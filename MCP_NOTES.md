@@ -41,6 +41,42 @@ Non-destructive write tools:
 
 No delete tools are currently exposed through MCP.
 
+## Folder identity model
+
+Folders now use stable IDs and parent IDs while preserving legacy path strings
+for compatibility during migration:
+
+```json
+{
+  "id": "fld_...",
+  "parent_id": "fld_...",
+  "name": "Project",
+  "path": "/work/project",
+  "color": "#000000"
+}
+```
+
+Items should use `folder_id` as the stable folder reference. The legacy
+`folder` path field is still written and returned so existing frontend code and
+older clients continue to work while the migration is in progress.
+
+Folder moves should update the folder `path`/`parent_id`; related items remain
+attached by `folder_id`. During the compatibility phase, code should preserve
+or refresh the legacy `folder` path where practical.
+
+The migration script is:
+
+```sh
+python3 migrate_folder_ids.py --profile eh       # dry run
+python3 migrate_folder_ids.py --profile eh --apply
+```
+
+`--apply` backs up affected data to:
+
+```text
+s3://eh-app-data/backups/folder-id-migration/<timestamp>/
+```
+
 ## Query guidance
 
 Prefer `query_items` for most reads. It supports server-side item type
