@@ -962,16 +962,18 @@ def _call_tool(name, arguments, ctx):
 
 
 @mcp_bp.route("/mcp", methods=["GET"])
+@mcp_bp.route("/mcp-v2", methods=["GET"])
 def mcp_info():
     return jsonify({
         "name": "Efficient Hypothesis",
-        "description": "MCP endpoint for Efficient Hypothesis read-only tools.",
+        "description": "MCP endpoint for Efficient Hypothesis read and non-destructive write tools.",
         "protocolVersion": MCP_PROTOCOL_VERSION,
         "tools": [tool["name"] for tool in TOOLS],
     })
 
 
 @mcp_bp.route("/mcp", methods=["POST"])
+@mcp_bp.route("/mcp-v2", methods=["POST"])
 def mcp_rpc():
     payload = request.get_json(silent=True) or {}
     request_id = payload.get("id")
