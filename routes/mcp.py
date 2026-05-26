@@ -1,5 +1,7 @@
 from decimal import Decimal
+import datetime
 import json
+import uuid
 
 from flask import Blueprint, Response, jsonify, request
 
@@ -8,11 +10,13 @@ from config import (
     actions_table,
     s3,
     tasks_table,
+    timelogs_table,
     _get_auth_context,
+    _validate_date_range,
 )
 from routes.folders import _load_folders
 from routes.goals import _goals_prefix
-from routes.notes import _load_notes
+from routes.notes import _load_notes, _save_notes
 from routes.routines import _routines_s3_key
 from routes.schedules import _schedules_s3_key
 
@@ -88,6 +92,21 @@ def _read_only_tool(name, title, description, input_schema, output_schema):
     }
 
 
+def _write_tool(name, title, description, input_schema, output_schema):
+    return {
+        "name": name,
+        "title": title,
+        "description": description,
+        "inputSchema": input_schema,
+        "outputSchema": output_schema,
+        "annotations": {
+            "readOnlyHint": False,
+            "openWorldHint": False,
+            "destructiveHint": False,
+        },
+    }
+
+
 def _list_input_schema():
     return {
         "type": "object",
@@ -115,6 +134,18 @@ def _items_output_schema(field_name):
             "count": {"type": "integer"},
         },
         "required": [field_name, "count"],
+        "additionalProperties": False,
+    }
+
+
+def _mutation_output_schema(item_field):
+    return {
+        "type": "object",
+        "properties": {
+            "ok": {"type": "boolean"},
+            item_field: {"type": "object"},
+        },
+        "required": ["ok", item_field],
         "additionalProperties": False,
     }
 
@@ -279,6 +310,81 @@ TOOLS = [
             "additionalProperties": False,
         },
         _items_output_schema("goals"),
+    ),
+    _write_tool(
+        "create_note",
+        "Create note",
+        "Create a new Efficient Hypothesis note. Date must be explicit, such as 2026-05-25.",
+        {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Note title."},
+                "date": {"type": "string", "description": "Explicit note date in YYYY-MM-DD or ISO format."},
+                "folder": {"type": "string", "description": "Optional folder path, such as /work."},
+            },
+            "required": ["name", "date"],
+            "additionalProperties": False,
+        },
+        _mutation_output_schema("note"),
+    ),
+    _write_tool(
+        "create_task",
+        "Create task",
+        "Create a new Efficient Hypothesis task. Datetimes must be explicit ISO strings.",
+        {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Task name."},
+                "assign_datetime": {"type": "string", "description": "Explicit ISO datetime when the task is assigned."},
+                "due_datetime": {"type": "string", "description": "Explicit ISO datetime when the task is due."},
+                "folder": {"type": "string", "description": "Optional folder path, such as /work."},
+                "path": {"type": "string", "description": "Optional legacy path. Defaults to /."},
+            },
+            "required": ["name", "assign_datetime", "due_datetime"],
+            "additionalProperties": False,
+        },
+        _mutation_output_schema("task"),
+    ),
+    _write_tool(
+        "create_action",
+        "Create action",
+        "Create a new Efficient Hypothesis action. Datetimes must be explicit ISO strings.",
+        {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Action name."},
+                "start_datetime": {"type": "string", "description": "Explicit ISO datetime when the action starts."},
+                "end_datetime": {"type": "string", "description": "Explicit ISO datetime when the action ends."},
+                "folder": {"type": "string", "description": "Optional folder path, such as /work."},
+                "is_planned": {"type": "boolean", "description": "Whether this is a planned action. Defaults to false."},
+            },
+            "required": ["name", "start_datetime", "end_datetime"],
+            "additionalProperties": False,
+        },
+        _mutation_output_schema("action"),
+    ),
+    _write_tool(
+        "complete_task",
+        "Complete task",
+        "Mark an existing Efficient Hypothesis task complete by task_id. Use query_items first if the task ID is not known.",
+        {
+            "type": "object",
+            "properties": {
+                "task_id": {"type": "string", "description": "The task_id of the task to complete."},
+            },
+            "required": ["task_id"],
+            "additionalProperties": False,
+        },
+        {
+            "type": "object",
+            "properties": {
+                "ok": {"type": "boolean"},
+                "task_id": {"type": "string"},
+                "completed_at": {"type": "string"},
+            },
+            "required": ["ok", "task_id", "completed_at"],
+            "additionalProperties": False,
+        },
     ),
 ]
 
@@ -623,6 +729,156 @@ def _query_items(email, arguments):
     }
 
 
+def _require_nonempty(value, field):
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{field} is required")
+    return value.strip()
+
+
+def _validate_date_field(value, field):
+    value = _require_nonempty(value, field)
+    err = _validate_date_range(value)
+    if err:
+        raise ValueError(err)
+    return value
+
+
+def _mutation_result(field_name, item):
+    return {
+        "structuredContent": {
+            "ok": True,
+            field_name: item,
+        },
+        "content": [
+            {
+                "type": "text",
+                "text": f"Created {field_name}: {item.get('name') or item.get('id')}.",
+            }
+        ],
+    }
+
+
+def _create_note(email, arguments):
+    name = _require_nonempty(arguments.get("name"), "name")
+    date = _validate_date_field(arguments.get("date"), "date")
+    folder = arguments.get("folder")
+
+    note = {
+        "id": str(uuid.uuid4()),
+        "name": name,
+        "date": date,
+        "folder": folder,
+        "created_at": datetime.datetime.utcnow().isoformat() + "Z",
+    }
+    note = {key: value for key, value in note.items() if value is not None}
+
+    notes_data = _load_notes(email)
+    notes = notes_data.get("notes", [])
+    notes.append(note)
+    notes_data["notes"] = notes
+    _save_notes(email, notes_data)
+    return _mutation_result("note", note)
+
+
+def _create_task(email, arguments):
+    name = _require_nonempty(arguments.get("name"), "name")
+    assign_datetime = _validate_date_field(arguments.get("assign_datetime"), "assign_datetime")
+    due_datetime = _validate_date_field(arguments.get("due_datetime"), "due_datetime")
+
+    duplicate_resp = tasks_table.scan(
+        FilterExpression="#u = :email AND #n = :name AND assign_datetime = :assign AND due_datetime = :due",
+        ExpressionAttributeNames={"#u": "user", "#n": "name"},
+        ExpressionAttributeValues={
+            ":email": email,
+            ":name": name,
+            ":assign": assign_datetime,
+            ":due": due_datetime,
+        },
+    )
+    if duplicate_resp.get("Items"):
+        raise ValueError("A task with this name, assign date, and due date already exists")
+
+    task = {
+        "task_id": str(uuid.uuid4()),
+        "user": email,
+        "path": arguments.get("path") or "/",
+        "name": name,
+        "assign_datetime": assign_datetime,
+        "due_datetime": due_datetime,
+        "due_status": "pending",
+        "folder": arguments.get("folder"),
+        "created_at": datetime.datetime.utcnow().isoformat() + "Z",
+    }
+    task = {key: value for key, value in task.items() if value is not None}
+    tasks_table.put_item(Item=task)
+    return _mutation_result("task", _augment_item("tasks", task))
+
+
+def _create_action(email, arguments):
+    name = _require_nonempty(arguments.get("name"), "name")
+    start_datetime = _validate_date_field(arguments.get("start_datetime"), "start_datetime")
+    end_datetime = _validate_date_field(arguments.get("end_datetime"), "end_datetime")
+
+    action = {
+        "action_id": str(uuid.uuid4()),
+        "user": email,
+        "name": name,
+        "start_datetime": start_datetime,
+        "end_datetime": end_datetime,
+        "folder": arguments.get("folder"),
+        "is_planned": bool(arguments.get("is_planned", False)),
+        "created_at": datetime.datetime.utcnow().isoformat() + "Z",
+    }
+    action = {key: value for key, value in action.items() if value is not None}
+    actions_table.put_item(Item=action)
+    return _mutation_result("action", _augment_item("actions", action))
+
+
+def _complete_task(email, arguments):
+    task_id = _require_nonempty(arguments.get("task_id"), "task_id")
+    resp = tasks_table.get_item(Key={"task_id": task_id})
+    task = resp.get("Item")
+    if not task or task.get("user") != email:
+        raise ValueError("Task not found")
+
+    completed_at = datetime.datetime.utcnow().isoformat() + "Z"
+
+    open_resp = timelogs_table.scan(
+        FilterExpression="#u = :email AND parent_id = :pid AND attribute_not_exists(#e)",
+        ExpressionAttributeNames={"#u": "user", "#e": "end"},
+        ExpressionAttributeValues={":email": email, ":pid": task_id},
+    )
+    for log in open_resp.get("Items", []):
+        timelogs_table.update_item(
+            Key={"log_id": log["log_id"]},
+            UpdateExpression="SET #e = :now",
+            ExpressionAttributeNames={"#e": "end"},
+            ExpressionAttributeValues={":now": completed_at},
+        )
+
+    tasks_table.update_item(
+        Key={"task_id": task_id},
+        UpdateExpression="SET end_datetime = :end, due_status = :ds",
+        ExpressionAttributeValues={
+            ":end": completed_at,
+            ":ds": "met",
+        },
+    )
+    return {
+        "structuredContent": {
+            "ok": True,
+            "task_id": task_id,
+            "completed_at": completed_at,
+        },
+        "content": [
+            {
+                "type": "text",
+                "text": f"Completed task: {task.get('name') or task_id}.",
+            }
+        ],
+    }
+
+
 def _tool_result(field_name, items, limit):
     items = items[:limit]
     return {
@@ -646,6 +902,18 @@ def _call_tool(name, arguments, ctx):
 
     if name == "query_items":
         return _query_items(email, arguments)
+
+    if name == "create_note":
+        return _create_note(email, arguments)
+
+    if name == "create_task":
+        return _create_task(email, arguments)
+
+    if name == "create_action":
+        return _create_action(email, arguments)
+
+    if name == "complete_task":
+        return _complete_task(email, arguments)
 
     if name == "list_tasks":
         items = _filter_folder(_scan_user_items(tasks_table, email), arguments.get("folder"))
