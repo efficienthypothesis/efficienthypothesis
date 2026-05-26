@@ -143,7 +143,7 @@ function createQuickAddCard() {
 
     var folder = folderVal ? resolveFolderInput(folderVal) : null;
     if (folderVal && !folder) { alert('Folder not found. Create it first or use its exact name.'); _q(cardEl, 'qa-folder').focus(); return; }
-    var data = { name: nameVal, assign_datetime: assignDt, due_datetime: dueDt, folder_id: folder ? folder.id : null, path: '/', draft: false };
+    var data = { name: nameVal, assign_datetime: assignDt, due_datetime: dueDt, folder_id: folder ? folder.id : null, draft: false };
 
     var createFoldersThenTask = function() {
       fetch('/api/tasks', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data)})

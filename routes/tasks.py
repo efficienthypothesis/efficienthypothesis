@@ -7,6 +7,39 @@ from routes.folders import _apply_folder_ref
 tasks_bp = Blueprint('tasks', __name__)
 
 
+def _scan_user_tasks(email):
+    resp = tasks_table.scan(
+        FilterExpression="#u = :email",
+        ExpressionAttributeNames={"#u": "user"},
+        ExpressionAttributeValues={":email": email},
+    )
+    return resp.get("Items", [])
+
+
+def _validate_parent_task(email, task_id, parent_id):
+    if not parent_id:
+        return None
+    parent_resp = tasks_table.get_item(Key={"task_id": parent_id})
+    parent = parent_resp.get("Item")
+    if not parent or parent.get("user") != email:
+        return "Parent task not found"
+    if parent_id == task_id:
+        return "Task cannot be its own parent"
+
+    by_id = {item.get("task_id"): item for item in _scan_user_tasks(email)}
+    current = parent
+    seen = set()
+    while current and current.get("task_id"):
+        current_id = current.get("task_id")
+        if current_id == task_id:
+            return "Task cannot be moved under its descendant"
+        if current_id in seen:
+            return "Task hierarchy contains a cycle"
+        seen.add(current_id)
+        current = by_id.get(current.get("parent_id"))
+    return None
+
+
 @tasks_bp.route('/api/tasks', methods=['GET'])
 def api_tasks_list():
     ctx, err = _require_auth()
@@ -14,12 +47,7 @@ def api_tasks_list():
         return err
     email = ctx["email"]
 
-    resp = tasks_table.scan(
-        FilterExpression="#u = :email",
-        ExpressionAttributeNames={"#u": "user"},
-        ExpressionAttributeValues={":email": email},
-    )
-    items = resp.get("Items", [])
+    items = _scan_user_tasks(email)
     return jsonify(items)
 
 
@@ -59,12 +87,16 @@ def api_tasks_create():
         return jsonify({"error": "A task with this name, assign date, and due date already exists"}), 409
 
     task_id = data.get("task_id") or str(uuid.uuid4())
+    parent_id = data.get("parent_id") or None
+    parent_err = _validate_parent_task(email, task_id, parent_id)
+    if parent_err:
+        return jsonify({"error": parent_err}), 400
     now = datetime.datetime.utcnow().isoformat() + 'Z'
 
     item = {
         "task_id": task_id,
         "user": email,
-        "path": data.get("path", "/"),
+        "parent_id": parent_id,
         "name": data.get("name", ""),
         "assign_datetime": data.get("assign_datetime"),
         "due_datetime": data.get("due_datetime"),
@@ -107,7 +139,13 @@ def api_tasks_update(task_id):
         elif data.get("folder_id") is None:
             data["folder_id"] = None
 
-    allowed = ["name", "path", "assign_datetime", "due_datetime",
+    if "parent_id" in data:
+        data["parent_id"] = data.get("parent_id") or None
+        parent_err = _validate_parent_task(ctx["email"], task_id, data["parent_id"])
+        if parent_err:
+            return jsonify({"error": parent_err}), 400
+
+    allowed = ["name", "parent_id", "assign_datetime", "due_datetime",
                "end_datetime", "due_status", "folder_id",
                "ai_draft", "ai_draft_type", "ttl"]
     set_parts = []
@@ -253,6 +291,16 @@ def api_tasks_delete(task_id):
     )
     for log in tl_resp.get("Items", []):
         timelogs_table.delete_item(Key={"log_id": log["log_id"]})
+    child_resp = tasks_table.scan(
+        FilterExpression="#u = :email AND parent_id = :pid",
+        ExpressionAttributeNames={"#u": "user"},
+        ExpressionAttributeValues={":email": email, ":pid": task_id},
+    )
+    for child in child_resp.get("Items", []):
+        tasks_table.update_item(
+            Key={"task_id": child["task_id"]},
+            UpdateExpression="REMOVE parent_id",
+        )
     return jsonify({"ok": True})
 
 
@@ -262,16 +310,22 @@ def api_tasks_move(task_id):
     if err:
         return err
     data = request.get_json()
-    new_path = data.get("path")
-    if not new_path:
-        return jsonify({"error": "path is required"}), 400
-    tasks_table.update_item(
-        Key={"task_id": task_id},
-        UpdateExpression="SET #p = :p",
-        ExpressionAttributeNames={"#p": "path"},
-        ExpressionAttributeValues={":p": new_path},
-    )
-    return jsonify({"ok": True, "task_id": task_id, "path": new_path})
+    parent_id = data.get("parent_id") or None
+    parent_err = _validate_parent_task(ctx["email"], task_id, parent_id)
+    if parent_err:
+        return jsonify({"error": parent_err}), 400
+    if parent_id:
+        tasks_table.update_item(
+            Key={"task_id": task_id},
+            UpdateExpression="SET parent_id = :pid",
+            ExpressionAttributeValues={":pid": parent_id},
+        )
+    else:
+        tasks_table.update_item(
+            Key={"task_id": task_id},
+            UpdateExpression="REMOVE parent_id",
+        )
+    return jsonify({"ok": True, "task_id": task_id, "parent_id": parent_id})
 
 
 @tasks_bp.route('/api/tasks/calendar', methods=['GET'])

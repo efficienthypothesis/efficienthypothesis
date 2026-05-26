@@ -342,7 +342,7 @@ TOOLS = [
                 "assign_datetime": {"type": "string", "description": "Explicit ISO datetime when the task is assigned."},
                 "due_datetime": {"type": "string", "description": "Explicit ISO datetime when the task is due."},
                 "folder_id": {"type": "string", "description": "Optional stable folder ID."},
-                "path": {"type": "string", "description": "Optional task hierarchy path. Defaults to /."},
+                "parent_id": {"type": "string", "description": "Optional parent task ID for task hierarchy."},
             },
             "required": ["name", "assign_datetime", "due_datetime"],
             "additionalProperties": False,
@@ -841,7 +841,7 @@ def _create_task(email, arguments):
     task = {
         "task_id": str(uuid.uuid4()),
         "user": email,
-        "path": arguments.get("path") or "/",
+        "parent_id": arguments.get("parent_id"),
         "name": name,
         "assign_datetime": assign_datetime,
         "due_datetime": due_datetime,

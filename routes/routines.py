@@ -312,7 +312,7 @@ def api_routines_materialize():
             item = {
                 "task_id": str(uuid.uuid4()),
                 "user": email,
-                "path": "/",
+                "parent_id": tpl.get("parent_id"),
                 "name": tpl.get("name", ""),
                 "assign_datetime": utc_assign,
                 "due_datetime": due_dt,

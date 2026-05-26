@@ -60,6 +60,10 @@ has been removed from new writes and should not be used by MCP tools or clients.
 
 Folder moves update `parent_id`; related items remain attached by `folder_id`.
 
+Tasks also use `parent_id` for task/subtask hierarchy. The legacy task `path`
+field has been removed from new writes and should not be used by MCP tools or
+clients.
+
 The original folder ID migration script is:
 
 ```sh
@@ -84,6 +88,19 @@ python3 remove_folder_paths.py --profile eh --apply
 
 ```text
 s3://eh-app-data/backups/remove-folder-paths/<timestamp>/
+```
+
+The task hierarchy migration script is:
+
+```sh
+python3 migrate_task_parent_ids.py --profile eh       # dry run
+python3 migrate_task_parent_ids.py --profile eh --apply
+```
+
+`--apply` backs up affected tasks to:
+
+```text
+s3://eh-app-data/backups/task-parent-id-migration/<timestamp>/
 ```
 
 ## Query guidance

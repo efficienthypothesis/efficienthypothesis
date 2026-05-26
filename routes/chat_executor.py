@@ -81,7 +81,7 @@ def _create_task(email, data):
     item = {
         "task_id": task_id,
         "user": email,
-        "path": data.get("path", "/"),
+        "parent_id": data.get("parent_id"),
         "name": data.get("name", ""),
         "assign_datetime": data.get("assign_datetime"),
         "due_datetime": data.get("due_datetime"),
@@ -102,7 +102,7 @@ def _update_task(email, data):
         return {"ok": False, "error": "Could not find task to update"}
     if "folder_id" in data:
         data = {**data, **_apply_folder_ref(email, {}, data)}
-    allowed = ["name", "path", "assign_datetime", "due_datetime", "folder_id"]
+    allowed = ["name", "parent_id", "assign_datetime", "due_datetime", "folder_id"]
     expr_parts, attr_names, attr_values = _build_update_expr(data, allowed)
     if not expr_parts:
         return {"ok": False, "error": "No fields to update"}

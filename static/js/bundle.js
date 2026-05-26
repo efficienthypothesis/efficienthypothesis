@@ -170,22 +170,11 @@ function localInputToUTC(val) {
   return new Date(fake.getTime() + offsetMs).toISOString();
 }
 function isTaskActive(t) { return (prodTimelogs || []).some(function(l) { return l.parent_id === t.task_id && !l.end; }); }
-function getRootTasks(tasks) { return tasks.filter(t => (t.path || '/') === '/'); }
+function getRootTasks(tasks) { return tasks.filter(t => !t.parent_id); }
 function getVisibleRoots(tasks) {
-  // Root tasks + subtasks whose parent isn't in this filtered list (orphans).
-  // A child's path = /ParentName/ (or /GrandParent/ParentName/ for deeper nesting).
-  // A task is a "visible root" if its parent (the task whose taskPath === child.path) is absent.
-  var taskPaths = new Set();
-  tasks.forEach(function(t) {
-    var tp = ((t.path || '/').replace(/\/$/, '') + '/' + t.name).replace(/\/+/g, '/');
-    taskPaths.add(tp);
-  });
+  var visibleIds = new Set(tasks.map(function(t) { return t.task_id; }));
   return tasks.filter(function(t) {
-    var p = t.path || '/';
-    if (p === '/') return true;
-    // p is like "/ParentName/" — check if any task in the list produces that as its taskPath
-    var normalized = p.replace(/\/$/, '') || '/';
-    return !taskPaths.has(normalized);
+    return !t.parent_id || !visibleIds.has(t.parent_id);
   });
 }
 
@@ -1181,8 +1170,7 @@ function taskCardHtml(t, opts = {}) {
         </button>
       </div>
     </div>`;
-  const taskPath = ((t.path || '/').replace(/\/$/, '') + '/' + t.name).replace(/\/+/g, '/');
-  const children = (opts.allTasks || []).filter(c => c.task_id !== t.task_id && (c.path || '/') === taskPath);
+  const children = (opts.allTasks || []).filter(c => c.task_id !== t.task_id && c.parent_id === t.task_id);
   const hasChildren = children.length > 0;
   let childrenHtml = '';
   if (hasChildren) {
@@ -1325,10 +1313,8 @@ function pauseTask(id) { fetch('/api/tasks/'+id+'/pause',{method:'POST'}).then(r
 function completeTask(taskId) {
   const task = prodAllTasks.find(t => t.task_id === taskId);
   if (task) {
-    const taskPath = ((task.path || '/').replace(/\/$/, '') + '/' + task.name).replace(/\/+/g, '/');
-    const incompleteChildren = prodAllTasks.filter(c =>
-      c.task_id !== taskId && ((c.path || '/') === taskPath || (c.path || '/').startsWith(taskPath + '/')) && !c.end_datetime
-    );
+    const descendantIds = getTaskDescendantIds(taskId);
+    const incompleteChildren = prodAllTasks.filter(c => descendantIds.indexOf(c.task_id) >= 0 && !c.end_datetime);
     if (incompleteChildren.length > 0) {
       if (!confirm(`${incompleteChildren.length} subtask(s) are incomplete. Mark all as complete?`)) return;
       const promises = incompleteChildren.map(c => fetch('/api/tasks/'+c.task_id+'/complete',{method:'POST'}));
@@ -1410,19 +1396,39 @@ function onCardDragStart(e) { const c=e.target.closest('.task-card');if(!c)retur
 function onCardDragEnd(e) { const c=e.target.closest('.task-card');if(c)c.classList.remove('dragging');draggedTaskId=null;document.querySelectorAll('.task-card.drag-over').forEach(c=>c.classList.remove('drag-over'));document.querySelectorAll('.prod-drop-toplevel').forEach(z=>{z.classList.remove('drag-active','drag-over');}); }
 function onCardDragOver(e) { e.preventDefault();const c=e.target.closest('.task-card');if(c&&c.dataset.taskId!==draggedTaskId)c.classList.add('drag-over'); }
 function onCardDragLeave(e) { const c=e.target.closest('.task-card');if(c)c.classList.remove('drag-over'); }
-function onCardDrop(e) { e.preventDefault();const tc=e.target.closest('.task-card');if(!tc||!draggedTaskId)return;tc.classList.remove('drag-over');const tid=tc.dataset.taskId;if(tid===draggedTaskId)return;const target=prodAllTasks.find(t=>t.task_id===tid);if(!target)return;const newPath=((target.path||'/').replace(/\/$/,'')+'/'+target.name).replace(/\/+/g,'/');moveTaskAndChildren(draggedTaskId,newPath); }
 function onTopDragOver(e) { e.preventDefault();e.target.classList.add('drag-over'); }
 function onTopDragLeave(e) { e.target.classList.remove('drag-over'); }
-function onTopDrop(e) { e.preventDefault();e.target.classList.remove('drag-over');if(draggedTaskId)moveTaskAndChildren(draggedTaskId,'/'); }
+function onTopDrop(e) { e.preventDefault();e.target.classList.remove('drag-over');if(draggedTaskId)moveTask(draggedTaskId,null); }
 
-function moveTaskAndChildren(taskId, newPath) {
-  const task=prodAllTasks.find(t=>t.task_id===taskId);if(!task)return;
-  const oldPath=(task.path||'/').replace(/\/$/,'')+'/'+task.name;
-  const children=prodAllTasks.filter(t=>{const tp=t.path||'/';return tp===oldPath||tp.startsWith(oldPath+'/');});
-  const promises=[fetch('/api/tasks/'+taskId+'/move',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:newPath})})];
-  const newParent=newPath.replace(/\/$/,'')+'/'+task.name;
-  children.forEach(c=>{const cp=c.path||'/';promises.push(fetch('/api/tasks/'+c.task_id+'/move',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:newParent+cp.slice(oldPath.length)})}));});
-  Promise.all(promises).then(()=>loadProductivityData()).catch(()=>alert('Failed.'));
+function getTaskDescendantIds(taskId) {
+  const descendants = [];
+  const stack = [taskId];
+  while (stack.length) {
+    const current = stack.pop();
+    prodAllTasks.forEach(t => {
+      if (t.parent_id === current && descendants.indexOf(t.task_id) < 0) {
+        descendants.push(t.task_id);
+        stack.push(t.task_id);
+      }
+    });
+  }
+  return descendants;
+}
+
+function onCardDrop(e) {
+  e.preventDefault();
+  const tc=e.target.closest('.task-card');if(!tc||!draggedTaskId)return;
+  tc.classList.remove('drag-over');
+  const tid=tc.dataset.taskId;if(tid===draggedTaskId)return;
+  if (getTaskDescendantIds(draggedTaskId).indexOf(tid) >= 0) return;
+  moveTask(draggedTaskId, tid);
+}
+
+function moveTask(taskId, parentId) {
+  fetch('/api/tasks/'+taskId+'/move',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({parent_id:parentId})})
+    .then(r=>{if(!r.ok)throw 0;return r.json()})
+    .then(()=>loadProductivityData())
+    .catch(()=>alert('Failed.'));
 }
 
 function getItemTemporalStatus(item) {
@@ -3088,7 +3094,7 @@ function saveSmartTask() {
   } else {
     if(!assignVal){alert('Assign date is required.');document.getElementById('sm-assign').focus();return;}
     if(!dueVal){alert('Due date is required.');document.getElementById('sm-due').focus();return;}
-    const data={name,assign_datetime:localInputToUTC(assignVal),due_datetime:localInputToUTC(dueVal),path:'/'};
+    const data={name,assign_datetime:localInputToUTC(assignVal),due_datetime:localInputToUTC(dueVal)};
     if(editId){
       fetch('/api/tasks/'+editId,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(r=>{if(!r.ok)throw 0;return r.json();}).then(()=>{closeSmartModal();loadProductivityData();}).catch(()=>alert('Failed.'));
     } else {
@@ -3396,7 +3402,7 @@ function renderWeekView() {
       let endFrac = endIso ? getLocalHourFrac(endIso) : startFrac + 0.25;
       if (endFrac <= startFrac) endFrac = startFrac + (1/60);
       const durationMin = (endFrac - startFrac) * 60;
-      sessions.push({ taskId: t.task_id, taskName: t.name, path: t.path || '/', dayStr, startFrac, endFrac, durationMin, sessionIndex: idx + 1, totalSessions, color: getFolderColor(t.folder_id) });
+      sessions.push({ taskId: t.task_id, parentId: t.parent_id || null, taskName: t.name, dayStr, startFrac, endFrac, durationMin, sessionIndex: idx + 1, totalSessions, color: getFolderColor(t.folder_id) });
     });
   });
 
@@ -3466,10 +3472,29 @@ function renderWeekView() {
 
       // --- Concurrent card layout ---
       // Determine parent/child relationships and overlap groups
+      var taskById = {};
+      (prodAllTasks || []).forEach(function(t) { taskById[t.task_id] = t; });
+      function taskDepth(taskId) {
+        var depth = 0;
+        var cur = taskById[taskId];
+        var seen = {};
+        while (cur && cur.parent_id && !seen[cur.parent_id]) {
+          seen[cur.parent_id] = true;
+          depth++;
+          cur = taskById[cur.parent_id];
+        }
+        return depth;
+      }
       function isAncestor(parentSession, childSession) {
         if (parentSession.taskId === childSession.taskId) return false;
-        var parentPath = (parentSession.path || '/').replace(/\/$/, '') + '/' + parentSession.taskName + '/';
-        return (childSession.path || '/').startsWith(parentPath);
+        var cur = taskById[childSession.taskId];
+        var seen = {};
+        while (cur && cur.parent_id && !seen[cur.parent_id]) {
+          if (cur.parent_id === parentSession.taskId) return true;
+          seen[cur.parent_id] = true;
+          cur = taskById[cur.parent_id];
+        }
+        return false;
       }
       function sessionsOverlap(a, b) {
         return a.startFrac < b.endFrac && b.startFrac < a.endFrac;
@@ -3535,12 +3560,12 @@ function renderWeekView() {
         children.forEach(function(childIdx) {
           // Find the immediate parent in the cluster
           var parentIdx = -1;
-          var deepestPathLen = 0;
+          var deepestDepth = -1;
           for (var k = 0; k < cluster.length; k++) {
             if (k === childIdx) continue;
             if (isAncestor(cards[cluster[k]], cards[childIdx])) {
-              var pPath = (cards[cluster[k]].path || '/').length;
-              if (pPath > deepestPathLen) { deepestPathLen = pPath; parentIdx = cluster[k]; }
+              var depth = taskDepth(cards[cluster[k]].taskId);
+              if (depth > deepestDepth) { deepestDepth = depth; parentIdx = cluster[k]; }
             }
           }
           if (parentIdx >= 0) {
@@ -4240,7 +4265,7 @@ function createQuickAddCard() {
 
     var folder = folderVal ? resolveFolderInput(folderVal) : null;
     if (folderVal && !folder) { alert('Folder not found. Create it first or use its exact name.'); _q(cardEl, 'qa-folder').focus(); return; }
-    var data = { name: nameVal, assign_datetime: assignDt, due_datetime: dueDt, folder_id: folder ? folder.id : null, path: '/', draft: false };
+    var data = { name: nameVal, assign_datetime: assignDt, due_datetime: dueDt, folder_id: folder ? folder.id : null, draft: false };
 
     var createFoldersThenTask = function() {
       fetch('/api/tasks', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data)})

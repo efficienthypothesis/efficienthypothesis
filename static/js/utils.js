@@ -91,22 +91,11 @@ function localInputToUTC(val) {
   return new Date(fake.getTime() + offsetMs).toISOString();
 }
 function isTaskActive(t) { return (prodTimelogs || []).some(function(l) { return l.parent_id === t.task_id && !l.end; }); }
-function getRootTasks(tasks) { return tasks.filter(t => (t.path || '/') === '/'); }
+function getRootTasks(tasks) { return tasks.filter(t => !t.parent_id); }
 function getVisibleRoots(tasks) {
-  // Root tasks + subtasks whose parent isn't in this filtered list (orphans).
-  // A child's path = /ParentName/ (or /GrandParent/ParentName/ for deeper nesting).
-  // A task is a "visible root" if its parent (the task whose taskPath === child.path) is absent.
-  var taskPaths = new Set();
-  tasks.forEach(function(t) {
-    var tp = ((t.path || '/').replace(/\/$/, '') + '/' + t.name).replace(/\/+/g, '/');
-    taskPaths.add(tp);
-  });
+  var visibleIds = new Set(tasks.map(function(t) { return t.task_id; }));
   return tasks.filter(function(t) {
-    var p = t.path || '/';
-    if (p === '/') return true;
-    // p is like "/ParentName/" — check if any task in the list produces that as its taskPath
-    var normalized = p.replace(/\/$/, '') || '/';
-    return !taskPaths.has(normalized);
+    return !t.parent_id || !visibleIds.has(t.parent_id);
   });
 }
 

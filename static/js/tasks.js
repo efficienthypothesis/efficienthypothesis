@@ -36,8 +36,7 @@ function taskCardHtml(t, opts = {}) {
         </button>
       </div>
     </div>`;
-  const taskPath = ((t.path || '/').replace(/\/$/, '') + '/' + t.name).replace(/\/+/g, '/');
-  const children = (opts.allTasks || []).filter(c => c.task_id !== t.task_id && (c.path || '/') === taskPath);
+  const children = (opts.allTasks || []).filter(c => c.task_id !== t.task_id && c.parent_id === t.task_id);
   const hasChildren = children.length > 0;
   let childrenHtml = '';
   if (hasChildren) {
@@ -180,10 +179,8 @@ function pauseTask(id) { fetch('/api/tasks/'+id+'/pause',{method:'POST'}).then(r
 function completeTask(taskId) {
   const task = prodAllTasks.find(t => t.task_id === taskId);
   if (task) {
-    const taskPath = ((task.path || '/').replace(/\/$/, '') + '/' + task.name).replace(/\/+/g, '/');
-    const incompleteChildren = prodAllTasks.filter(c =>
-      c.task_id !== taskId && ((c.path || '/') === taskPath || (c.path || '/').startsWith(taskPath + '/')) && !c.end_datetime
-    );
+    const descendantIds = getTaskDescendantIds(taskId);
+    const incompleteChildren = prodAllTasks.filter(c => descendantIds.indexOf(c.task_id) >= 0 && !c.end_datetime);
     if (incompleteChildren.length > 0) {
       if (!confirm(`${incompleteChildren.length} subtask(s) are incomplete. Mark all as complete?`)) return;
       const promises = incompleteChildren.map(c => fetch('/api/tasks/'+c.task_id+'/complete',{method:'POST'}));
@@ -265,17 +262,37 @@ function onCardDragStart(e) { const c=e.target.closest('.task-card');if(!c)retur
 function onCardDragEnd(e) { const c=e.target.closest('.task-card');if(c)c.classList.remove('dragging');draggedTaskId=null;document.querySelectorAll('.task-card.drag-over').forEach(c=>c.classList.remove('drag-over'));document.querySelectorAll('.prod-drop-toplevel').forEach(z=>{z.classList.remove('drag-active','drag-over');}); }
 function onCardDragOver(e) { e.preventDefault();const c=e.target.closest('.task-card');if(c&&c.dataset.taskId!==draggedTaskId)c.classList.add('drag-over'); }
 function onCardDragLeave(e) { const c=e.target.closest('.task-card');if(c)c.classList.remove('drag-over'); }
-function onCardDrop(e) { e.preventDefault();const tc=e.target.closest('.task-card');if(!tc||!draggedTaskId)return;tc.classList.remove('drag-over');const tid=tc.dataset.taskId;if(tid===draggedTaskId)return;const target=prodAllTasks.find(t=>t.task_id===tid);if(!target)return;const newPath=((target.path||'/').replace(/\/$/,'')+'/'+target.name).replace(/\/+/g,'/');moveTaskAndChildren(draggedTaskId,newPath); }
 function onTopDragOver(e) { e.preventDefault();e.target.classList.add('drag-over'); }
 function onTopDragLeave(e) { e.target.classList.remove('drag-over'); }
-function onTopDrop(e) { e.preventDefault();e.target.classList.remove('drag-over');if(draggedTaskId)moveTaskAndChildren(draggedTaskId,'/'); }
+function onTopDrop(e) { e.preventDefault();e.target.classList.remove('drag-over');if(draggedTaskId)moveTask(draggedTaskId,null); }
 
-function moveTaskAndChildren(taskId, newPath) {
-  const task=prodAllTasks.find(t=>t.task_id===taskId);if(!task)return;
-  const oldPath=(task.path||'/').replace(/\/$/,'')+'/'+task.name;
-  const children=prodAllTasks.filter(t=>{const tp=t.path||'/';return tp===oldPath||tp.startsWith(oldPath+'/');});
-  const promises=[fetch('/api/tasks/'+taskId+'/move',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:newPath})})];
-  const newParent=newPath.replace(/\/$/,'')+'/'+task.name;
-  children.forEach(c=>{const cp=c.path||'/';promises.push(fetch('/api/tasks/'+c.task_id+'/move',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({path:newParent+cp.slice(oldPath.length)})}));});
-  Promise.all(promises).then(()=>loadProductivityData()).catch(()=>alert('Failed.'));
+function getTaskDescendantIds(taskId) {
+  const descendants = [];
+  const stack = [taskId];
+  while (stack.length) {
+    const current = stack.pop();
+    prodAllTasks.forEach(t => {
+      if (t.parent_id === current && descendants.indexOf(t.task_id) < 0) {
+        descendants.push(t.task_id);
+        stack.push(t.task_id);
+      }
+    });
+  }
+  return descendants;
+}
+
+function onCardDrop(e) {
+  e.preventDefault();
+  const tc=e.target.closest('.task-card');if(!tc||!draggedTaskId)return;
+  tc.classList.remove('drag-over');
+  const tid=tc.dataset.taskId;if(tid===draggedTaskId)return;
+  if (getTaskDescendantIds(draggedTaskId).indexOf(tid) >= 0) return;
+  moveTask(draggedTaskId, tid);
+}
+
+function moveTask(taskId, parentId) {
+  fetch('/api/tasks/'+taskId+'/move',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({parent_id:parentId})})
+    .then(r=>{if(!r.ok)throw 0;return r.json()})
+    .then(()=>loadProductivityData())
+    .catch(()=>alert('Failed.'));
 }

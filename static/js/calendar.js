@@ -231,7 +231,7 @@ function renderWeekView() {
       let endFrac = endIso ? getLocalHourFrac(endIso) : startFrac + 0.25;
       if (endFrac <= startFrac) endFrac = startFrac + (1/60);
       const durationMin = (endFrac - startFrac) * 60;
-      sessions.push({ taskId: t.task_id, taskName: t.name, path: t.path || '/', dayStr, startFrac, endFrac, durationMin, sessionIndex: idx + 1, totalSessions, color: getFolderColor(t.folder_id) });
+      sessions.push({ taskId: t.task_id, parentId: t.parent_id || null, taskName: t.name, dayStr, startFrac, endFrac, durationMin, sessionIndex: idx + 1, totalSessions, color: getFolderColor(t.folder_id) });
     });
   });
 
@@ -301,10 +301,29 @@ function renderWeekView() {
 
       // --- Concurrent card layout ---
       // Determine parent/child relationships and overlap groups
+      var taskById = {};
+      (prodAllTasks || []).forEach(function(t) { taskById[t.task_id] = t; });
+      function taskDepth(taskId) {
+        var depth = 0;
+        var cur = taskById[taskId];
+        var seen = {};
+        while (cur && cur.parent_id && !seen[cur.parent_id]) {
+          seen[cur.parent_id] = true;
+          depth++;
+          cur = taskById[cur.parent_id];
+        }
+        return depth;
+      }
       function isAncestor(parentSession, childSession) {
         if (parentSession.taskId === childSession.taskId) return false;
-        var parentPath = (parentSession.path || '/').replace(/\/$/, '') + '/' + parentSession.taskName + '/';
-        return (childSession.path || '/').startsWith(parentPath);
+        var cur = taskById[childSession.taskId];
+        var seen = {};
+        while (cur && cur.parent_id && !seen[cur.parent_id]) {
+          if (cur.parent_id === parentSession.taskId) return true;
+          seen[cur.parent_id] = true;
+          cur = taskById[cur.parent_id];
+        }
+        return false;
       }
       function sessionsOverlap(a, b) {
         return a.startFrac < b.endFrac && b.startFrac < a.endFrac;
@@ -370,12 +389,12 @@ function renderWeekView() {
         children.forEach(function(childIdx) {
           // Find the immediate parent in the cluster
           var parentIdx = -1;
-          var deepestPathLen = 0;
+          var deepestDepth = -1;
           for (var k = 0; k < cluster.length; k++) {
             if (k === childIdx) continue;
             if (isAncestor(cards[cluster[k]], cards[childIdx])) {
-              var pPath = (cards[cluster[k]].path || '/').length;
-              if (pPath > deepestPathLen) { deepestPathLen = pPath; parentIdx = cluster[k]; }
+              var depth = taskDepth(cards[cluster[k]].taskId);
+              if (depth > deepestDepth) { deepestDepth = depth; parentIdx = cluster[k]; }
             }
           }
           if (parentIdx >= 0) {

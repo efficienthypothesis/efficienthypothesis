@@ -252,7 +252,7 @@ function saveSmartTask() {
   } else {
     if(!assignVal){alert('Assign date is required.');document.getElementById('sm-assign').focus();return;}
     if(!dueVal){alert('Due date is required.');document.getElementById('sm-due').focus();return;}
-    const data={name,assign_datetime:localInputToUTC(assignVal),due_datetime:localInputToUTC(dueVal),path:'/'};
+    const data={name,assign_datetime:localInputToUTC(assignVal),due_datetime:localInputToUTC(dueVal)};
     if(editId){
       fetch('/api/tasks/'+editId,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(r=>{if(!r.ok)throw 0;return r.json();}).then(()=>{closeSmartModal();loadProductivityData();}).catch(()=>alert('Failed.'));
     } else {
