@@ -15,3 +15,7 @@
 
 - Added an Instructions item to the profile photo menu.
 - Added a simple in-app instructions modal explaining the three editors, macro syntax, examples, editing, tags, and delimiter escaping.
+
+## 2026-06-18 - Codex (GPT-5) hint positioning
+
+- Updated macro field hints so the grey guide text follows the typed draft text instead of overlapping the opening `<` character.

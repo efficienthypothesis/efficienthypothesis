@@ -302,10 +302,24 @@ input {
 .field-hint {
   pointer-events: none;
   position: absolute;
-  top: 0;
-  left: 10px;
-  color: rgba(117, 106, 95, 0.45);
+  inset: 0 8px auto 0;
+  z-index: 1;
+  min-height: 22px;
+  padding: 0 8px;
+  color: rgba(117, 106, 95, 0.52);
+  font-family: var(--mono);
+  font-size: 13px;
   line-height: 22px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.field-hint-spacer {
+  visibility: hidden;
+}
+
+.field-hint-value {
+  color: rgba(117, 106, 95, 0.52);
 }
 
 .empty-caret-space {

@@ -209,7 +209,10 @@ function EditorRow({
             />
             {block.type === "empty" && !readOnly ? <span className="empty-caret-space" /> : null}
             {draftHint && !editableText.includes(draftHint) ? (
-              <span className="field-hint">{draftHint}</span>
+              <span className="field-hint" aria-hidden="true">
+                <span className="field-hint-spacer">{editableText}</span>
+                <span className="field-hint-value">{draftHint}</span>
+              </span>
             ) : null}
             {block.type === "draft_item" && block.error ? (
               <span className="draft-error">{block.error}</span>
