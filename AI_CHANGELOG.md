@@ -27,3 +27,5 @@
 - Reworked macro hints to render inline on the editable line instead of in a sibling overlay, preventing the hint from appearing below the editor row.
 - Replaced editable draft rows with controlled single-line inputs plus a same-row visual hint layer, and made Enter always insert a new numbered line.
 - Required macro hints to have an actual opening `<` at the start of the line and removed the empty-row spacer that created a second visual line.
+- Changed Enter handling to split the current editable line at the cursor, moving text to the right of the cursor onto the next numbered line.
+- Focuses the new split line at the start of the moved text.

@@ -8,8 +8,13 @@ import type {
 } from "../types";
 import { useEffect, useRef, useState } from "react";
 import { findUnescaped, getDraftHint, isMacroClosed, splitUnescaped } from "../utils/macroParser";
-import { getNodeTypeForBlock, makeEmptyBlock } from "../utils/model";
+import { getNodeTypeForBlock, splitEditableBlockAtSelection } from "../utils/model";
 import { SavedNodeRow } from "./SavedNodeRow";
+
+type FocusRequest = {
+  blockId: string;
+  caret: "start" | "end";
+};
 
 type EditorPanelProps = {
   title: string;
@@ -37,7 +42,7 @@ export function EditorPanel({
   onBeginRawEdit,
   onArchiveNode
 }: EditorPanelProps) {
-  const [focusBlockId, setFocusBlockId] = useState<string | null>(null);
+  const [focusRequest, setFocusRequest] = useState<FocusRequest | null>(null);
 
   function replaceBlock(blockId: string, replacement: EditorBlock) {
     onDocumentChange({
@@ -46,22 +51,6 @@ export function EditorPanel({
       version: document.version + 1,
       updatedAt: new Date().toISOString()
     });
-  }
-
-  function insertAfter(blockId: string, block: EditorBlock) {
-    const index = document.blocks.findIndex((candidate) => candidate.id === blockId);
-    if (index < 0) return;
-    onDocumentChange({
-      ...document,
-      blocks: [
-        ...document.blocks.slice(0, index + 1),
-        block,
-        ...document.blocks.slice(index + 1)
-      ],
-      version: document.version + 1,
-      updatedAt: new Date().toISOString()
-    });
-    setFocusBlockId(block.id);
   }
 
   function removeEditableBlock(blockId: string) {
@@ -108,11 +97,26 @@ export function EditorPanel({
     });
   }
 
-  function handleKeyDown(event: React.KeyboardEvent<HTMLElement>, block: EditorBlock) {
+  function handleKeyDown(
+    event: React.KeyboardEvent<HTMLInputElement>,
+    block: EditorBlock,
+    blockIndex: number
+  ) {
     if (readOnly || block.type === "section" || block.type === "saved_node") return;
     if (event.key === "Enter") {
       event.preventDefault();
-      insertAfter(block.id, makeEmptyBlock());
+      const input = event.currentTarget;
+      const selectionStart = input.selectionStart ?? input.value.length;
+      const selectionEnd = input.selectionEnd ?? selectionStart;
+      const split = splitEditableBlockAtSelection(
+        document,
+        blockIndex,
+        selectionStart,
+        selectionEnd,
+        input.value
+      );
+      onDocumentChange(split.document);
+      if (split.nextBlockId) setFocusRequest({ blockId: split.nextBlockId, caret: "start" });
       return;
     }
     if (event.key === "Backspace" && block.type === "empty") {
@@ -132,12 +136,12 @@ export function EditorPanel({
             state={state}
             readOnly={readOnly}
             onText={(text) => updateText(block, index, text)}
-            onKeyDown={(event) => handleKeyDown(event, block)}
+            onKeyDown={(event) => handleKeyDown(event, block, index)}
             onBeginRawEdit={() => {
               if (block.type === "saved_node") onBeginRawEdit(document, block);
             }}
-            autoFocus={focusBlockId === block.id}
-            onFocused={() => setFocusBlockId(null)}
+            focusPosition={focusRequest?.blockId === block.id ? focusRequest.caret : null}
+            onFocused={() => setFocusRequest(null)}
             onArchive={() => {
               if (block.type === "saved_node") onArchiveNode?.(block);
             }}
@@ -154,9 +158,9 @@ type EditorRowProps = {
   state: WorkspaceState;
   readOnly?: boolean;
   onText: (text: string) => void;
-  onKeyDown: (event: React.KeyboardEvent<HTMLElement>) => void;
+  onKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => void;
   onBeginRawEdit: () => void;
-  autoFocus: boolean;
+  focusPosition: "start" | "end" | null;
   onFocused: () => void;
   onArchive: () => void;
 };
@@ -169,7 +173,7 @@ function EditorRow({
   onText,
   onKeyDown,
   onBeginRawEdit,
-  autoFocus,
+  focusPosition,
   onFocused,
   onArchive
 }: EditorRowProps) {
@@ -212,7 +216,7 @@ function EditorRow({
               }`}
               hintPrefix={getDraftHintPrefix(editableText)}
               hint={visibleDraftHint}
-              autoFocus={autoFocus}
+              focusPosition={focusPosition}
               onFocused={onFocused}
               onText={onText}
               onKeyDown={onKeyDown}
@@ -235,8 +239,8 @@ type EditableTextLineProps = {
   hintPrefix: string;
   hint: string;
   onText: (text: string) => void;
-  onKeyDown: (event: React.KeyboardEvent<HTMLElement>) => void;
-  autoFocus: boolean;
+  onKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => void;
+  focusPosition: "start" | "end" | null;
   onFocused: () => void;
 };
 
@@ -249,7 +253,7 @@ function EditableTextLine({
   hint,
   onText,
   onKeyDown,
-  autoFocus,
+  focusPosition,
   onFocused
 }: EditableTextLineProps) {
   const ref = useRef<HTMLInputElement | null>(null);
@@ -267,11 +271,12 @@ function EditableTextLine({
 
   useEffect(() => {
     const element = ref.current;
-    if (!autoFocus || !element) return;
+    if (!focusPosition || !element) return;
     element.focus();
-    element.setSelectionRange(element.value.length, element.value.length);
+    const caretPosition = focusPosition === "start" ? 0 : element.value.length;
+    element.setSelectionRange(caretPosition, caretPosition);
     onFocused();
-  }, [autoFocus, onFocused]);
+  }, [focusPosition, onFocused]);
 
   return (
     <div className="editable-input-wrap">

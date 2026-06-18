@@ -1,6 +1,9 @@
 import type {
+  DraftItemBlock,
   EditorBlock,
   EditorDocument,
+  EmptyLineBlock,
+  FreeTextBlock,
   NodeType,
   SavedNodeBlock,
   WorkspaceState
@@ -18,6 +21,80 @@ export function getNodeTypeForBlock(document: EditorDocument, blockIndex: number
     if (block?.type === "section") return inferNodeTypeFromSection(block.label);
   }
   return "task";
+}
+
+export function getEditableBlockText(block: EditorBlock): string {
+  if (block.type === "free_text") return block.text;
+  if (block.type === "draft_item") return block.raw;
+  return "";
+}
+
+export function makeEditableBlockFromText(
+  text: string,
+  id: string,
+  inferredNodeType: NodeType,
+  sourceBlock?: EditorBlock
+): EmptyLineBlock | FreeTextBlock | DraftItemBlock {
+  if (!text) return { type: "empty", id };
+  if (text.startsWith("<")) {
+    return {
+      type: "draft_item",
+      id,
+      raw: text,
+      inferredNodeType,
+      parseState: "open",
+      editingNodeId: sourceBlock?.type === "draft_item" ? sourceBlock.editingNodeId : undefined,
+      editingNodeType: sourceBlock?.type === "draft_item" ? sourceBlock.editingNodeType : undefined
+    };
+  }
+  return { type: "free_text", id, text };
+}
+
+export function splitEditableBlockAtSelection(
+  document: EditorDocument,
+  blockIndex: number,
+  selectionStart: number,
+  selectionEnd: number,
+  currentText?: string
+): { document: EditorDocument; nextBlockId: string | null } {
+  const block = document.blocks[blockIndex];
+  if (!block || block.type === "section" || block.type === "saved_node") {
+    return { document, nextBlockId: null };
+  }
+
+  const text = currentText ?? getEditableBlockText(block);
+  const start = Math.max(0, Math.min(selectionStart, text.length));
+  const end = Math.max(start, Math.min(selectionEnd, text.length));
+  const inferredNodeType =
+    block.type === "draft_item" ? block.inferredNodeType : getNodeTypeForBlock(document, blockIndex);
+  const nextBlockId = makeId("blk");
+  const currentBlock = makeEditableBlockFromText(
+    text.slice(0, start),
+    block.id,
+    inferredNodeType,
+    block
+  );
+  const nextBlock = makeEditableBlockFromText(
+    text.slice(end),
+    nextBlockId,
+    inferredNodeType,
+    block
+  );
+
+  return {
+    document: {
+      ...document,
+      blocks: [
+        ...document.blocks.slice(0, blockIndex),
+        currentBlock,
+        nextBlock,
+        ...document.blocks.slice(blockIndex + 1)
+      ],
+      version: document.version + 1,
+      updatedAt: new Date().toISOString()
+    },
+    nextBlockId
+  };
 }
 
 export function ensureTrailingEmptyLine(blocks: EditorBlock[]): EditorBlock[] {
