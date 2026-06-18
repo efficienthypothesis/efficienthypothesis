@@ -14,7 +14,7 @@ import type {
   WorkspaceState
 } from "../types";
 import type { ParsedMacro } from "../utils/macroParser";
-import { escapeMacroText, normalizeTagName } from "../utils/macroParser";
+import { escapeMacroText, normalizeTagName, splitUnescaped } from "../utils/macroParser";
 import { parseLocalDateTimeToUtc } from "../utils/date";
 import { makeId, nowIso } from "../utils/ids";
 
@@ -268,23 +268,45 @@ function normalizeColor(raw: string | null): string | null {
 
 function parseSubscriptionRate(raw: string | null): SubscriptionRate | null {
   if (!raw) return null;
-  const value = raw.trim();
-  const match = value.match(
-    /^\$?(\d+(?:\.\d+)?)\s*(?:(?:\/|per\s+|every\s+)(\d+)?\s*)?(day|week|month|year)s?$/i
+  const [amountRaw, currencyRaw, intervalCountRaw, intervalUnitRaw, ...extra] = splitUnescaped(raw, ",").map(
+    (part) => part.trim()
   );
-  if (!match) return null;
-  const unit = `${match[3].toLowerCase()}s` as SubscriptionRate["intervalUnit"];
+  if (extra.length > 0 || !amountRaw || !currencyRaw || !intervalCountRaw || !intervalUnitRaw) {
+    return null;
+  }
+
+  const amount = Number(amountRaw);
+  const intervalCount = Number(intervalCountRaw);
+  const unit = normalizeIntervalUnit(intervalUnitRaw);
+  if (!Number.isFinite(amount) || amount < 0 || !Number.isInteger(intervalCount) || intervalCount <= 0 || !unit) {
+    return null;
+  }
+
   return {
-    amount: Number(match[1]),
-    currency: "USD",
-    intervalCount: match[2] ? Number(match[2]) : 1,
+    amount,
+    currency: normalizeCurrency(currencyRaw),
+    intervalCount,
     intervalUnit: unit
   };
 }
 
 function formatRate(rate: SubscriptionRate | null): string {
   if (!rate) return "";
-  return `${rate.currency} ${rate.amount}/${rate.intervalCount > 1 ? rate.intervalCount : ""}${rate.intervalUnit}`;
+  return `${rate.amount}, ${rate.currency}, ${rate.intervalCount}, ${rate.intervalUnit}`;
+}
+
+function normalizeCurrency(raw: string): string {
+  const value = raw.trim();
+  return /^[a-z]{3}$/i.test(value) ? value.toUpperCase() : value;
+}
+
+function normalizeIntervalUnit(raw: string): SubscriptionRate["intervalUnit"] | null {
+  const normalized = raw.trim().toLowerCase();
+  if (normalized === "day" || normalized === "days") return "days";
+  if (normalized === "week" || normalized === "weeks") return "weeks";
+  if (normalized === "month" || normalized === "months") return "months";
+  if (normalized === "year" || normalized === "years") return "years";
+  return null;
 }
 
 function getCollection(state: WorkspaceState, nodeType: NodeType): Record<string, AnyNode> {

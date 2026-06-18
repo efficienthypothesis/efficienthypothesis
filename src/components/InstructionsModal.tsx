@@ -36,8 +36,9 @@ export function InstructionsModal({ open, onClose }: InstructionsModalProps) {
 optional note>`}</pre>
             <p>
               For subscriptions, type under the Subscriptions section and use{" "}
-              <code>&lt;name; rate; tag&gt;</code>. The rate can be written like{" "}
-              <code>$12/month</code>, <code>$99/year</code>, or <code>$8 every 2 weeks</code>.
+              <code>&lt;name; amount, currency, interval count, interval unit; tag&gt;</code>.
+              The rate must have four comma-separated values, such as{" "}
+              <code>8, USD, 4, weeks</code> or <code>8, $, 1, month</code>.
             </p>
           </section>
 
@@ -52,7 +53,7 @@ Website:
 Requires SSO>
 
 Subscription:
-<Netflix; $15.49/month; Entertainment
+<Netflix; 15.49, USD, 1, month; Entertainment
 Family streaming plan>
 
 Timetable:

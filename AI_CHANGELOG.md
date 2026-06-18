@@ -18,6 +18,8 @@
 - Added subscription syntax, rate argument guidance, and a subscription example to the instructions modal.
 - Changed macro hints so fields beyond a datatype's structured arguments show `note`, and added tests that extra subscription semicolon fields become note text.
 - Updated subscription rate parsing to support `every N weeks/months/etc.` phrasing used in the instructions.
+- Replaced phrase-based subscription rate parsing with a four-value comma format: amount, currency, interval count, interval unit.
+- Preserved symbol currencies such as `$` while normalizing three-letter currency codes to uppercase.
 
 ## 2026-06-18 - Codex (GPT-5) hint positioning
 

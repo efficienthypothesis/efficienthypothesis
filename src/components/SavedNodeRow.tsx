@@ -63,7 +63,7 @@ function getFields(state: WorkspaceState, nodeType: NodeType, node: AnyNode): [s
   }
   if (nodeType === "subscription" && "rate" in node) {
     const rate = node.rate
-      ? `${node.rate.currency} ${node.rate.amount}/${node.rate.intervalCount > 1 ? node.rate.intervalCount : ""}${node.rate.intervalUnit}`
+      ? `${node.rate.amount}, ${node.rate.currency}, ${node.rate.intervalCount}, ${node.rate.intervalUnit}`
       : "";
     return [node.name, rate, getTagName(state, node.tagId)];
   }
