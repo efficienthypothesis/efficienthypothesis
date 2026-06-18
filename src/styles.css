@@ -277,10 +277,26 @@ input {
   background: var(--panel-bg);
 }
 
+.editable-input-wrap {
+  position: relative;
+  min-height: 22px;
+}
+
 .editable-line {
+  position: relative;
+  z-index: 2;
+  display: block;
+  width: 100%;
+  height: 22px;
   min-height: 22px;
   padding: 0 8px;
+  border: 0;
   outline: none;
+  background: transparent;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 22px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -299,11 +315,28 @@ input {
   box-shadow: inset 2px 0 0 var(--danger);
 }
 
-.editable-line[data-hint]::after {
-  content: " " attr(data-hint);
+.field-hint {
   pointer-events: none;
+  position: absolute;
+  inset: 0 8px auto 0;
+  z-index: 3;
+  height: 22px;
+  padding: 0 8px;
+  overflow: hidden;
   color: rgba(117, 106, 95, 0.52);
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 22px;
   user-select: none;
+  white-space: pre;
+}
+
+.field-hint-spacer {
+  visibility: hidden;
+}
+
+.field-hint-value {
+  color: rgba(117, 106, 95, 0.52);
 }
 
 .empty-caret-space {
