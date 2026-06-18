@@ -19,3 +19,4 @@
 ## 2026-06-18 - Codex (GPT-5) hint positioning
 
 - Updated macro field hints so the grey guide text follows the typed draft text instead of overlapping the opening `<` character.
+- Reworked macro hints to render inline on the editable line instead of in a sibling overlay, preventing the hint from appearing below the editor row.

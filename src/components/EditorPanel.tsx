@@ -7,7 +7,7 @@ import type {
   WorkspaceState
 } from "../types";
 import { useEffect, useRef } from "react";
-import { getDraftHint, isMacroClosed } from "../utils/macroParser";
+import { findUnescaped, getDraftHint, isMacroClosed, splitUnescaped } from "../utils/macroParser";
 import { getNodeTypeForBlock, makeEmptyBlock } from "../utils/model";
 import { SavedNodeRow } from "./SavedNodeRow";
 
@@ -173,6 +173,8 @@ function EditorRow({
   const editableText =
     block.type === "free_text" ? block.text : block.type === "draft_item" ? block.raw : "";
   const draftHint = block.type === "draft_item" ? getDraftHint(block.raw, block.inferredNodeType) : "";
+  const visibleDraftHint =
+    block.type === "draft_item" && shouldShowDraftHint(block.raw, draftHint) ? draftHint : "";
 
   return (
     <div className={`editor-row row-${block.type} ${readOnly ? "readonly" : ""}`}>
@@ -204,16 +206,11 @@ function EditorRow({
               className={`editable-line ${block.type === "draft_item" ? "draft-line" : ""} ${
                 block.type === "draft_item" && block.parseState === "invalid" ? "invalid" : ""
               }`}
+              hint={visibleDraftHint}
               onText={onText}
               onKeyDown={onKeyDown}
             />
             {block.type === "empty" && !readOnly ? <span className="empty-caret-space" /> : null}
-            {draftHint && !editableText.includes(draftHint) ? (
-              <span className="field-hint" aria-hidden="true">
-                <span className="field-hint-spacer">{editableText}</span>
-                <span className="field-hint-value">{draftHint}</span>
-              </span>
-            ) : null}
             {block.type === "draft_item" && block.error ? (
               <span className="draft-error">{block.error}</span>
             ) : null}
@@ -229,6 +226,7 @@ type EditableTextLineProps = {
   text: string;
   readOnly: boolean;
   className: string;
+  hint: string;
   onText: (text: string) => void;
   onKeyDown: (event: React.KeyboardEvent<HTMLDivElement>) => void;
 };
@@ -238,6 +236,7 @@ function EditableTextLine({
   text,
   readOnly,
   className,
+  hint,
   onText,
   onKeyDown
 }: EditableTextLineProps) {
@@ -250,8 +249,8 @@ function EditableTextLine({
     const blockChanged = lastBlockId.current !== blockId;
     lastBlockId.current = blockId;
     if (blockChanged || globalThis.document.activeElement !== element) {
-      if (element.innerText !== text) {
-        element.innerText = text;
+      if ((element.textContent || "") !== text) {
+        element.textContent = text;
       }
     }
   }, [blockId, text]);
@@ -261,10 +260,21 @@ function EditableTextLine({
       ref={ref}
       className={className}
       contentEditable={!readOnly}
+      data-hint={hint || undefined}
       suppressContentEditableWarning
-      onInput={(event) => onText(event.currentTarget.innerText.replace(/\u00a0/g, " "))}
+      onInput={(event) => onText((event.currentTarget.textContent || "").replace(/\u00a0/g, " "))}
       onKeyDown={onKeyDown}
       spellCheck={false}
     />
   );
+}
+
+function shouldShowDraftHint(raw: string, hint: string): boolean {
+  if (!hint) return false;
+  const start = findUnescaped(raw, "<");
+  const relevant = start >= 0 ? raw.slice(start + 1) : raw;
+  const firstLine = relevant.split(/\r?\n/)[0] || "";
+  const fields = splitUnescaped(firstLine, ";");
+  const currentField = fields[fields.length - 1] || "";
+  return currentField.trim().length === 0;
 }
