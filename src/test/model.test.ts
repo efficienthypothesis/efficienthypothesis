@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createDefaultWorkspace } from "../services/defaultWorkspace";
 import type { EditorDocument } from "../types";
+import { getDraftGroup, isContinuationDraftLine } from "../utils/draftGroups";
 import { splitEditableBlockAtSelection } from "../utils/model";
 
 function documentWithLine(text: string): EditorDocument {
@@ -78,5 +79,38 @@ describe("editor model", () => {
 
     expect(result.blocks[1]).toMatchObject({ type: "empty" });
     expect(result.blocks[2]).toMatchObject({ type: "draft_item" });
+  });
+
+  it("groups persisted free text continuation lines with their open draft macro", () => {
+    const workspace = createDefaultWorkspace("user_1");
+    const baseDocument = workspace.documents.websites_subscriptions;
+    const document = {
+      ...baseDocument,
+      blocks: [
+        baseDocument.blocks[0],
+        baseDocument.blocks[1],
+        baseDocument.blocks[2],
+        {
+          type: "draft_item" as const,
+          id: "draft_1",
+          raw: "<Verizon Phone Plan Simplicity; 51.27, USD, 1, month;",
+          inferredNodeType: "subscription" as const,
+          parseState: "open" as const
+        },
+        { type: "free_text" as const, id: "free_1", text: "Electronics;" },
+        { type: "empty" as const, id: "empty_1" }
+      ]
+    };
+
+    const group = getDraftGroup(document, 4);
+
+    expect(group).toMatchObject({
+      startIndex: 3,
+      endIndex: 4,
+      raw: "<Verizon Phone Plan Simplicity; 51.27, USD, 1, month;\nElectronics;"
+    });
+    expect(getDraftGroup(document, 3)?.endIndex).toBe(4);
+    expect(getDraftGroup(document, 5)).toBeNull();
+    expect(isContinuationDraftLine(document, 4)).toBe(true);
   });
 });

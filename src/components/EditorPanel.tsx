@@ -8,7 +8,8 @@ import type {
 } from "../types";
 import { useEffect, useRef, useState } from "react";
 import { findUnescaped, getDraftHint, isMacroClosed, splitUnescaped } from "../utils/macroParser";
-import { getNodeTypeForBlock, splitEditableBlockAtSelection } from "../utils/model";
+import { compactDraftGroup, getDraftGroup, isContinuationDraftLine } from "../utils/draftGroups";
+import { getNodeTypeForBlock, replaceBlock as replaceBlockInDocument, splitEditableBlockAtSelection } from "../utils/model";
 import { SavedNodeRow } from "./SavedNodeRow";
 
 type FocusRequest = {
@@ -203,6 +204,7 @@ function EditorRow({
     draftGroup && draftGroup.endIndex === index && shouldShowDraftHint(draftGroup.raw, draftHint)
       ? draftHint
       : "";
+  const isDraftLine = Boolean(draftGroup);
 
   return (
     <div className={`editor-row row-${block.type} ${readOnly ? "readonly" : ""}`}>
@@ -231,7 +233,7 @@ function EditorRow({
               blockId={block.id}
               text={editableText}
               readOnly={readOnly}
-              className={`editable-line ${block.type === "draft_item" ? "draft-line" : ""} ${
+              className={`editable-line ${isDraftLine ? "draft-line" : ""} ${
                 block.type === "draft_item" && block.parseState === "invalid" ? "invalid" : ""
               }`}
               hintPrefix={getDraftHintPrefix(editableText)}
@@ -325,84 +327,10 @@ function shouldShowDraftHint(raw: string, hint: string): boolean {
   const start = findUnescaped(raw, "<");
   if (start !== 0) return false;
   const relevant = start >= 0 ? raw.slice(start + 1) : raw;
-  const firstLine = relevant.split(/\r?\n/)[0] || "";
-  const fields = splitUnescaped(firstLine, ";");
+  const body = relevant.split(">")[0] || "";
+  const fields = splitUnescaped(body, ";");
   const currentField = fields[fields.length - 1] || "";
   return currentField.trim().length === 0;
-}
-
-type DraftGroup = {
-  startIndex: number;
-  endIndex: number;
-  startBlock: DraftItemBlock;
-  inferredNodeType: NodeType;
-  raw: string;
-};
-
-function replaceBlockInDocument(
-  document: EditorDocument,
-  blockId: string,
-  replacement: EditorBlock
-): EditorDocument {
-  return {
-    ...document,
-    blocks: document.blocks.map((block) => (block.id === blockId ? replacement : block)),
-    version: document.version + 1,
-    updatedAt: new Date().toISOString()
-  };
-}
-
-function isContinuationDraftLine(document: EditorDocument, blockIndex: number): boolean {
-  const group = getDraftGroup(document, blockIndex);
-  return Boolean(group && group.startIndex < blockIndex);
-}
-
-function getDraftGroup(document: EditorDocument, blockIndex: number): DraftGroup | null {
-  const block = document.blocks[blockIndex];
-  if (block?.type !== "draft_item") return null;
-
-  let startIndex = blockIndex;
-  while (document.blocks[startIndex - 1]?.type === "draft_item") {
-    startIndex -= 1;
-  }
-
-  const startBlock = document.blocks[startIndex];
-  if (startBlock?.type !== "draft_item" || !startBlock.raw.startsWith("<")) return null;
-
-  let endIndex = blockIndex;
-  while (document.blocks[endIndex + 1]?.type === "draft_item") {
-    endIndex += 1;
-  }
-
-  const raw = document.blocks
-    .slice(startIndex, endIndex + 1)
-    .map((candidate) => (candidate.type === "draft_item" ? candidate.raw : ""))
-    .join("\n");
-
-  return {
-    startIndex,
-    endIndex,
-    startBlock,
-    inferredNodeType: startBlock.inferredNodeType,
-    raw
-  };
-}
-
-function compactDraftGroup(
-  document: EditorDocument,
-  group: DraftGroup,
-  aggregateDraft: DraftItemBlock
-): EditorDocument {
-  return {
-    ...document,
-    blocks: [
-      ...document.blocks.slice(0, group.startIndex),
-      aggregateDraft,
-      ...document.blocks.slice(group.endIndex + 1)
-    ],
-    version: document.version + 1,
-    updatedAt: new Date().toISOString()
-  };
 }
 
 function getDraftHintPrefix(raw: string): string {
