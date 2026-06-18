@@ -37,4 +37,46 @@ describe("editor model", () => {
     expect(result.blocks[1]).toMatchObject({ type: "free_text", text: "a" });
     expect(result.blocks[2]).toMatchObject({ type: "free_text", text: "ef" });
   });
+
+  it("keeps text moved from an open draft macro as draft continuation", () => {
+    const workspace = createDefaultWorkspace("user_1");
+    const document = {
+      ...workspace.documents.websites_subscriptions,
+      blocks: [
+        workspace.documents.websites_subscriptions.blocks[0],
+        {
+          type: "draft_item" as const,
+          id: "draft_1",
+          raw: "<Name; 8, USD, 1, month; Electronics;",
+          inferredNodeType: "subscription" as const,
+          parseState: "open" as const
+        }
+      ]
+    };
+    const result = splitEditableBlockAtSelection(document, 1, 25, 25).document;
+
+    expect(result.blocks[1]).toMatchObject({ type: "draft_item" });
+    expect(result.blocks[2]).toMatchObject({ type: "draft_item" });
+  });
+
+  it("creates an empty line when splitting at the start of an opening draft line", () => {
+    const workspace = createDefaultWorkspace("user_1");
+    const document = {
+      ...workspace.documents.websites_subscriptions,
+      blocks: [
+        workspace.documents.websites_subscriptions.blocks[0],
+        {
+          type: "draft_item" as const,
+          id: "draft_1",
+          raw: "<Name; 8, USD, 1, month; Electronics;",
+          inferredNodeType: "subscription" as const,
+          parseState: "open" as const
+        }
+      ]
+    };
+    const result = splitEditableBlockAtSelection(document, 1, 0, 0).document;
+
+    expect(result.blocks[1]).toMatchObject({ type: "empty" });
+    expect(result.blocks[2]).toMatchObject({ type: "draft_item" });
+  });
 });

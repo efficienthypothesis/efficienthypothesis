@@ -66,13 +66,14 @@ export function EditorPanel({
     if (readOnly || block.type === "section" || block.type === "saved_node") return;
     const inferredNodeType =
       block.type === "draft_item" ? block.inferredNodeType : getNodeTypeForBlock(document, blockIndex);
+    const isDraftContinuation = isContinuationDraftLine(document, blockIndex);
 
-    if (!text) {
+    if (!text && !isDraftContinuation) {
       replaceBlock(block.id, { type: "empty", id: block.id });
       return;
     }
 
-    if (text.startsWith("<")) {
+    if (text.startsWith("<") || isDraftContinuation) {
       const draft: DraftItemBlock = {
         type: "draft_item",
         id: block.id,
@@ -82,10 +83,23 @@ export function EditorPanel({
         editingNodeId: block.type === "draft_item" ? block.editingNodeId : undefined,
         editingNodeType: block.type === "draft_item" ? block.editingNodeType : undefined
       };
-      if (isMacroClosed(text)) {
-        onFinalizeMacro(document, draft, text, inferredNodeType);
+      const nextDocument = replaceBlockInDocument(document, block.id, draft);
+      const draftGroup = getDraftGroup(nextDocument, blockIndex);
+
+      if (draftGroup && isMacroClosed(draftGroup.raw)) {
+        const aggregateDraft: DraftItemBlock = {
+          ...draftGroup.startBlock,
+          raw: draftGroup.raw,
+          inferredNodeType: draftGroup.inferredNodeType
+        };
+        onFinalizeMacro(
+          compactDraftGroup(nextDocument, draftGroup, aggregateDraft),
+          aggregateDraft,
+          draftGroup.raw,
+          draftGroup.inferredNodeType
+        );
       } else {
-        replaceBlock(block.id, draft);
+        onDocumentChange(nextDocument);
       }
       return;
     }
@@ -131,6 +145,7 @@ export function EditorPanel({
         {document.blocks.map((block, index) => (
           <EditorRow
             key={block.id}
+            document={document}
             block={block}
             index={index}
             state={state}
@@ -153,6 +168,7 @@ export function EditorPanel({
 }
 
 type EditorRowProps = {
+  document: EditorDocument;
   block: EditorBlock;
   index: number;
   state: WorkspaceState;
@@ -166,6 +182,7 @@ type EditorRowProps = {
 };
 
 function EditorRow({
+  document,
   block,
   index,
   state,
@@ -180,9 +197,12 @@ function EditorRow({
   const lineNumber = index + 1;
   const editableText =
     block.type === "free_text" ? block.text : block.type === "draft_item" ? block.raw : "";
-  const draftHint = block.type === "draft_item" ? getDraftHint(block.raw, block.inferredNodeType) : "";
+  const draftGroup = getDraftGroup(document, index);
+  const draftHint = draftGroup ? getDraftHint(draftGroup.raw, draftGroup.inferredNodeType) : "";
   const visibleDraftHint =
-    block.type === "draft_item" && shouldShowDraftHint(block.raw, draftHint) ? draftHint : "";
+    draftGroup && draftGroup.endIndex === index && shouldShowDraftHint(draftGroup.raw, draftHint)
+      ? draftHint
+      : "";
 
   return (
     <div className={`editor-row row-${block.type} ${readOnly ? "readonly" : ""}`}>
@@ -309,6 +329,80 @@ function shouldShowDraftHint(raw: string, hint: string): boolean {
   const fields = splitUnescaped(firstLine, ";");
   const currentField = fields[fields.length - 1] || "";
   return currentField.trim().length === 0;
+}
+
+type DraftGroup = {
+  startIndex: number;
+  endIndex: number;
+  startBlock: DraftItemBlock;
+  inferredNodeType: NodeType;
+  raw: string;
+};
+
+function replaceBlockInDocument(
+  document: EditorDocument,
+  blockId: string,
+  replacement: EditorBlock
+): EditorDocument {
+  return {
+    ...document,
+    blocks: document.blocks.map((block) => (block.id === blockId ? replacement : block)),
+    version: document.version + 1,
+    updatedAt: new Date().toISOString()
+  };
+}
+
+function isContinuationDraftLine(document: EditorDocument, blockIndex: number): boolean {
+  const group = getDraftGroup(document, blockIndex);
+  return Boolean(group && group.startIndex < blockIndex);
+}
+
+function getDraftGroup(document: EditorDocument, blockIndex: number): DraftGroup | null {
+  const block = document.blocks[blockIndex];
+  if (block?.type !== "draft_item") return null;
+
+  let startIndex = blockIndex;
+  while (document.blocks[startIndex - 1]?.type === "draft_item") {
+    startIndex -= 1;
+  }
+
+  const startBlock = document.blocks[startIndex];
+  if (startBlock?.type !== "draft_item" || !startBlock.raw.startsWith("<")) return null;
+
+  let endIndex = blockIndex;
+  while (document.blocks[endIndex + 1]?.type === "draft_item") {
+    endIndex += 1;
+  }
+
+  const raw = document.blocks
+    .slice(startIndex, endIndex + 1)
+    .map((candidate) => (candidate.type === "draft_item" ? candidate.raw : ""))
+    .join("\n");
+
+  return {
+    startIndex,
+    endIndex,
+    startBlock,
+    inferredNodeType: startBlock.inferredNodeType,
+    raw
+  };
+}
+
+function compactDraftGroup(
+  document: EditorDocument,
+  group: DraftGroup,
+  aggregateDraft: DraftItemBlock
+): EditorDocument {
+  return {
+    ...document,
+    blocks: [
+      ...document.blocks.slice(0, group.startIndex),
+      aggregateDraft,
+      ...document.blocks.slice(group.endIndex + 1)
+    ],
+    version: document.version + 1,
+    updatedAt: new Date().toISOString()
+  };
 }
 
 function getDraftHintPrefix(raw: string): string {

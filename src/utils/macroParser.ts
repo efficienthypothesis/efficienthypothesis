@@ -158,12 +158,22 @@ export function parseMacro(rawInput: string, nodeType: NodeType): MacroParseResu
     };
   }
 
-  const [firstLine = "", ...noteLines] = body.split(/\r?\n/);
-  const rawFirstLineFields = splitUnescaped(firstLine, ";");
-  const firstLineFields = rawFirstLineFields.map((field) => unescapeMacroText(field).trim());
-  const [name = "", primaryRaw = "", secondaryRaw = "", ...extraFields] = firstLineFields;
-  const noteText = [...extraFields, ...noteLines.map(unescapeMacroText)]
-    .map((line) => line.trimEnd())
+  const fieldCount = getFieldHints(nodeType).length;
+  const rawFields = splitUnescaped(body, ";");
+  const structuredRawFields = Array.from({ length: fieldCount }, (_, index) => rawFields[index] || "");
+  const extraRawFields = rawFields.slice(fieldCount);
+  const finalStructuredField = splitFinalStructuredField(structuredRawFields[fieldCount - 1] || "");
+  const firstLineFields = structuredRawFields.map((field, index) =>
+    index === fieldCount - 1 ? finalStructuredField.value : normalizeStructuredField(field)
+  );
+  const [name = "", primaryRaw = "", secondaryRaw = ""] = firstLineFields;
+  const extraFields = extraRawFields.map((field) => unescapeMacroText(field).trim());
+  const noteText = [
+    finalStructuredField.note,
+    ...extraRawFields.map((field) => unescapeMacroText(field))
+  ]
+    .filter((line): line is string => line !== null)
+    .map((line) => line.trim())
     .filter((line, index, arr) => line.length > 0 || index < arr.length - 1)
     .join("\n")
     .trim();
@@ -189,8 +199,8 @@ export function parseMacro(rawInput: string, nodeType: NodeType): MacroParseResu
     return {
       ...resultBase,
       primary: primaryRaw.trim() || null,
-      listValues: splitUnescaped(rawFirstLineFields[1] || "", ",")
-        .map((value) => unescapeMacroText(value).trim())
+      listValues: splitUnescaped(structuredRawFields[1] || "", ",")
+        .map((value) => normalizeStructuredField(value))
         .filter(Boolean),
       tagName: secondaryRaw.trim() || null
     };
@@ -212,6 +222,27 @@ export function parseMacro(rawInput: string, nodeType: NodeType): MacroParseResu
   }
 
   return resultBase;
+}
+
+function normalizeStructuredField(raw: string): string {
+  return unescapeMacroText(raw).replace(/\s*\r?\n\s*/g, " ").trim();
+}
+
+function splitFinalStructuredField(raw: string): { value: string; note: string | null } {
+  const unescaped = unescapeMacroText(raw);
+  const newlineMatch = /\r?\n/.exec(unescaped);
+  if (!newlineMatch) return { value: unescaped.trim(), note: null };
+
+  const beforeNewline = unescaped.slice(0, newlineMatch.index);
+  const afterNewline = unescaped.slice(newlineMatch.index + newlineMatch[0].length);
+  if (!beforeNewline.trim()) {
+    return { value: normalizeStructuredField(unescaped), note: null };
+  }
+
+  return {
+    value: beforeNewline.trim(),
+    note: afterNewline.trim() || null
+  };
 }
 
 export function getFieldHints(nodeType: NodeType): string[] {
@@ -241,8 +272,8 @@ export function getDraftHint(raw: string, nodeType: NodeType): string {
   const hints = getFieldHints(nodeType);
   const start = findUnescaped(raw, "<");
   const relevant = start >= 0 ? raw.slice(start + 1) : raw;
-  const firstLine = relevant.split(/\r?\n/)[0] || "";
-  const fieldIndex = splitUnescaped(firstLine, ";").length - 1;
+  const body = relevant.split(">")[0] || "";
+  const fieldIndex = splitUnescaped(body, ";").length - 1;
   if (fieldIndex >= hints.length) return "note";
   return hints[Math.max(0, fieldIndex)] || "";
 }

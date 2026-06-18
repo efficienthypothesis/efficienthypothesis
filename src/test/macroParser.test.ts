@@ -74,6 +74,27 @@ describe("macro parser", () => {
     ).toBe("note");
   });
 
+  it("uses semicolons across draft lines when calculating hints", () => {
+    expect(
+      getDraftHint(
+        "<Verizon Phone Plan Simplicity; 51.27, USD, 1, month;\nElectronics;",
+        "subscription"
+      )
+    ).toBe("note");
+  });
+
+  it("parses structured fields that continue on the next draft line", () => {
+    const parsed = parseMacro(
+      "<Verizon Phone Plan Simplicity; 51.27, USD, 1, month;\nElectronics;>",
+      "subscription"
+    );
+    expect(parsed.valid).toBe(true);
+    if (!parsed.valid) return;
+    expect(parsed.primary).toBe("51.27, USD, 1, month");
+    expect(parsed.tagName).toBe("Electronics");
+    expect(parsed.note).toBeNull();
+  });
+
   it("does not allow nested item creation", () => {
     const parsed = parseMacro("<Outer <Inner>; tomorrow; test>", "task");
     expect(parsed.valid).toBe(false);

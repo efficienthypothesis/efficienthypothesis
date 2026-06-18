@@ -33,10 +33,11 @@ export function makeEditableBlockFromText(
   text: string,
   id: string,
   inferredNodeType: NodeType,
-  sourceBlock?: EditorBlock
+  sourceBlock?: EditorBlock,
+  forceDraft = false
 ): EmptyLineBlock | FreeTextBlock | DraftItemBlock {
-  if (!text) return { type: "empty", id };
-  if (text.startsWith("<")) {
+  if (!text && !forceDraft) return { type: "empty", id };
+  if (forceDraft || text.startsWith("<")) {
     return {
       type: "draft_item",
       id,
@@ -68,17 +69,20 @@ export function splitEditableBlockAtSelection(
   const inferredNodeType =
     block.type === "draft_item" ? block.inferredNodeType : getNodeTypeForBlock(document, blockIndex);
   const nextBlockId = makeId("blk");
+  const sourceStartsDraft = block.type === "draft_item" && block.raw.startsWith("<");
   const currentBlock = makeEditableBlockFromText(
     text.slice(0, start),
     block.id,
     inferredNodeType,
-    block
+    block,
+    block.type === "draft_item" && !sourceStartsDraft && !text.slice(0, start).startsWith("<")
   );
   const nextBlock = makeEditableBlockFromText(
     text.slice(end),
     nextBlockId,
     inferredNodeType,
-    block
+    block,
+    block.type === "draft_item" && !text.slice(end).startsWith("<")
   );
 
   return {

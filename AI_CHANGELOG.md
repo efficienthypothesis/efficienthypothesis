@@ -29,3 +29,5 @@
 - Required macro hints to have an actual opening `<` at the start of the line and removed the empty-row spacer that created a second visual line.
 - Changed Enter handling to split the current editable line at the cursor, moving text to the right of the cursor onto the next numbered line.
 - Focuses the new split line at the start of the moved text.
+- Treats contiguous draft lines from one opening `<` as one macro for hints/finalization, so split subscription fields still guide to `note` after the tag.
+- Updated macro parsing so structured fields can continue across draft line splits before becoming note text.
