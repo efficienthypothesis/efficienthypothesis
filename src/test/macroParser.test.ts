@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  getDraftHint,
   inferNodeTypeFromSection,
   normalizeTagName,
   parseMacro
@@ -49,6 +50,28 @@ describe("macro parser", () => {
     if (!parsed.valid) return;
     expect(parsed.primary).toBeNull();
     expect(parsed.tagName).toBe("Home");
+  });
+
+  it("treats extra subscription semicolon fields as note text", () => {
+    const parsed = parseMacro(
+      "<Verizon Phone Plan Simplicity; $51.27/month; Electronics; autopay enabled; shared line>",
+      "subscription"
+    );
+    expect(parsed.valid).toBe(true);
+    if (!parsed.valid) return;
+    expect(parsed.name).toBe("Verizon Phone Plan Simplicity");
+    expect(parsed.primary).toBe("$51.27/month");
+    expect(parsed.tagName).toBe("Electronics");
+    expect(parsed.note).toBe("autopay enabled\nshared line");
+  });
+
+  it("shows note hints after subscription structured fields are exhausted", () => {
+    expect(
+      getDraftHint("<Verizon Phone Plan Simplicity; $51.27/month; Electronics;", "subscription")
+    ).toBe("note");
+    expect(
+      getDraftHint("<Verizon Phone Plan Simplicity; $51.27/month; Electronics; extra;", "subscription")
+    ).toBe("note");
   });
 
   it("does not allow nested item creation", () => {

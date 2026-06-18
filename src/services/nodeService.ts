@@ -269,7 +269,9 @@ function normalizeColor(raw: string | null): string | null {
 function parseSubscriptionRate(raw: string | null): SubscriptionRate | null {
   if (!raw) return null;
   const value = raw.trim();
-  const match = value.match(/^\$?(\d+(?:\.\d+)?)\s*(?:\/|per\s+)?(\d+)?\s*(day|week|month|year)s?$/i);
+  const match = value.match(
+    /^\$?(\d+(?:\.\d+)?)\s*(?:(?:\/|per\s+|every\s+)(\d+)?\s*)?(day|week|month|year)s?$/i
+  );
   if (!match) return null;
   const unit = `${match[3].toLowerCase()}s` as SubscriptionRate["intervalUnit"];
   return {

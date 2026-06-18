@@ -242,6 +242,7 @@ export function getDraftHint(raw: string, nodeType: NodeType): string {
   const start = findUnescaped(raw, "<");
   const relevant = start >= 0 ? raw.slice(start + 1) : raw;
   const firstLine = relevant.split(/\r?\n/)[0] || "";
-  const fieldIndex = Math.min(splitUnescaped(firstLine, ";").length - 1, hints.length - 1);
+  const fieldIndex = splitUnescaped(firstLine, ";").length - 1;
+  if (fieldIndex >= hints.length) return "note";
   return hints[Math.max(0, fieldIndex)] || "";
 }
