@@ -4,9 +4,10 @@ import type { EHUser } from "../types";
 type ProfileMenuProps = {
   user: EHUser;
   onSettings: () => void;
+  onInstructions: () => void;
 };
 
-export function ProfileMenu({ user, onSettings }: ProfileMenuProps) {
+export function ProfileMenu({ user, onSettings, onInstructions }: ProfileMenuProps) {
   const [open, setOpen] = useState(false);
   const initials = (user.name || user.email || "EH")
     .split(/\s+|@/)
@@ -29,8 +30,25 @@ export function ProfileMenu({ user, onSettings }: ProfileMenuProps) {
       </button>
       {open ? (
         <div className="profile-popover" role="menu">
-          <button type="button" onClick={onSettings} role="menuitem">
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(false);
+              onSettings();
+            }}
+            role="menuitem"
+          >
             Settings
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(false);
+              onInstructions();
+            }}
+            role="menuitem"
+          >
+            Instructions
           </button>
           <a href="/logout" role="menuitem">
             Logout

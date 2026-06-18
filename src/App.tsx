@@ -10,6 +10,7 @@ import type {
 } from "./types";
 import { Navbar } from "./components/Navbar";
 import { EditorPanel } from "./components/EditorPanel";
+import { InstructionsModal } from "./components/InstructionsModal";
 import { SettingsModal } from "./components/SettingsModal";
 import { createDefaultWorkspace } from "./services/defaultWorkspace";
 import { ensureUserTimezone, loadWorkspace, saveWorkspace } from "./services/workspaceService";
@@ -32,6 +33,7 @@ export function App({ bootstrap }: AppProps) {
   );
   const [loading, setLoading] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [instructionsOpen, setInstructionsOpen] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const hasLoaded = useRef(false);
   const saveTimer = useRef<number | null>(null);
@@ -196,7 +198,11 @@ export function App({ bootstrap }: AppProps) {
 
   return (
     <div className="app-shell">
-      <Navbar user={user} onSettings={() => setSettingsOpen(true)} />
+      <Navbar
+        user={user}
+        onSettings={() => setSettingsOpen(true)}
+        onInstructions={() => setInstructionsOpen(true)}
+      />
       <main className="workspace">
         {visibleDocuments.map(([key, title]) => (
           <EditorPanel
@@ -225,6 +231,7 @@ export function App({ bootstrap }: AppProps) {
         onBeginRawEdit={beginRawEdit}
         onArchiveNode={archiveSavedBlock}
       />
+      <InstructionsModal open={instructionsOpen} onClose={() => setInstructionsOpen(false)} />
     </div>
   );
 }

@@ -10,3 +10,8 @@
 
 - Restored the navbar brand to the existing `/logo.svg` Efficient Hypothesis wordmark.
 - Changed editable rows to avoid React rewriting focused `contentEditable` text on each keystroke, fixing reversed/backwards typing.
+
+## 2026-06-18 - Codex (GPT-5) instructions menu
+
+- Added an Instructions item to the profile photo menu.
+- Added a simple in-app instructions modal explaining the three editors, macro syntax, examples, editing, tags, and delimiter escaping.

@@ -416,6 +416,16 @@ input {
   box-shadow: 0 24px 70px rgba(48, 38, 27, 0.25);
 }
 
+.instructions-modal {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: min(720px, calc(100vw - 44px));
+  max-height: min(760px, calc(100vh - 44px));
+  border: 1px solid var(--border);
+  background: var(--panel-bg);
+  box-shadow: 0 24px 70px rgba(48, 38, 27, 0.25);
+}
+
 .settings-top {
   display: flex;
   justify-content: space-between;
@@ -424,6 +434,22 @@ input {
   padding: 10px;
   background: var(--nav-bg);
   border-bottom: 1px solid var(--border);
+}
+
+.instructions-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  background: var(--nav-bg);
+  border-bottom: 1px solid var(--border);
+}
+
+.instructions-top h2 {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.2;
 }
 
 .settings-tabs {
@@ -450,6 +476,50 @@ input {
 .settings-body {
   min-height: 0;
   overflow: hidden;
+}
+
+.instructions-body {
+  min-height: 0;
+  overflow: auto;
+  padding: 18px 22px 22px;
+  color: var(--text);
+}
+
+.instructions-body section + section {
+  margin-top: 18px;
+}
+
+.instructions-body h3 {
+  margin: 0 0 6px;
+  font-size: 15px;
+  line-height: 1.25;
+}
+
+.instructions-body p {
+  margin: 6px 0;
+  line-height: 1.45;
+}
+
+.instructions-body code,
+.instructions-body pre {
+  font-family: var(--mono);
+  font-size: 13px;
+}
+
+.instructions-body code {
+  padding: 1px 4px;
+  background: #eee4d5;
+  border: 1px solid var(--border);
+}
+
+.instructions-body pre {
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  overflow: auto;
+  background: #f8f2e8;
+  border: 1px solid var(--border);
+  white-space: pre-wrap;
+  line-height: 1.45;
 }
 
 .settings-body > .editor-panel {
