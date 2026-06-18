@@ -73,22 +73,16 @@ input {
 .brand {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
   min-width: 0;
+  text-decoration: none;
 }
 
-.brand-mark {
-  width: 42px;
+.brand-logo-image {
+  display: block;
+  width: auto;
   height: 42px;
-  flex: 0 0 auto;
-}
-
-.brand-name {
-  font-size: 18px;
-  font-weight: 650;
-  letter-spacing: 0;
-  color: #31281f;
-  white-space: nowrap;
+  max-width: min(280px, 32vw);
+  object-fit: contain;
 }
 
 .topbar-center {

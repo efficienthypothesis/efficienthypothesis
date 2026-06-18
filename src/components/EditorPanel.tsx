@@ -6,6 +6,7 @@ import type {
   SavedNodeBlock,
   WorkspaceState
 } from "../types";
+import { useEffect, useRef } from "react";
 import { getDraftHint, isMacroClosed } from "../utils/macroParser";
 import { getNodeTypeForBlock, makeEmptyBlock } from "../utils/model";
 import { SavedNodeRow } from "./SavedNodeRow";
@@ -196,18 +197,16 @@ function EditorRow({
           />
         ) : (
           <div className="editable-shell">
-            <div
+            <EditableTextLine
+              blockId={block.id}
+              text={editableText}
+              readOnly={readOnly}
               className={`editable-line ${block.type === "draft_item" ? "draft-line" : ""} ${
                 block.type === "draft_item" && block.parseState === "invalid" ? "invalid" : ""
               }`}
-              contentEditable={!readOnly}
-              suppressContentEditableWarning
-              onInput={(event) => onText(event.currentTarget.innerText.replace(/\u00a0/g, " "))}
+              onText={onText}
               onKeyDown={onKeyDown}
-              spellCheck={false}
-            >
-              {editableText}
-            </div>
+            />
             {block.type === "empty" && !readOnly ? <span className="empty-caret-space" /> : null}
             {draftHint && !editableText.includes(draftHint) ? (
               <span className="field-hint">{draftHint}</span>
@@ -219,5 +218,50 @@ function EditorRow({
         )}
       </div>
     </div>
+  );
+}
+
+type EditableTextLineProps = {
+  blockId: string;
+  text: string;
+  readOnly: boolean;
+  className: string;
+  onText: (text: string) => void;
+  onKeyDown: (event: React.KeyboardEvent<HTMLDivElement>) => void;
+};
+
+function EditableTextLine({
+  blockId,
+  text,
+  readOnly,
+  className,
+  onText,
+  onKeyDown
+}: EditableTextLineProps) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const lastBlockId = useRef(blockId);
+
+  useEffect(() => {
+    const element = ref.current;
+    if (!element) return;
+    const blockChanged = lastBlockId.current !== blockId;
+    lastBlockId.current = blockId;
+    if (blockChanged || globalThis.document.activeElement !== element) {
+      if (element.innerText !== text) {
+        element.innerText = text;
+      }
+    }
+  }, [blockId, text]);
+
+  return (
+    <div
+      ref={ref}
+      className={className}
+      contentEditable={!readOnly}
+      suppressContentEditableWarning
+      onInput={(event) => onText(event.currentTarget.innerText.replace(/\u00a0/g, " "))}
+      onKeyDown={onKeyDown}
+      spellCheck={false}
+    />
   );
 }
