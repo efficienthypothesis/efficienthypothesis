@@ -1,0 +1,39 @@
+import { formatMonthName, getSevenDayWindow } from "../utils/date";
+import type { EHUser } from "../types";
+import { BrandLogo } from "./BrandLogo";
+import { ProfileMenu } from "./ProfileMenu";
+
+type NavbarProps = {
+  user: EHUser;
+  onSettings: () => void;
+};
+
+export function Navbar({ user, onSettings }: NavbarProps) {
+  const today = new Date();
+  const dates = getSevenDayWindow(today);
+  const todayKey = today.toDateString();
+
+  return (
+    <header className="topbar">
+      <div className="topbar-left">
+        <BrandLogo />
+      </div>
+      <div className="topbar-center" aria-label="Current week">
+        <div className="month-label">{formatMonthName(today)}</div>
+        <div className="week-bar">
+          {dates.map((date) => (
+            <div
+              key={date.toISOString()}
+              className={`week-cell ${date.toDateString() === todayKey ? "active" : ""}`}
+            >
+              {date.getDate()}
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="topbar-right">
+        <ProfileMenu user={user} onSettings={onSettings} />
+      </div>
+    </header>
+  );
+}

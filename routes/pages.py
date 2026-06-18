@@ -3,6 +3,18 @@ from config import s3, PRODUCTIVITY_BUCKET, GOOGLE_CLIENT_ID, _require_auth, use
 
 pages_bp = Blueprint('pages', __name__)
 
+APP_PAGES = {
+    "home",
+    "workspace",
+    "projects",
+    "tasks",
+    "weekly",
+    "monthly",
+    "dashboard",
+    "settings",
+    "ai",
+}
+
 
 @pages_bp.route('/favicon.svg')
 def favicon():
@@ -25,6 +37,10 @@ def home():
 
 @pages_bp.route('/<page>')
 def dynamic_page(page):
+    if page in APP_PAGES:
+        if "user" not in session:
+            return redirect(url_for('pages.login_page'))
+        return render_template("app.html", user=session["user"], initial_page=page)
     try:
         return render_template(f"{page}.html")
     except Exception:

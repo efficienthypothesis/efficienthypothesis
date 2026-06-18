@@ -2,6 +2,14 @@ __pycache__/
 *.pyc
 *.pyo
 *.zip
+!archives/*.zip
 .DS_Store
 *.egg-info/
 .env
+node_modules/
+static/react-app/
+dist/
+coverage/
+*.tsbuildinfo
+vite.config.js
+vite.config.d.ts
