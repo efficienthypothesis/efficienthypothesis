@@ -15,6 +15,7 @@
 
 - Added an Instructions item to the profile photo menu.
 - Added a simple in-app instructions modal explaining the three editors, macro syntax, examples, editing, tags, and delimiter escaping.
+- Added subscription syntax, rate argument guidance, and a subscription example to the instructions modal.
 
 ## 2026-06-18 - Codex (GPT-5) hint positioning
 

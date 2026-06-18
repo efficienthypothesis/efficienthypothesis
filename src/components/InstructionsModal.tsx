@@ -34,6 +34,11 @@ export function InstructionsModal({ open, onClose }: InstructionsModalProps) {
             </p>
             <pre>{`<Name; date or time; tag
 optional note>`}</pre>
+            <p>
+              For subscriptions, type under the Subscriptions section and use{" "}
+              <code>&lt;name; rate; tag&gt;</code>. The rate can be written like{" "}
+              <code>$12/month</code>, <code>$99/year</code>, or <code>$8 every 2 weeks</code>.
+            </p>
           </section>
 
           <section>
@@ -45,6 +50,10 @@ Apartment payment>
 Website:
 <AWS; username, touch_id; Coding
 Requires SSO>
+
+Subscription:
+<Netflix; $15.49/month; Entertainment
+Family streaming plan>
 
 Timetable:
 <Gym; 6:00pm; Health>`}</pre>
