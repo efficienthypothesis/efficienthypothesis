@@ -83,7 +83,7 @@ export function EditorPanel({
       return;
     }
 
-    if (text.startsWith("<") || block.type === "draft_item") {
+    if (text.startsWith("<")) {
       const draft: DraftItemBlock = {
         type: "draft_item",
         id: block.id,
@@ -217,7 +217,6 @@ function EditorRow({
               onText={onText}
               onKeyDown={onKeyDown}
             />
-            {block.type === "empty" && !readOnly ? <span className="empty-caret-space" /> : null}
             {block.type === "draft_item" && block.error ? (
               <span className="draft-error">{block.error}</span>
             ) : null}
@@ -299,6 +298,7 @@ function shouldShowDraftHint(raw: string, hint: string): boolean {
   if (!hint) return false;
   if (isMacroClosed(raw)) return false;
   const start = findUnescaped(raw, "<");
+  if (start !== 0) return false;
   const relevant = start >= 0 ? raw.slice(start + 1) : raw;
   const firstLine = relevant.split(/\r?\n/)[0] || "";
   const fields = splitUnescaped(firstLine, ";");
