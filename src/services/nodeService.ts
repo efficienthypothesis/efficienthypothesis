@@ -207,6 +207,13 @@ export function getTagColor(state: WorkspaceState, tagId: string | null): string
   return tagId ? state.nodes.tags[tagId]?.color || null : null;
 }
 
+export function ensureTagDocumentBlocks(state: WorkspaceState): WorkspaceState {
+  return Object.keys(state.nodes.tags).reduce(
+    (nextState, tagId) => ensureTagDocumentBlock(nextState, tagId),
+    state
+  );
+}
+
 function makeBaseNode(
   userId: string,
   id: string,

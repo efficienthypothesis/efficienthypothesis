@@ -1,5 +1,6 @@
 import type { WorkspaceState } from "../types";
 import { createDefaultWorkspace } from "./defaultWorkspace";
+import { ensureTagDocumentBlocks } from "./nodeService";
 
 const LOCAL_CACHE_KEY = "eh_workspace_cache_v1";
 
@@ -10,12 +11,13 @@ export async function loadWorkspace(userId: string): Promise<WorkspaceState> {
     if (!response.ok) throw new Error(`Workspace load failed: ${response.status}`);
     const payload = (await response.json()) as { state: WorkspaceState | null };
     if (payload.state) {
-      cacheWorkspace(payload.state);
-      return payload.state;
+      const normalizedState = ensureTagDocumentBlocks(payload.state);
+      cacheWorkspace(normalizedState);
+      return normalizedState;
     }
   } catch (error) {
     const cached = readCachedWorkspace();
-    if (cached) return cached;
+    if (cached) return ensureTagDocumentBlocks(cached);
     if (import.meta.env.DEV) {
       console.warn("Using local workspace fallback:", error);
     }

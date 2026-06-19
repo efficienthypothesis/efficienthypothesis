@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createDefaultWorkspace } from "../services/defaultWorkspace";
-import { createOrUpdateNodeFromMacro } from "../services/nodeService";
+import { createOrUpdateNodeFromMacro, ensureTagDocumentBlocks } from "../services/nodeService";
 import { parseMacro } from "../utils/macroParser";
 import { formatSubscriptionRateDisplay } from "../utils/subscriptions";
 
@@ -96,6 +96,30 @@ describe("node service", () => {
     );
 
     expect(Object.values(second.nodes.tags)).toHaveLength(1);
+    expect(savedTagBlocks).toHaveLength(1);
+  });
+
+  it("repairs persisted tag nodes missing from the tags editor document", () => {
+    const parsed = parseMacro("<Pay rent; tomorrow 9:00am; Home>", "task");
+    expect(parsed.valid).toBe(true);
+    if (!parsed.valid) return;
+
+    const workspace = createDefaultWorkspace("user_1");
+    const created = createOrUpdateNodeFromMacro(workspace, parsed).state;
+    const staleState = {
+      ...created,
+      documents: {
+        ...created.documents,
+        tags: workspace.documents.tags
+      }
+    };
+
+    const repaired = ensureTagDocumentBlocks(staleState);
+    const repairedAgain = ensureTagDocumentBlocks(repaired);
+    const savedTagBlocks = repairedAgain.documents.tags.blocks.filter(
+      (block) => block.type === "saved_node" && block.nodeType === "tag"
+    );
+
     expect(savedTagBlocks).toHaveLength(1);
   });
 });
