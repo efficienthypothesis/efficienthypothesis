@@ -37,3 +37,4 @@
 - Codex (GPT-5): formatted saved subscription rates as compact billing strings, hardcoding `USD` to `$` and omitting interval count `1` from displays such as `$51.27/month`.
 - Codex (GPT-5): changed macro entry so typing an unescaped `<` inserts the paired `>` automatically, and changed macro finalization to happen only when Enter is pressed with the caret immediately after the closing `>`.
 - Codex (GPT-5): fixed editor keyboard navigation by making Delete/Backspace remove empty editable lines only when another editable line remains, and by making ArrowUp/ArrowDown move focus to adjacent editable rows.
+- Codex (GPT-5): fixed auto-created tags so resolving a missing tag for an item also inserts a saved tag row into the Tags editor document without duplicating existing tag rows.

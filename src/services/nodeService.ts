@@ -3,6 +3,7 @@ import type {
   AnyNode,
   AssetNode,
   BaseNode,
+  EditorBlock,
   IdentityNode,
   LocationNode,
   NodeType,
@@ -233,7 +234,7 @@ function ensureTag(
 ): { state: WorkspaceState; tagId: string } {
   const normalizedName = normalizeTagName(tagName);
   const existing = findTagByNormalizedName(state, normalizedName);
-  if (existing) return { state, tagId: existing.id };
+  if (existing) return { state: ensureTagDocumentBlock(state, existing.id), tagId: existing.id };
   const id = makeId("tag");
   const tag: TagNode = {
     id,
@@ -247,9 +248,51 @@ function ensureTag(
     updatedAt: now,
     deletedAt: null
   };
+  const stateWithTag = {
+    ...state,
+    nodes: { ...state.nodes, tags: { ...state.nodes.tags, [id]: tag } }
+  };
   return {
-    state: { ...state, nodes: { ...state.nodes, tags: { ...state.nodes.tags, [id]: tag } } },
+    state: ensureTagDocumentBlock(stateWithTag, id),
     tagId: id
+  };
+}
+
+function ensureTagDocumentBlock(state: WorkspaceState, tagId: string): WorkspaceState {
+  const tagsDocument = state.documents.tags;
+  if (
+    tagsDocument.blocks.some(
+      (block) => block.type === "saved_node" && block.nodeType === "tag" && block.nodeId === tagId
+    )
+  ) {
+    return state;
+  }
+
+  const savedTagBlock: EditorBlock = {
+    type: "saved_node",
+    id: makeId("blk"),
+    nodeType: "tag",
+    nodeId: tagId,
+    collapsedNote: true
+  };
+  const lastBlock = tagsDocument.blocks[tagsDocument.blocks.length - 1];
+  const trailingEmptyBlock: EditorBlock = { type: "empty", id: makeId("blk") };
+  const nextBlocks: EditorBlock[] =
+    lastBlock?.type === "empty"
+      ? [...tagsDocument.blocks.slice(0, -1), savedTagBlock, lastBlock]
+      : [...tagsDocument.blocks, savedTagBlock, trailingEmptyBlock];
+
+  return {
+    ...state,
+    documents: {
+      ...state.documents,
+      tags: {
+        ...tagsDocument,
+        blocks: nextBlocks,
+        version: tagsDocument.version + 1,
+        updatedAt: nowIso()
+      }
+    }
   };
 }
 

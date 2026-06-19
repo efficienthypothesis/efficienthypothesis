@@ -58,4 +58,44 @@ describe("node service", () => {
       })
     ).toBe("$8/4 weeks");
   });
+
+  it("adds auto-created tags to the tags editor document", () => {
+    const parsed = parseMacro("<Pay rent; tomorrow 9:00am; Home>", "task");
+    expect(parsed.valid).toBe(true);
+    if (!parsed.valid) return;
+
+    const workspace = createDefaultWorkspace("user_1");
+    const { state } = createOrUpdateNodeFromMacro(workspace, parsed);
+    const tag = Object.values(state.nodes.tags).find((candidate) => candidate.normalizedName === "home");
+
+    expect(tag).toBeTruthy();
+    expect(state.documents.tags.blocks).toContainEqual(
+      expect.objectContaining({
+        type: "saved_node",
+        nodeType: "tag",
+        nodeId: tag?.id
+      })
+    );
+    expect(state.documents.tags.blocks[state.documents.tags.blocks.length - 1]).toMatchObject({
+      type: "empty"
+    });
+  });
+
+  it("does not duplicate existing tag rows when the same tag is referenced again", () => {
+    const parsedTask = parseMacro("<Pay rent; tomorrow 9:00am; Home>", "task");
+    const parsedAction = parseMacro("<Call bank; 2:00pm; home>", "action");
+    expect(parsedTask.valid).toBe(true);
+    expect(parsedAction.valid).toBe(true);
+    if (!parsedTask.valid || !parsedAction.valid) return;
+
+    const workspace = createDefaultWorkspace("user_1");
+    const first = createOrUpdateNodeFromMacro(workspace, parsedTask).state;
+    const second = createOrUpdateNodeFromMacro(first, parsedAction).state;
+    const savedTagBlocks = second.documents.tags.blocks.filter(
+      (block) => block.type === "saved_node" && block.nodeType === "tag"
+    );
+
+    expect(Object.values(second.nodes.tags)).toHaveLength(1);
+    expect(savedTagBlocks).toHaveLength(1);
+  });
 });
