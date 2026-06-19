@@ -20,6 +20,7 @@ import {
   nodeToMacro
 } from "./services/nodeService";
 import { parseMacro } from "./utils/macroParser";
+import { makeRawEditDraftBlocks } from "./utils/model";
 
 type AppProps = {
   bootstrap: BootstrapPayload;
@@ -171,18 +172,15 @@ export function App({ bootstrap }: AppProps) {
         ...current.documents,
         [key]: {
           ...document,
-          blocks: document.blocks.map((candidate) =>
+          blocks: document.blocks.flatMap((candidate) =>
             candidate.id === block.id
-              ? {
-                  type: "draft_item",
-                  id: block.id,
-                  raw: nodeToMacro(current, block.nodeType, block.nodeId),
-                  inferredNodeType: block.nodeType,
-                  parseState: "open",
-                  editingNodeId: block.nodeId,
-                  editingNodeType: block.nodeType
-                }
-              : candidate
+              ? makeRawEditDraftBlocks(
+                  nodeToMacro(current, block.nodeType, block.nodeId),
+                  block.id,
+                  block.nodeType,
+                  block.nodeId
+                )
+              : [candidate]
           ),
           version: document.version + 1,
           updatedAt: new Date().toISOString()

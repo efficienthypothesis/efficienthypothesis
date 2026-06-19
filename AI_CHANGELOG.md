@@ -32,3 +32,4 @@
 - Treats contiguous draft lines from one opening `<` as one macro for hints/finalization, so split subscription fields still guide to `note` after the tag.
 - Updated macro parsing so structured fields can continue across draft line splits before becoming note text.
 - Codex (GPT-5): moved draft macro grouping into a tested utility and included persisted non-empty free-text continuation rows in open draft groups, fixing stale split subscriptions where the tag line was not recognized as part of the same macro.
+- Codex (GPT-5): changed saved-row raw edit reopening to split stored multi-line macros back into multiple draft rows, preserving the user's prior line breaks while keeping edits attached to the existing node.

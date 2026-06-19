@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createDefaultWorkspace } from "../services/defaultWorkspace";
 import type { EditorDocument } from "../types";
 import { getDraftGroup, isContinuationDraftLine } from "../utils/draftGroups";
-import { splitEditableBlockAtSelection } from "../utils/model";
+import { makeRawEditDraftBlocks, splitEditableBlockAtSelection } from "../utils/model";
 
 function documentWithLine(text: string): EditorDocument {
   const workspace = createDefaultWorkspace("user_1");
@@ -112,5 +112,29 @@ describe("editor model", () => {
     expect(getDraftGroup(document, 3)?.endIndex).toBe(4);
     expect(getDraftGroup(document, 5)).toBeNull();
     expect(isContinuationDraftLine(document, 4)).toBe(true);
+  });
+
+  it("reopens raw edit macros using their stored line breaks", () => {
+    const blocks = makeRawEditDraftBlocks(
+      "<Verizon Phone Plan Simplicity; 51.27, USD, 1, month;\nElectronics;>",
+      "saved_1",
+      "subscription",
+      "sub_1"
+    );
+
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0]).toMatchObject({
+      id: "saved_1",
+      raw: "<Verizon Phone Plan Simplicity; 51.27, USD, 1, month;",
+      inferredNodeType: "subscription",
+      editingNodeId: "sub_1",
+      editingNodeType: "subscription"
+    });
+    expect(blocks[1]).toMatchObject({
+      raw: "Electronics;>",
+      inferredNodeType: "subscription",
+      editingNodeId: "sub_1",
+      editingNodeType: "subscription"
+    });
   });
 });

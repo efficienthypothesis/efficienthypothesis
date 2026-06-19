@@ -101,6 +101,23 @@ export function splitEditableBlockAtSelection(
   };
 }
 
+export function makeRawEditDraftBlocks(
+  raw: string,
+  firstBlockId: string,
+  nodeType: NodeType,
+  editingNodeId: string
+): DraftItemBlock[] {
+  return raw.split(/\r?\n/).map((line, index) => ({
+    type: "draft_item",
+    id: index === 0 ? firstBlockId : makeId("blk"),
+    raw: line,
+    inferredNodeType: nodeType,
+    parseState: "open",
+    editingNodeId,
+    editingNodeType: nodeType
+  }));
+}
+
 export function ensureTrailingEmptyLine(blocks: EditorBlock[]): EditorBlock[] {
   const last = blocks[blocks.length - 1];
   if (!last || last.type !== "empty") return [...blocks, makeEmptyBlock()];
