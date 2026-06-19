@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createDefaultWorkspace } from "../services/defaultWorkspace";
 import { createOrUpdateNodeFromMacro } from "../services/nodeService";
 import { parseMacro } from "../utils/macroParser";
+import { formatSubscriptionRateDisplay } from "../utils/subscriptions";
 
 describe("node service", () => {
   it("parses subscription rates from four comma-separated values", () => {
@@ -36,5 +37,25 @@ describe("node service", () => {
       intervalCount: 1,
       intervalUnit: "months"
     });
+  });
+
+  it("formats subscription rates for compact saved rows", () => {
+    expect(
+      formatSubscriptionRateDisplay({
+        amount: 51.27,
+        currency: "USD",
+        intervalCount: 1,
+        intervalUnit: "months"
+      })
+    ).toBe("$51.27/month");
+
+    expect(
+      formatSubscriptionRateDisplay({
+        amount: 8,
+        currency: "USD",
+        intervalCount: 4,
+        intervalUnit: "weeks"
+      })
+    ).toBe("$8/4 weeks");
   });
 });

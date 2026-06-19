@@ -1,5 +1,6 @@
 import type { AnyNode, AssetNode, IdentityNode, NodeType, WorkspaceState } from "../types";
 import { formatDateTimeLocal, formatTimeLocal } from "../utils/date";
+import { formatSubscriptionRateDisplay } from "../utils/subscriptions";
 import { getNodeByType, getTagColor, getTagName } from "../services/nodeService";
 
 type SavedNodeRowProps = {
@@ -56,10 +57,7 @@ function getFields(state: WorkspaceState, nodeType: NodeType, node: AnyNode): [s
     return [node.name, formatDateTimeLocal(node.datetimeUtc), getTagName(state, node.tagId)];
   }
   if (nodeType === "subscription" && "rate" in node) {
-    const rate = node.rate
-      ? `${node.rate.amount}, ${node.rate.currency}, ${node.rate.intervalCount}, ${node.rate.intervalUnit}`
-      : "";
-    return [node.name, rate, getTagName(state, node.tagId)];
+    return [node.name, formatSubscriptionRateDisplay(node.rate), getTagName(state, node.tagId)];
   }
   if (nodeType === "website" && "identityIds" in node) {
     const identities = [
