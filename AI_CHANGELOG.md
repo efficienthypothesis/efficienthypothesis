@@ -35,3 +35,4 @@
 - Codex (GPT-5): changed saved-row raw edit reopening to split stored multi-line macros back into multiple draft rows, preserving the user's prior line breaks while keeping edits attached to the existing node.
 - Codex (GPT-5): removed the visible `A:`, `B:`, and `C:` prefixes from formatted saved rows so saved items display only their values in aligned columns.
 - Codex (GPT-5): formatted saved subscription rates as compact billing strings, hardcoding `USD` to `$` and omitting interval count `1` from displays such as `$51.27/month`.
+- Codex (GPT-5): changed macro entry so typing an unescaped `<` inserts the paired `>` automatically, and changed macro finalization to happen only when Enter is pressed with the caret immediately after the closing `>`.

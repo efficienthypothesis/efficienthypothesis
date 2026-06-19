@@ -29,14 +29,17 @@ export function InstructionsModal({ open, onClose }: InstructionsModalProps) {
           <section>
             <h3>Create structured items</h3>
             <p>
-              Start an item with <code>&lt;</code>, separate fields with <code>;</code>, and finish
-              with <code>&gt;</code>. The item type comes from the section you are typing under.
+              Start an item with <code>&lt;</code>; the editor adds <code>&gt;</code>{" "}
+              automatically. Type inside the brackets, separate fields with <code>;</code>, then
+              press Enter with the cursor immediately after <code>&gt;</code> to save the item. The
+              item type comes from the section you are typing under.
             </p>
             <pre>{`<Name; date or time; tag
 optional note>`}</pre>
             <p>
               For subscriptions, type under the Subscriptions section and use{" "}
-              <code>&lt;name; amount, currency, interval count, interval unit; tag&gt;</code>.
+              <code>name; amount, currency, interval count, interval unit; tag</code> inside the
+              brackets.
               The rate must have four comma-separated values, such as{" "}
               <code>8, USD, 4, weeks</code> or <code>8, $, 1, month</code>.
             </p>

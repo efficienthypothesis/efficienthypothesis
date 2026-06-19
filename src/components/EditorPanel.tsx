@@ -9,13 +9,21 @@ import type {
 import { useEffect, useRef, useState } from "react";
 import { findUnescaped, getDraftHint, isMacroClosed, splitUnescaped } from "../utils/macroParser";
 import { compactDraftGroup, getDraftGroup, isContinuationDraftLine } from "../utils/draftGroups";
-import { getNodeTypeForBlock, replaceBlock as replaceBlockInDocument, splitEditableBlockAtSelection } from "../utils/model";
+import {
+  getNodeTypeForBlock,
+  isCaretImmediatelyAfterClosingMacro,
+  pairMacroCloseOnOpen,
+  replaceBlock as replaceBlockInDocument,
+  splitEditableBlockAtSelection
+} from "../utils/model";
 import { SavedNodeRow } from "./SavedNodeRow";
 
 type FocusRequest = {
   blockId: string;
-  caret: "start" | "end";
+  caret: CaretPosition;
 };
+
+type CaretPosition = "start" | "end" | number;
 
 type EditorPanelProps = {
   title: string;
@@ -63,7 +71,7 @@ export function EditorPanel({
     });
   }
 
-  function updateText(block: EditorBlock, blockIndex: number, text: string) {
+  function updateText(block: EditorBlock, blockIndex: number, text: string, nextCaret?: number) {
     if (readOnly || block.type === "section" || block.type === "saved_node") return;
     const inferredNodeType =
       block.type === "draft_item" ? block.inferredNodeType : getNodeTypeForBlock(document, blockIndex);
@@ -85,31 +93,58 @@ export function EditorPanel({
         editingNodeType: block.type === "draft_item" ? block.editingNodeType : undefined
       };
       const nextDocument = replaceBlockInDocument(document, block.id, draft);
-      const draftGroup = getDraftGroup(nextDocument, blockIndex);
-
-      if (draftGroup && isMacroClosed(draftGroup.raw)) {
-        const aggregateDraft: DraftItemBlock = {
-          ...draftGroup.startBlock,
-          raw: draftGroup.raw,
-          inferredNodeType: draftGroup.inferredNodeType
-        };
-        onFinalizeMacro(
-          compactDraftGroup(nextDocument, draftGroup, aggregateDraft),
-          aggregateDraft,
-          draftGroup.raw,
-          draftGroup.inferredNodeType
-        );
-      } else {
-        onDocumentChange(nextDocument);
-      }
+      onDocumentChange(nextDocument);
+      if (typeof nextCaret === "number") setFocusRequest({ blockId: block.id, caret: nextCaret });
       return;
     }
 
-    replaceBlock(block.id, {
+    const nextDocument = replaceBlockInDocument(document, block.id, {
       type: "free_text",
       id: block.id,
       text
     });
+    onDocumentChange(nextDocument);
+    if (typeof nextCaret === "number") setFocusRequest({ blockId: block.id, caret: nextCaret });
+  }
+
+  function finalizeMacroFromEnter(
+    block: EditorBlock,
+    blockIndex: number,
+    currentText: string,
+    caret: number
+  ): boolean {
+    if (!isCaretImmediatelyAfterClosingMacro(currentText, caret)) return false;
+    if (block.type === "section" || block.type === "saved_node") return false;
+
+    const inferredNodeType =
+      block.type === "draft_item" ? block.inferredNodeType : getNodeTypeForBlock(document, blockIndex);
+    const draft: DraftItemBlock = {
+      type: "draft_item",
+      id: block.id,
+      raw: currentText,
+      inferredNodeType,
+      parseState: "open",
+      editingNodeId: block.type === "draft_item" ? block.editingNodeId : undefined,
+      editingNodeType: block.type === "draft_item" ? block.editingNodeType : undefined
+    };
+    const nextDocument = replaceBlockInDocument(document, block.id, draft);
+    const draftGroup = getDraftGroup(nextDocument, blockIndex);
+    if (!draftGroup || draftGroup.endIndex !== blockIndex || !isMacroClosed(draftGroup.raw)) {
+      return false;
+    }
+
+    const aggregateDraft: DraftItemBlock = {
+      ...draftGroup.startBlock,
+      raw: draftGroup.raw,
+      inferredNodeType: draftGroup.inferredNodeType
+    };
+    onFinalizeMacro(
+      compactDraftGroup(nextDocument, draftGroup, aggregateDraft),
+      aggregateDraft,
+      draftGroup.raw,
+      draftGroup.inferredNodeType
+    );
+    return true;
   }
 
   function handleKeyDown(
@@ -123,6 +158,12 @@ export function EditorPanel({
       const input = event.currentTarget;
       const selectionStart = input.selectionStart ?? input.value.length;
       const selectionEnd = input.selectionEnd ?? selectionStart;
+      if (
+        selectionStart === selectionEnd &&
+        finalizeMacroFromEnter(block, blockIndex, input.value, selectionStart)
+      ) {
+        return;
+      }
       const split = splitEditableBlockAtSelection(
         document,
         blockIndex,
@@ -151,7 +192,7 @@ export function EditorPanel({
             index={index}
             state={state}
             readOnly={readOnly}
-            onText={(text) => updateText(block, index, text)}
+            onText={(text, caret) => updateText(block, index, text, caret)}
             onKeyDown={(event) => handleKeyDown(event, block, index)}
             onBeginRawEdit={() => {
               if (block.type === "saved_node") onBeginRawEdit(document, block);
@@ -174,10 +215,10 @@ type EditorRowProps = {
   index: number;
   state: WorkspaceState;
   readOnly?: boolean;
-  onText: (text: string) => void;
+  onText: (text: string, caret?: number) => void;
   onKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => void;
   onBeginRawEdit: () => void;
-  focusPosition: "start" | "end" | null;
+  focusPosition: CaretPosition | null;
   onFocused: () => void;
   onArchive: () => void;
 };
@@ -260,9 +301,9 @@ type EditableTextLineProps = {
   className: string;
   hintPrefix: string;
   hint: string;
-  onText: (text: string) => void;
+  onText: (text: string, caret?: number) => void;
   onKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => void;
-  focusPosition: "start" | "end" | null;
+  focusPosition: CaretPosition | null;
   onFocused: () => void;
 };
 
@@ -293,9 +334,14 @@ function EditableTextLine({
 
   useEffect(() => {
     const element = ref.current;
-    if (!focusPosition || !element) return;
+    if (focusPosition === null || !element) return;
     element.focus();
-    const caretPosition = focusPosition === "start" ? 0 : element.value.length;
+    const caretPosition =
+      typeof focusPosition === "number"
+        ? Math.max(0, Math.min(focusPosition, element.value.length))
+        : focusPosition === "start"
+          ? 0
+          : element.value.length;
     element.setSelectionRange(caretPosition, caretPosition);
     onFocused();
   }, [focusPosition, onFocused]);
@@ -313,7 +359,18 @@ function EditableTextLine({
         className={className}
         value={text}
         readOnly={readOnly}
-        onChange={(event) => onText(event.currentTarget.value)}
+        onChange={(event) => {
+          const input = event.currentTarget;
+          const caret = input.selectionStart ?? input.value.length;
+          const paired = pairMacroCloseOnOpen(text, input.value, caret);
+          if (paired) {
+            input.value = paired.text;
+            input.setSelectionRange(paired.caret, paired.caret);
+            onText(paired.text, paired.caret);
+            return;
+          }
+          onText(input.value);
+        }}
         onKeyDown={onKeyDown}
         spellCheck={false}
       />
@@ -323,7 +380,6 @@ function EditableTextLine({
 
 function shouldShowDraftHint(raw: string, hint: string): boolean {
   if (!hint) return false;
-  if (isMacroClosed(raw)) return false;
   const start = findUnescaped(raw, "<");
   if (start !== 0) return false;
   const relevant = start >= 0 ? raw.slice(start + 1) : raw;
@@ -335,14 +391,16 @@ function shouldShowDraftHint(raw: string, hint: string): boolean {
 
 function getDraftHintPrefix(raw: string): string {
   const firstLine = raw.split(/\r?\n/)[0] || "";
-  const lastSeparator = findUnescaped(firstLine, ";");
-  if (lastSeparator < 0) return firstLine;
+  const closeIndex = findUnescaped(firstLine, ">");
+  const hintLine = closeIndex >= 0 ? firstLine.slice(0, closeIndex) : firstLine;
+  const lastSeparator = findUnescaped(hintLine, ";");
+  if (lastSeparator < 0) return hintLine;
 
   let separatorIndex = lastSeparator;
-  let nextSeparator = findUnescaped(firstLine, ";", separatorIndex + 1);
+  let nextSeparator = findUnescaped(hintLine, ";", separatorIndex + 1);
   while (nextSeparator >= 0) {
     separatorIndex = nextSeparator;
-    nextSeparator = findUnescaped(firstLine, ";", separatorIndex + 1);
+    nextSeparator = findUnescaped(hintLine, ";", separatorIndex + 1);
   }
-  return firstLine.slice(0, separatorIndex + 1);
+  return hintLine.slice(0, separatorIndex + 1);
 }

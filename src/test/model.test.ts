@@ -2,7 +2,12 @@ import { describe, expect, it } from "vitest";
 import { createDefaultWorkspace } from "../services/defaultWorkspace";
 import type { EditorDocument } from "../types";
 import { getDraftGroup, isContinuationDraftLine } from "../utils/draftGroups";
-import { makeRawEditDraftBlocks, splitEditableBlockAtSelection } from "../utils/model";
+import {
+  isCaretImmediatelyAfterClosingMacro,
+  makeRawEditDraftBlocks,
+  pairMacroCloseOnOpen,
+  splitEditableBlockAtSelection
+} from "../utils/model";
 
 function documentWithLine(text: string): EditorDocument {
   const workspace = createDefaultWorkspace("user_1");
@@ -136,5 +141,17 @@ describe("editor model", () => {
       editingNodeId: "sub_1",
       editingNodeType: "subscription"
     });
+  });
+
+  it("pairs unescaped macro open delimiters", () => {
+    expect(pairMacroCloseOnOpen("", "<", 1)).toEqual({ text: "<>", caret: 1 });
+    expect(pairMacroCloseOnOpen("abc", "abc<", 4)).toEqual({ text: "abc<>", caret: 4 });
+    expect(pairMacroCloseOnOpen("\\", "\\<", 2)).toBeNull();
+  });
+
+  it("detects a caret immediately after an unescaped macro close delimiter", () => {
+    expect(isCaretImmediatelyAfterClosingMacro("<Task>", 6)).toBe(true);
+    expect(isCaretImmediatelyAfterClosingMacro("<Task>", 5)).toBe(false);
+    expect(isCaretImmediatelyAfterClosingMacro("<Task\\>", 7)).toBe(false);
   });
 });

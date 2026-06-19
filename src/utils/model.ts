@@ -118,6 +118,36 @@ export function makeRawEditDraftBlocks(
   }));
 }
 
+export function pairMacroCloseOnOpen(
+  previousText: string,
+  nextText: string,
+  caret: number
+): { text: string; caret: number } | null {
+  const openIndex = caret - 1;
+  if (nextText.length !== previousText.length + 1) return null;
+  if (openIndex < 0 || nextText[openIndex] !== "<") return null;
+  if (isEscapedAt(nextText, openIndex)) return null;
+
+  return {
+    text: `${nextText.slice(0, caret)}>${nextText.slice(caret)}`,
+    caret
+  };
+}
+
+export function isCaretImmediatelyAfterClosingMacro(text: string, caret: number): boolean {
+  const closeIndex = caret - 1;
+  if (closeIndex < 0 || text[closeIndex] !== ">") return false;
+  return !isEscapedAt(text, closeIndex);
+}
+
+function isEscapedAt(text: string, index: number): boolean {
+  let backslashCount = 0;
+  for (let cursor = index - 1; cursor >= 0 && text[cursor] === "\\"; cursor -= 1) {
+    backslashCount += 1;
+  }
+  return backslashCount % 2 === 1;
+}
+
 export function ensureTrailingEmptyLine(blocks: EditorBlock[]): EditorBlock[] {
   const last = blocks[blocks.length - 1];
   if (!last || last.type !== "empty") return [...blocks, makeEmptyBlock()];
