@@ -3,6 +3,9 @@ import { createDefaultWorkspace } from "../services/defaultWorkspace";
 import type { EditorDocument } from "../types";
 import { getDraftGroup, isContinuationDraftLine } from "../utils/draftGroups";
 import {
+  canRemoveEditableBlock,
+  findAdjacentEditableBlock,
+  findEditableBlockAfterRemoval,
   isCaretImmediatelyAfterClosingMacro,
   makeRawEditDraftBlocks,
   pairMacroCloseOnOpen,
@@ -153,5 +156,43 @@ describe("editor model", () => {
     expect(isCaretImmediatelyAfterClosingMacro("<Task>", 6)).toBe(true);
     expect(isCaretImmediatelyAfterClosingMacro("<Task>", 5)).toBe(false);
     expect(isCaretImmediatelyAfterClosingMacro("<Task\\>", 7)).toBe(false);
+  });
+
+  it("only removes editable lines when another editable line remains", () => {
+    const workspace = createDefaultWorkspace("user_1");
+    const tasks = workspace.documents.tasks;
+    const oneEditableLine: EditorDocument = {
+      ...tasks,
+      blocks: [tasks.blocks[0], { type: "empty" as const, id: "empty_1" }]
+    };
+    const twoEditableLines: EditorDocument = {
+      ...tasks,
+      blocks: [
+        tasks.blocks[0],
+        { type: "empty" as const, id: "empty_1" },
+        { type: "empty" as const, id: "empty_2" }
+      ]
+    };
+
+    expect(canRemoveEditableBlock(oneEditableLine, 1)).toBe(false);
+    expect(canRemoveEditableBlock(twoEditableLines, 1)).toBe(true);
+  });
+
+  it("finds adjacent editable lines for arrow key focus", () => {
+    const workspace = createDefaultWorkspace("user_1");
+    const document: EditorDocument = {
+      ...workspace.documents.websites_subscriptions,
+      blocks: [
+        { type: "section" as const, id: "sec_1", label: "Websites", frozen: true },
+        { type: "free_text" as const, id: "line_1", text: "abc" },
+        { type: "section" as const, id: "sec_2", label: "Subscriptions", frozen: true },
+        { type: "empty" as const, id: "line_2" },
+        { type: "free_text" as const, id: "line_3", text: "xyz" }
+      ]
+    };
+
+    expect(findAdjacentEditableBlock(document, 3, -1)).toEqual({ blockId: "line_1", text: "abc" });
+    expect(findAdjacentEditableBlock(document, 3, 1)).toEqual({ blockId: "line_3", text: "xyz" });
+    expect(findEditableBlockAfterRemoval(document, 3)).toEqual({ blockId: "line_3", text: "xyz" });
   });
 });

@@ -10,6 +10,9 @@ import { useEffect, useRef, useState } from "react";
 import { findUnescaped, getDraftHint, isMacroClosed, splitUnescaped } from "../utils/macroParser";
 import { compactDraftGroup, getDraftGroup, isContinuationDraftLine } from "../utils/draftGroups";
 import {
+  canRemoveEditableBlock,
+  findAdjacentEditableBlock,
+  findEditableBlockAfterRemoval,
   getNodeTypeForBlock,
   isCaretImmediatelyAfterClosingMacro,
   pairMacroCloseOnOpen,
@@ -62,13 +65,18 @@ export function EditorPanel({
     });
   }
 
-  function removeEditableBlock(blockId: string) {
+  function removeEditableBlock(blockIndex: number) {
+    if (!canRemoveEditableBlock(document, blockIndex)) return;
+    const block = document.blocks[blockIndex];
+    if (!block) return;
+    const focusTarget = findEditableBlockAfterRemoval(document, blockIndex);
     onDocumentChange({
       ...document,
-      blocks: document.blocks.filter((block) => block.id !== blockId || block.type === "section"),
+      blocks: document.blocks.filter((candidate) => candidate.id !== block.id),
       version: document.version + 1,
       updatedAt: new Date().toISOString()
     });
+    if (focusTarget) setFocusRequest({ blockId: focusTarget.blockId, caret: "start" });
   }
 
   function updateText(block: EditorBlock, blockIndex: number, text: string, nextCaret?: number) {
@@ -153,6 +161,14 @@ export function EditorPanel({
     blockIndex: number
   ) {
     if (readOnly || block.type === "section" || block.type === "saved_node") return;
+    if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+      const target = findAdjacentEditableBlock(document, blockIndex, event.key === "ArrowUp" ? -1 : 1);
+      if (!target) return;
+      event.preventDefault();
+      const caret = event.currentTarget.selectionStart ?? event.currentTarget.value.length;
+      setFocusRequest({ blockId: target.blockId, caret: Math.min(caret, target.text.length) });
+      return;
+    }
     if (event.key === "Enter") {
       event.preventDefault();
       const input = event.currentTarget;
@@ -175,9 +191,9 @@ export function EditorPanel({
       if (split.nextBlockId) setFocusRequest({ blockId: split.nextBlockId, caret: "start" });
       return;
     }
-    if (event.key === "Backspace" && block.type === "empty") {
+    if ((event.key === "Backspace" || event.key === "Delete") && block.type === "empty") {
       event.preventDefault();
-      removeEditableBlock(block.id);
+      removeEditableBlock(blockIndex);
     }
   }
 

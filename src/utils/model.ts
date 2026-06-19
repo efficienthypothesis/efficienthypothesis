@@ -29,6 +29,47 @@ export function getEditableBlockText(block: EditorBlock): string {
   return "";
 }
 
+export function isEditableBlock(block: EditorBlock | undefined): block is EmptyLineBlock | FreeTextBlock | DraftItemBlock {
+  return block?.type === "empty" || block?.type === "free_text" || block?.type === "draft_item";
+}
+
+export function countEditableBlocks(document: EditorDocument): number {
+  return document.blocks.filter(isEditableBlock).length;
+}
+
+export function canRemoveEditableBlock(document: EditorDocument, blockIndex: number): boolean {
+  return isEditableBlock(document.blocks[blockIndex]) && countEditableBlocks(document) > 1;
+}
+
+export function findAdjacentEditableBlock(
+  document: EditorDocument,
+  blockIndex: number,
+  direction: -1 | 1
+): { blockId: string; text: string } | null {
+  for (
+    let index = blockIndex + direction;
+    index >= 0 && index < document.blocks.length;
+    index += direction
+  ) {
+    const block = document.blocks[index];
+    if (isEditableBlock(block)) {
+      return {
+        blockId: block.id,
+        text: getEditableBlockText(block)
+      };
+    }
+  }
+  return null;
+}
+
+export function findEditableBlockAfterRemoval(
+  document: EditorDocument,
+  removedBlockIndex: number
+): { blockId: string; text: string } | null {
+  const next = findAdjacentEditableBlock(document, removedBlockIndex, 1);
+  return next || findAdjacentEditableBlock(document, removedBlockIndex, -1);
+}
+
 export function makeEditableBlockFromText(
   text: string,
   id: string,
