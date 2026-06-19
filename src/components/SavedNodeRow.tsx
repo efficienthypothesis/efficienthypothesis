@@ -38,15 +38,9 @@ export function SavedNodeRow({
       }}
     >
       <div className="saved-fields">
-        <div className="saved-field saved-field-name">
-          <span className="field-label">A:</span> {fields[0]}
-        </div>
-        <div className="saved-field">
-          <span className="field-label">B:</span> {fields[1]}
-        </div>
-        <div className="saved-field">
-          <span className="field-label">C:</span> {fields[2]}
-        </div>
+        <div className="saved-field saved-field-name">{fields[0]}</div>
+        <div className="saved-field">{fields[1]}</div>
+        <div className="saved-field">{fields[2]}</div>
       </div>
       {note ? (
         <div className="note-preview">

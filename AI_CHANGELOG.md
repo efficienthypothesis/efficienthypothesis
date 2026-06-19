@@ -33,3 +33,4 @@
 - Updated macro parsing so structured fields can continue across draft line splits before becoming note text.
 - Codex (GPT-5): moved draft macro grouping into a tested utility and included persisted non-empty free-text continuation rows in open draft groups, fixing stale split subscriptions where the tag line was not recognized as part of the same macro.
 - Codex (GPT-5): changed saved-row raw edit reopening to split stored multi-line macros back into multiple draft rows, preserving the user's prior line breaks while keeping edits attached to the existing node.
+- Codex (GPT-5): removed the visible `A:`, `B:`, and `C:` prefixes from formatted saved rows so saved items display only their values in aligned columns.

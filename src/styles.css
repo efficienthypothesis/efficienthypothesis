@@ -401,10 +401,6 @@ input {
   white-space: pre-wrap;
 }
 
-.field-label {
-  color: var(--muted);
-}
-
 .note-preview {
   margin: 0 8px 1px;
   padding-left: 18px;
