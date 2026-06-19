@@ -39,3 +39,4 @@
 - Codex (GPT-5): fixed editor keyboard navigation by making Delete/Backspace remove empty editable lines only when another editable line remains, and by making ArrowUp/ArrowDown move focus to adjacent editable rows.
 - Codex (GPT-5): fixed auto-created tags so resolving a missing tag for an item also inserts a saved tag row into the Tags editor document without duplicating existing tag rows.
 - Codex (GPT-5): added workspace-load reconciliation so tag nodes created before the auto-created tag row fix are inserted into the Tags editor document on server or local-cache load.
+- Codex (GPT-5): fixed archive button behavior by hiding archived/deleted saved-node rows from active editor panels while preserving document placement for restore.

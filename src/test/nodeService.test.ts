@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { createDefaultWorkspace } from "../services/defaultWorkspace";
-import { createOrUpdateNodeFromMacro, ensureTagDocumentBlocks } from "../services/nodeService";
+import {
+  archiveNode,
+  createOrUpdateNodeFromMacro,
+  ensureTagDocumentBlocks,
+  isSavedNodeBlockActive,
+  restoreNode
+} from "../services/nodeService";
 import { parseMacro } from "../utils/macroParser";
 import { formatSubscriptionRateDisplay } from "../utils/subscriptions";
 
@@ -121,5 +127,30 @@ describe("node service", () => {
     );
 
     expect(savedTagBlocks).toHaveLength(1);
+  });
+
+  it("marks archived saved blocks inactive until restored", () => {
+    const parsed = parseMacro("<Pay rent; tomorrow 9:00am; Home>", "task");
+    expect(parsed.valid).toBe(true);
+    if (!parsed.valid) return;
+
+    const workspace = createDefaultWorkspace("user_1");
+    const { state, nodeId } = createOrUpdateNodeFromMacro(workspace, parsed);
+    const block = {
+      type: "saved_node" as const,
+      id: "saved_1",
+      nodeType: "task" as const,
+      nodeId
+    };
+
+    expect(isSavedNodeBlockActive(state, block)).toBe(true);
+
+    const archived = archiveNode(state, "task", nodeId);
+    expect(archived.nodes.tasks[nodeId].archive).toBe(1);
+    expect(isSavedNodeBlockActive(archived, block)).toBe(false);
+
+    const restored = restoreNode(archived, "task", nodeId);
+    expect(restored.nodes.tasks[nodeId].archive).toBe(0);
+    expect(isSavedNodeBlockActive(restored, block)).toBe(true);
   });
 });

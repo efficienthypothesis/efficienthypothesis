@@ -7,6 +7,7 @@ import type {
   IdentityNode,
   LocationNode,
   NodeType,
+  SavedNodeBlock,
   SubscriptionNode,
   SubscriptionRate,
   TagNode,
@@ -145,6 +146,11 @@ export function restoreNode(state: WorkspaceState, nodeType: NodeType, nodeId: s
     deletedAt: null,
     updatedAt: nowIso()
   });
+}
+
+export function isSavedNodeBlockActive(state: WorkspaceState, block: SavedNodeBlock): boolean {
+  const node = getNodeByType(state, block.nodeType, block.nodeId);
+  return Boolean(node && node.archive === 0 && !node.deletedAt);
 }
 
 export function nodeToMacro(state: WorkspaceState, nodeType: NodeType, nodeId: string): string {

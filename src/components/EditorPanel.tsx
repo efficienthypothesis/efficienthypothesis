@@ -9,6 +9,7 @@ import type {
 import { useEffect, useRef, useState } from "react";
 import { findUnescaped, getDraftHint, isMacroClosed, splitUnescaped } from "../utils/macroParser";
 import { compactDraftGroup, getDraftGroup, isContinuationDraftLine } from "../utils/draftGroups";
+import { isSavedNodeBlockActive } from "../services/nodeService";
 import {
   canRemoveEditableBlock,
   findAdjacentEditableBlock,
@@ -200,26 +201,30 @@ export function EditorPanel({
   return (
     <section className="editor-panel" aria-label={title}>
       <div className="editor-scroll">
-        {document.blocks.map((block, index) => (
-          <EditorRow
-            key={block.id}
-            document={document}
-            block={block}
-            index={index}
-            state={state}
-            readOnly={readOnly}
-            onText={(text, caret) => updateText(block, index, text, caret)}
-            onKeyDown={(event) => handleKeyDown(event, block, index)}
-            onBeginRawEdit={() => {
-              if (block.type === "saved_node") onBeginRawEdit(document, block);
-            }}
-            focusPosition={focusRequest?.blockId === block.id ? focusRequest.caret : null}
-            onFocused={() => setFocusRequest(null)}
-            onArchive={() => {
-              if (block.type === "saved_node") onArchiveNode?.(block);
-            }}
-          />
-        ))}
+        {document.blocks
+          .map((block, index) => ({ block, index }))
+          .filter(({ block }) => block.type !== "saved_node" || isSavedNodeBlockActive(state, block))
+          .map(({ block, index }, visibleIndex) => (
+            <EditorRow
+              key={block.id}
+              document={document}
+              block={block}
+              index={index}
+              lineNumber={visibleIndex + 1}
+              state={state}
+              readOnly={readOnly}
+              onText={(text, caret) => updateText(block, index, text, caret)}
+              onKeyDown={(event) => handleKeyDown(event, block, index)}
+              onBeginRawEdit={() => {
+                if (block.type === "saved_node") onBeginRawEdit(document, block);
+              }}
+              focusPosition={focusRequest?.blockId === block.id ? focusRequest.caret : null}
+              onFocused={() => setFocusRequest(null)}
+              onArchive={() => {
+                if (block.type === "saved_node") onArchiveNode?.(block);
+              }}
+            />
+          ))}
       </div>
     </section>
   );
@@ -229,6 +234,7 @@ type EditorRowProps = {
   document: EditorDocument;
   block: EditorBlock;
   index: number;
+  lineNumber: number;
   state: WorkspaceState;
   readOnly?: boolean;
   onText: (text: string, caret?: number) => void;
@@ -243,6 +249,7 @@ function EditorRow({
   document,
   block,
   index,
+  lineNumber,
   state,
   readOnly = false,
   onText,
@@ -252,7 +259,6 @@ function EditorRow({
   onFocused,
   onArchive
 }: EditorRowProps) {
-  const lineNumber = index + 1;
   const editableText =
     block.type === "free_text" ? block.text : block.type === "draft_item" ? block.raw : "";
   const draftGroup = getDraftGroup(document, index);
@@ -268,7 +274,15 @@ function EditorRow({
       <div className="line-gutter">
         <span className="line-number">{lineNumber}</span>
         {block.type === "saved_node" && !readOnly ? (
-          <button className="gutter-action" type="button" onClick={onArchive} title="Archive item">
+          <button
+            className="gutter-action"
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              onArchive();
+            }}
+            title="Archive item"
+          >
             archive
           </button>
         ) : null}
