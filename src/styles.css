@@ -410,6 +410,10 @@ input {
   border-left: 1px solid var(--border);
 }
 
+.note-preview-line {
+  min-height: 22px;
+}
+
 .save-status {
   position: fixed;
   right: 12px;

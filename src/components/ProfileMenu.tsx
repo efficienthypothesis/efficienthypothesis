@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { EHUser } from "../types";
 
 type ProfileMenuProps = {
@@ -9,6 +9,7 @@ type ProfileMenuProps = {
 
 export function ProfileMenu({ user, onSettings, onInstructions }: ProfileMenuProps) {
   const [open, setOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement | null>(null);
   const initials = (user.name || user.email || "EH")
     .split(/\s+|@/)
     .filter(Boolean)
@@ -16,13 +17,31 @@ export function ProfileMenu({ user, onSettings, onInstructions }: ProfileMenuPro
     .map((part) => part[0]?.toUpperCase())
     .join("");
 
+  useEffect(() => {
+    if (!open) return;
+
+    function handlePointerDown(event: PointerEvent) {
+      if (!menuRef.current?.contains(event.target as Node)) setOpen(false);
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setOpen(false);
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open]);
+
   return (
-    <div className="profile-menu" onMouseLeave={() => setOpen(false)}>
+    <div className="profile-menu" ref={menuRef}>
       <button
         className="profile-button"
         type="button"
         onClick={() => setOpen((value) => !value)}
-        onMouseEnter={() => setOpen(true)}
         aria-haspopup="menu"
         aria-expanded={open}
       >

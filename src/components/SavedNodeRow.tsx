@@ -15,7 +15,6 @@ export function SavedNodeRow({
   state,
   nodeType,
   nodeId,
-  collapsedNote = true,
   onEdit
 }: SavedNodeRowProps) {
   const node = getNodeByType(state, nodeType, nodeId);
@@ -26,6 +25,7 @@ export function SavedNodeRow({
   const fields = getFields(state, nodeType, node);
   const tagColor = "tagId" in node ? getTagColor(state, node.tagId) : null;
   const note = "note" in node ? node.note : null;
+  const notePreviewLines = note ? getNotePreviewLines(note) : [];
 
   return (
     <button
@@ -43,13 +43,24 @@ export function SavedNodeRow({
         <div className="saved-field">{fields[1]}</div>
         <div className="saved-field">{fields[2]}</div>
       </div>
-      {note ? (
+      {notePreviewLines.length > 0 ? (
         <div className="note-preview">
-          {collapsedNote ? note.split("\n")[0] : note}
+          {notePreviewLines.map((line, index) => (
+            <div className="note-preview-line" key={`${line}:${index}`}>
+              {line}
+            </div>
+          ))}
         </div>
       ) : null}
     </button>
   );
+}
+
+export function getNotePreviewLines(note: string): string[] {
+  return note
+    .split(/\r?\n|;/)
+    .map((line) => line.trim())
+    .filter(Boolean);
 }
 
 function getFields(state: WorkspaceState, nodeType: NodeType, node: AnyNode): [string, string, string] {

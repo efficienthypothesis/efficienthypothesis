@@ -41,6 +41,16 @@ export function canRemoveEditableBlock(document: EditorDocument, blockIndex: num
   return isEditableBlock(document.blocks[blockIndex]) && countEditableBlocks(document) > 1;
 }
 
+export function canRemoveVisiblyBlankEditableBlock(
+  document: EditorDocument,
+  blockIndex: number,
+  currentText?: string
+): boolean {
+  const block = document.blocks[blockIndex];
+  if (!canRemoveEditableBlock(document, blockIndex) || !isEditableBlock(block)) return false;
+  return (currentText ?? getEditableBlockText(block)).trim().length === 0;
+}
+
 export function findAdjacentEditableBlock(
   document: EditorDocument,
   blockIndex: number,

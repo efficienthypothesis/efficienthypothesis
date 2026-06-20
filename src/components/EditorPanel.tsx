@@ -12,6 +12,7 @@ import { compactDraftGroup, getDraftGroup, isContinuationDraftLine } from "../ut
 import { isSavedNodeBlockActive } from "../services/nodeService";
 import {
   canRemoveEditableBlock,
+  canRemoveVisiblyBlankEditableBlock,
   findAdjacentEditableBlock,
   findEditableBlockAfterRemoval,
   getNodeTypeForBlock,
@@ -192,7 +193,10 @@ export function EditorPanel({
       if (split.nextBlockId) setFocusRequest({ blockId: split.nextBlockId, caret: "start" });
       return;
     }
-    if ((event.key === "Backspace" || event.key === "Delete") && block.type === "empty") {
+    if (
+      (event.key === "Backspace" || event.key === "Delete") &&
+      canRemoveVisiblyBlankEditableBlock(document, blockIndex, event.currentTarget.value)
+    ) {
       event.preventDefault();
       removeEditableBlock(blockIndex);
     }

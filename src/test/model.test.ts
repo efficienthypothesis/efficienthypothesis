@@ -4,6 +4,7 @@ import type { EditorDocument } from "../types";
 import { getDraftGroup, isContinuationDraftLine } from "../utils/draftGroups";
 import {
   canRemoveEditableBlock,
+  canRemoveVisiblyBlankEditableBlock,
   findAdjacentEditableBlock,
   findEditableBlockAfterRemoval,
   isCaretImmediatelyAfterClosingMacro,
@@ -176,6 +177,31 @@ describe("editor model", () => {
 
     expect(canRemoveEditableBlock(oneEditableLine, 1)).toBe(false);
     expect(canRemoveEditableBlock(twoEditableLines, 1)).toBe(true);
+  });
+
+  it("removes visibly blank editable lines across empty, whitespace, and draft blocks", () => {
+    const workspace = createDefaultWorkspace("user_1");
+    const tasks = workspace.documents.tasks;
+    const document: EditorDocument = {
+      ...tasks,
+      blocks: [
+        tasks.blocks[0],
+        { type: "free_text" as const, id: "line_1", text: "   " },
+        {
+          type: "draft_item" as const,
+          id: "line_2",
+          raw: "",
+          inferredNodeType: "task" as const,
+          parseState: "open" as const
+        },
+        { type: "free_text" as const, id: "line_3", text: "not empty" }
+      ]
+    };
+
+    expect(canRemoveVisiblyBlankEditableBlock(document, 1)).toBe(true);
+    expect(canRemoveVisiblyBlankEditableBlock(document, 2)).toBe(true);
+    expect(canRemoveVisiblyBlankEditableBlock(document, 3)).toBe(false);
+    expect(canRemoveVisiblyBlankEditableBlock(document, 3, " ")).toBe(true);
   });
 
   it("finds adjacent editable lines for arrow key focus", () => {
