@@ -43,3 +43,4 @@
 - Codex (GPT-5): broadened empty-line deletion so Delete/Backspace removes any visibly blank editable row, including whitespace-only free text and blank draft rows, while preserving at least one editable line.
 - Codex (GPT-5): changed the profile menu from hover-open to click-toggle with outside-click and Escape close behavior.
 - Codex (GPT-5): rendered semicolon- or newline-separated item notes as individual preview lines under saved rows.
+- Codex (GPT-5): removed invented default task times by tracking explicit task datetime input and rendering date-only tasks without a time, including legacy raw-macro tasks.

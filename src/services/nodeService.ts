@@ -16,8 +16,8 @@ import type {
   WorkspaceState
 } from "../types";
 import type { ParsedMacro } from "../utils/macroParser";
-import { escapeMacroText, normalizeTagName, splitUnescaped } from "../utils/macroParser";
-import { parseLocalDateTimeToUtc } from "../utils/date";
+import { escapeMacroText, normalizeTagName, parseMacro, splitUnescaped } from "../utils/macroParser";
+import { hasExplicitTime, parseLocalDateTimeToUtc } from "../utils/date";
 import { makeId, nowIso } from "../utils/ids";
 
 const DEFAULT_TAG_COLOR = "#D1D5DB";
@@ -50,6 +50,7 @@ export function createOrUpdateNodeFromMacro(
       ...base,
       note: parsed.note,
       datetimeUtc: parseLocalDateTimeToUtc(parsed.primary),
+      datetimeHasTime: hasExplicitTime(parsed.primary),
       tagId
     };
     next.nodes = { ...next.nodes, tasks: { ...next.nodes.tasks, [nodeId]: node } };
@@ -211,6 +212,15 @@ export function getTagName(state: WorkspaceState, tagId: string | null): string 
 
 export function getTagColor(state: WorkspaceState, tagId: string | null): string | null {
   return tagId ? state.nodes.tags[tagId]?.color || null : null;
+}
+
+export function taskHasExplicitTime(task: TaskNode): boolean {
+  if (typeof task.datetimeHasTime === "boolean") return task.datetimeHasTime;
+  if (task.rawMacro) {
+    const parsed = parseMacro(task.rawMacro, "task");
+    if (parsed.valid) return hasExplicitTime(parsed.primary);
+  }
+  return true;
 }
 
 export function ensureTagDocumentBlocks(state: WorkspaceState): WorkspaceState {

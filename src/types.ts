@@ -131,6 +131,7 @@ export type RoutineAsset = {
 export type TaskNode = BaseNode & {
   note: string | null;
   datetimeUtc: string | null;
+  datetimeHasTime?: boolean;
   tagId: string | null;
 };
 

@@ -27,14 +27,11 @@ export function parseLocalDateTimeToUtc(raw: string | null): string | null {
   const value = raw.trim();
   const lower = value.toLowerCase();
   const now = new Date();
-  const defaultTime = "09:00";
 
   if (lower === "today" || lower === "tomorrow") {
     const date = new Date(now);
     date.setHours(0, 0, 0, 0);
     if (lower === "tomorrow") date.setDate(date.getDate() + 1);
-    const [hour, minute] = defaultTime.split(":").map(Number);
-    date.setHours(hour, minute, 0, 0);
     return date.toISOString();
   }
 
@@ -62,8 +59,8 @@ export function parseLocalDateTimeToUtc(raw: string | null): string | null {
         ? 2000 + Number(yearRaw)
         : Number(yearRaw)
       : now.getFullYear();
-    const time = parseTime(usMatch[4] || defaultTime) || { hour: 9, minute: 0 };
-    const date = new Date(year, month - 1, day, time.hour, time.minute, 0, 0);
+    const time = parseTime(usMatch[4] || null);
+    const date = new Date(year, month - 1, day, time?.hour ?? 0, time?.minute ?? 0, 0, 0);
     if (!Number.isNaN(date.getTime())) return date.toISOString();
   }
 
@@ -86,14 +83,32 @@ export function parseTime(raw: string | null): { hour: number; minute: number } 
   return { hour, minute };
 }
 
-export function formatDateTimeLocal(iso: string | null): string {
+export function hasExplicitTime(raw: string | null): boolean {
+  if (!raw || !raw.trim()) return false;
+  const value = raw.trim();
+  const lower = value.toLowerCase();
+  const relativeMatch = lower.match(/^(today|tomorrow)\s+(.+)$/);
+  if (relativeMatch) return Boolean(parseTime(relativeMatch[2]));
+
+  const usMatch = value.match(/^(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?(?:\s+(.+))?$/);
+  if (usMatch) return Boolean(parseTime(usMatch[4] || null));
+
+  return /\b\d{1,2}:\d{2}\b/.test(value) || /\b\d{1,2}(?::\d{2})?\s*(am|pm)\b/i.test(value);
+}
+
+export function formatDateTimeLocal(iso: string | null, includeTime = true): string {
   if (!iso) return "";
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleString(undefined, {
+  const dateOptions: Intl.DateTimeFormatOptions = {
     month: "short",
     day: "numeric",
-    year: "numeric",
+    year: "numeric"
+  };
+  if (!includeTime) return date.toLocaleDateString(undefined, dateOptions);
+
+  return date.toLocaleString(undefined, {
+    ...dateOptions,
     hour: "numeric",
     minute: "2-digit"
   });

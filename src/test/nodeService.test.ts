@@ -5,7 +5,8 @@ import {
   createOrUpdateNodeFromMacro,
   ensureTagDocumentBlocks,
   isSavedNodeBlockActive,
-  restoreNode
+  restoreNode,
+  taskHasExplicitTime
 } from "../services/nodeService";
 import { parseMacro } from "../utils/macroParser";
 import { formatSubscriptionRateDisplay } from "../utils/subscriptions";
@@ -63,6 +64,37 @@ describe("node service", () => {
         intervalUnit: "weeks"
       })
     ).toBe("$8/4 weeks");
+  });
+
+  it("tracks whether task dates include an explicit time", () => {
+    const dateOnly = parseMacro("<Apple Cash Fix; 7/1/2026; Finance>", "task");
+    const timed = parseMacro("<Driving Exam; 6/30/2026 11:20 AM; Personal>", "task");
+    expect(dateOnly.valid).toBe(true);
+    expect(timed.valid).toBe(true);
+    if (!dateOnly.valid || !timed.valid) return;
+
+    const workspace = createDefaultWorkspace("user_1");
+    const dateOnlyState = createOrUpdateNodeFromMacro(workspace, dateOnly);
+    const timedState = createOrUpdateNodeFromMacro(dateOnlyState.state, timed);
+
+    expect(dateOnlyState.state.nodes.tasks[dateOnlyState.nodeId].datetimeHasTime).toBe(false);
+    expect(timedState.state.nodes.tasks[timedState.nodeId].datetimeHasTime).toBe(true);
+  });
+
+  it("infers date-only legacy tasks from raw macros", () => {
+    const parsed = parseMacro("<Apple Cash Fix; 7/1/2026; Finance>", "task");
+    expect(parsed.valid).toBe(true);
+    if (!parsed.valid) return;
+
+    const workspace = createDefaultWorkspace("user_1");
+    const { state, nodeId } = createOrUpdateNodeFromMacro(workspace, parsed);
+    const legacyTask = {
+      ...state.nodes.tasks[nodeId],
+      datetimeHasTime: undefined,
+      rawMacro: "<Apple Cash Fix; 7/1/2026; Finance>"
+    };
+
+    expect(taskHasExplicitTime(legacyTask)).toBe(false);
   });
 
   it("adds auto-created tags to the tags editor document", () => {

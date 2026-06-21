@@ -1,7 +1,7 @@
-import type { AnyNode, AssetNode, IdentityNode, NodeType, WorkspaceState } from "../types";
+import type { AnyNode, AssetNode, IdentityNode, NodeType, TaskNode, WorkspaceState } from "../types";
 import { formatDateTimeLocal, formatTimeLocal } from "../utils/date";
 import { formatSubscriptionRateDisplay } from "../utils/subscriptions";
-import { getNodeByType, getTagColor, getTagName } from "../services/nodeService";
+import { getNodeByType, getTagColor, getTagName, taskHasExplicitTime } from "../services/nodeService";
 
 type SavedNodeRowProps = {
   state: WorkspaceState;
@@ -65,7 +65,12 @@ export function getNotePreviewLines(note: string): string[] {
 
 function getFields(state: WorkspaceState, nodeType: NodeType, node: AnyNode): [string, string, string] {
   if (nodeType === "task" && "datetimeUtc" in node) {
-    return [node.name, formatDateTimeLocal(node.datetimeUtc), getTagName(state, node.tagId)];
+    const task = node as TaskNode;
+    return [
+      task.name,
+      formatDateTimeLocal(task.datetimeUtc, taskHasExplicitTime(task)),
+      getTagName(state, task.tagId)
+    ];
   }
   if (nodeType === "subscription" && "rate" in node) {
     return [node.name, formatSubscriptionRateDisplay(node.rate), getTagName(state, node.tagId)];
