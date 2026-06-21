@@ -46,7 +46,7 @@ export function SavedNodeRow({
       }}
     >
       <div className="saved-fields">
-        <div className="saved-field saved-field-name">{fields[0]}</div>
+        <div className="saved-field saved-field-name">{formatNameField(fields[0])}</div>
         <div className="saved-field">{fields[1]}</div>
         <div className="saved-field">{fields[2]}</div>
       </div>
@@ -68,6 +68,14 @@ export function getNotePreviewLines(note: string): string[] {
     .split(/\r?\n|;/)
     .map((line) => line.trim())
     .filter(Boolean);
+}
+
+export function formatNameField(name: string): string {
+  const parts = name
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  return parts.length > 1 ? parts.join("\n") : name;
 }
 
 function getFields(state: WorkspaceState, nodeType: NodeType, node: AnyNode): [string, string, string] {
