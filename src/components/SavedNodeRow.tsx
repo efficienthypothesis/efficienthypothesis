@@ -1,7 +1,14 @@
 import type { AnyNode, AssetNode, IdentityNode, NodeType, TaskNode, WorkspaceState } from "../types";
 import { formatDateTimeLocal, formatTimeLocal } from "../utils/date";
 import { formatSubscriptionRateDisplay } from "../utils/subscriptions";
-import { getNodeByType, getTagColor, getTagName, taskHasExplicitTime } from "../services/nodeService";
+import {
+  getNodeByType,
+  getTagColor,
+  getTagName,
+  getTaskDatetimeRaw,
+  shouldRenderTaskDatetimeRaw,
+  taskHasExplicitTime
+} from "../services/nodeService";
 
 type SavedNodeRowProps = {
   state: WorkspaceState;
@@ -68,7 +75,9 @@ function getFields(state: WorkspaceState, nodeType: NodeType, node: AnyNode): [s
     const task = node as TaskNode;
     return [
       task.name,
-      formatDateTimeLocal(task.datetimeUtc, taskHasExplicitTime(task)),
+      shouldRenderTaskDatetimeRaw(task)
+        ? getTaskDatetimeRaw(task)
+        : formatDateTimeLocal(task.datetimeUtc, taskHasExplicitTime(task)),
       getTagName(state, task.tagId)
     ];
   }

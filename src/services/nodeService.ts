@@ -17,7 +17,7 @@ import type {
 } from "../types";
 import type { ParsedMacro } from "../utils/macroParser";
 import { escapeMacroText, normalizeTagName, parseMacro, splitUnescaped } from "../utils/macroParser";
-import { hasExplicitTime, parseLocalDateTimeToUtc } from "../utils/date";
+import { hasExplicitTime, isSupportedTaskDateInput, parseLocalDateTimeToUtc } from "../utils/date";
 import { makeId, nowIso } from "../utils/ids";
 
 const DEFAULT_TAG_COLOR = "#D1D5DB";
@@ -50,6 +50,7 @@ export function createOrUpdateNodeFromMacro(
       ...base,
       note: parsed.note,
       datetimeUtc: parseLocalDateTimeToUtc(parsed.primary),
+      datetimeRaw: parsed.primary,
       datetimeHasTime: hasExplicitTime(parsed.primary),
       tagId
     };
@@ -163,7 +164,7 @@ export function nodeToMacro(state: WorkspaceState, nodeType: NodeType, nodeId: s
 
   if (nodeType === "task") {
     const task = node as TaskNode;
-    return `<${escapeMacroText(task.name)}; ${escapeMacroText(task.datetimeUtc || "")}; ${escapeMacroText(tag)}${note}>`;
+    return `<${escapeMacroText(task.name)}; ${escapeMacroText(getTaskDatetimeRaw(task) || task.datetimeUtc || "")}; ${escapeMacroText(tag)}${note}>`;
   }
   if (nodeType === "subscription") {
     const subscription = node as SubscriptionNode;
@@ -221,6 +222,20 @@ export function taskHasExplicitTime(task: TaskNode): boolean {
     if (parsed.valid) return hasExplicitTime(parsed.primary);
   }
   return true;
+}
+
+export function getTaskDatetimeRaw(task: TaskNode): string {
+  if (typeof task.datetimeRaw === "string") return task.datetimeRaw;
+  if (task.rawMacro) {
+    const parsed = parseMacro(task.rawMacro, "task");
+    if (parsed.valid) return parsed.primary || "";
+  }
+  return "";
+}
+
+export function shouldRenderTaskDatetimeRaw(task: TaskNode): boolean {
+  const raw = getTaskDatetimeRaw(task);
+  return Boolean(raw && !isSupportedTaskDateInput(raw));
 }
 
 export function ensureTagDocumentBlocks(state: WorkspaceState): WorkspaceState {

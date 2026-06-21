@@ -44,3 +44,4 @@
 - Codex (GPT-5): changed the profile menu from hover-open to click-toggle with outside-click and Escape close behavior.
 - Codex (GPT-5): rendered semicolon- or newline-separated item notes as individual preview lines under saved rows.
 - Codex (GPT-5): removed invented default task times by tracking explicit task datetime input and rendering date-only tasks without a time, including legacy raw-macro tasks.
+- Codex (GPT-5): changed task date rendering to omit the year, place explicit times on a second line after a comma, and render unsupported date text literally instead of loosely parsing it.

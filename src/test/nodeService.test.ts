@@ -4,8 +4,10 @@ import {
   archiveNode,
   createOrUpdateNodeFromMacro,
   ensureTagDocumentBlocks,
+  getTaskDatetimeRaw,
   isSavedNodeBlockActive,
   restoreNode,
+  shouldRenderTaskDatetimeRaw,
   taskHasExplicitTime
 } from "../services/nodeService";
 import { parseMacro } from "../utils/macroParser";
@@ -81,6 +83,21 @@ describe("node service", () => {
     expect(timedState.state.nodes.tasks[timedState.nodeId].datetimeHasTime).toBe(true);
   });
 
+  it("stores unsupported task date text for literal display", () => {
+    const parsed = parseMacro("<Meet contractor; May 5 2:00 pm; Home>", "task");
+    expect(parsed.valid).toBe(true);
+    if (!parsed.valid) return;
+
+    const workspace = createDefaultWorkspace("user_1");
+    const { state, nodeId } = createOrUpdateNodeFromMacro(workspace, parsed);
+    const task = state.nodes.tasks[nodeId];
+
+    expect(task.datetimeUtc).toBeNull();
+    expect(task.datetimeRaw).toBe("May 5 2:00 pm");
+    expect(shouldRenderTaskDatetimeRaw(task)).toBe(true);
+    expect(getTaskDatetimeRaw(task)).toBe("May 5 2:00 pm");
+  });
+
   it("infers date-only legacy tasks from raw macros", () => {
     const parsed = parseMacro("<Apple Cash Fix; 7/1/2026; Finance>", "task");
     expect(parsed.valid).toBe(true);
@@ -95,6 +112,25 @@ describe("node service", () => {
     };
 
     expect(taskHasExplicitTime(legacyTask)).toBe(false);
+  });
+
+  it("renders legacy loosely parsed natural-language dates from raw macro text", () => {
+    const parsed = parseMacro("<Meet contractor; May 5 2:00 pm; Home>", "task");
+    expect(parsed.valid).toBe(true);
+    if (!parsed.valid) return;
+
+    const workspace = createDefaultWorkspace("user_1");
+    const { state, nodeId } = createOrUpdateNodeFromMacro(workspace, parsed);
+    const legacyTask = {
+      ...state.nodes.tasks[nodeId],
+      datetimeUtc: new Date(2026, 4, 5, 14, 0, 0, 0).toISOString(),
+      datetimeRaw: undefined,
+      datetimeHasTime: undefined,
+      rawMacro: "<Meet contractor; May 5 2:00 pm; Home>"
+    };
+
+    expect(shouldRenderTaskDatetimeRaw(legacyTask)).toBe(true);
+    expect(getTaskDatetimeRaw(legacyTask)).toBe("May 5 2:00 pm");
   });
 
   it("adds auto-created tags to the tags editor document", () => {
