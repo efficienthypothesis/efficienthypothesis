@@ -9,6 +9,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ZIP_FILE="/tmp/eh-deploy.zip"
+BUILD_DIR="/tmp/eh-deploy-build"
 S3_BUCKET="eh-app-data"
 S3_KEY="deploy/efficienthypothesis-build.zip"
 FUNCTION_NAME="efficienthypothesis-backend"
@@ -16,9 +17,23 @@ REGION="us-east-2"
 
 echo "=== Building zip ==="
 rm -f "$ZIP_FILE"
+rm -rf "$BUILD_DIR"
 cd "$SCRIPT_DIR"
 npm run build
-zip -r "$ZIP_FILE" app.py config.py chatbot_system_prompt.txt routes/ templates/ static/ -x '*.pyc' '__pycache__/*' '.git/*' '*.sh' '*.md' -q
+mkdir -p "$BUILD_DIR"
+cp app.py config.py chatbot_system_prompt.txt "$BUILD_DIR/"
+cp -R routes templates static "$BUILD_DIR/"
+if [[ -f requirements-lambda.txt ]]; then
+  python3 -m pip install \
+    --target "$BUILD_DIR" \
+    --platform manylinux2014_x86_64 \
+    --implementation cp \
+    --python-version 3.13 \
+    --only-binary=:all: \
+    --upgrade \
+    -r requirements-lambda.txt
+fi
+(cd "$BUILD_DIR" && zip -r "$ZIP_FILE" . -x '*.pyc' '__pycache__/*' '.git/*' '*.sh' '*.md' -q)
 echo "Zip size: $(du -h "$ZIP_FILE" | cut -f1)"
 
 echo "=== Uploading to S3 ==="

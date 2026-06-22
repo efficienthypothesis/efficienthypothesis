@@ -16,8 +16,10 @@ import { SettingsModal } from "./components/SettingsModal";
 import { createDefaultWorkspace } from "./services/defaultWorkspace";
 import {
   WorkspaceConflictError,
+  WorkspaceLockedError,
   ensureUserTimezone,
   fetchWorkspaceFromServer,
+  importWorkspaceKey,
   loadWorkspace,
   saveWorkspace
 } from "./services/workspaceService";
@@ -44,6 +46,9 @@ export function App({ bootstrap }: AppProps) {
   const [loading, setLoading] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [instructionsOpen, setInstructionsOpen] = useState(false);
+  const [locked, setLocked] = useState(false);
+  const [recoveryKeyInput, setRecoveryKeyInput] = useState("");
+  const [unlockError, setUnlockError] = useState("");
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const hasLoaded = useRef(false);
   const saveTimer = useRef<number | null>(null);
@@ -72,12 +77,19 @@ export function App({ bootstrap }: AppProps) {
         lastSyncedUpdatedAt.current = loadedWorkspace.updatedAt || null;
         savedRevision.current = localRevision.current;
         saveBlockedByConflict.current = false;
+        setLocked(false);
         setWorkspace(loadedWorkspace);
         setLoading(false);
         hasLoaded.current = true;
       })
-      .catch(() => {
+      .catch((error) => {
         if (cancelled) return;
+        if (error instanceof WorkspaceLockedError) {
+          setLocked(true);
+          setLoading(false);
+          hasLoaded.current = false;
+          return;
+        }
         setLoading(false);
         hasLoaded.current = true;
       });
@@ -293,6 +305,54 @@ export function App({ bootstrap }: AppProps) {
 
   function archiveSavedBlock(block: SavedNodeBlock) {
     setLocalWorkspace((current) => archiveNode(current, block.nodeType, block.nodeId));
+  }
+
+  function unlockWorkspace() {
+    try {
+      importWorkspaceKey(user.id, recoveryKeyInput);
+      setUnlockError("");
+      window.location.reload();
+    } catch (error) {
+      setUnlockError(error instanceof Error ? error.message : "Invalid recovery key.");
+    }
+  }
+
+  if (locked) {
+    return (
+      <div className="app-shell">
+        <Navbar
+          user={user}
+          onSettings={() => setSettingsOpen(true)}
+          onInstructions={() => setInstructionsOpen(true)}
+        />
+        <main className="locked-workspace">
+          <section className="unlock-panel">
+            <h1>Workspace encrypted</h1>
+            <p>
+              This browser does not have your Efficient Hypothesis recovery key. Paste your recovery
+              key to unlock the encrypted workspace on this device.
+            </p>
+            <label>
+              Recovery key
+              <textarea
+                value={recoveryKeyInput}
+                onChange={(event) => setRecoveryKeyInput(event.target.value)}
+                rows={3}
+                spellCheck={false}
+              />
+            </label>
+            <button type="button" onClick={unlockWorkspace}>
+              Unlock workspace
+            </button>
+            {unlockError ? <p className="unlock-error">{unlockError}</p> : null}
+            <p className="unlock-warning">
+              If the recovery key is lost, the workspace cannot be recovered.
+            </p>
+          </section>
+        </main>
+        <InstructionsModal open={instructionsOpen} onClose={() => setInstructionsOpen(false)} />
+      </div>
+    );
   }
 
   return (

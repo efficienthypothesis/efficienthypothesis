@@ -20,6 +20,12 @@ routes now all serve the new workspace-native tool manifest, but ChatGPT can
 cache tool manifests by URL during development. Prefer `/mcp-v3` for the active
 connector so the GPT App does not see a stale `/mcp-v2` manifest.
 
+Workspace data is encrypted at rest with a browser-held recovery key. OAuth
+authenticates ChatGPT, but MCP tools also require the user to grant ChatGPT
+workspace-key access from Efficient Hypothesis Settings > Profile. The grant
+lasts 30 days and can be revoked by the user. Without an active grant, MCP tool
+calls return a grant-required error.
+
 ## Current Tools
 
 Read tools:
@@ -56,6 +62,10 @@ MCP reads and writes the same S3-backed workspace state used by the React app:
 ```text
 s3://eh-app-data/<email>/workspace/state.json
 ```
+
+For current workspaces this object is an encrypted envelope. During an active
+ChatGPT grant, the MCP server decrypts the envelope, applies the requested node
+operation, and writes a new encrypted envelope back to the same key.
 
 Structured data lives in normalized node collections:
 

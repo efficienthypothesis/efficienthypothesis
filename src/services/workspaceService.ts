@@ -1,8 +1,23 @@
 import type { WorkspaceState } from "../types";
 import { createDefaultWorkspace } from "./defaultWorkspace";
+import {
+  type EncryptedWorkspaceEnvelope,
+  WorkspaceLockedError,
+  cacheEncryptedWorkspace,
+  clearEncryptedWorkspaceCache,
+  decryptWorkspaceEnvelope,
+  encryptWorkspaceState,
+  ensureWorkspaceKey,
+  exportWorkspaceKey,
+  importWorkspaceKey,
+  removeWorkspaceKey,
+  readCachedEncryptedWorkspace
+} from "./encryptionService";
 import { ensureTagDocumentBlocks } from "./nodeService";
 
 const LOCAL_CACHE_KEY = "eh_workspace_cache_v1";
+
+export { WorkspaceLockedError, exportWorkspaceKey, importWorkspaceKey };
 
 export class WorkspaceConflictError extends Error {
   serverState: WorkspaceState | null;
@@ -18,47 +33,81 @@ export class WorkspaceConflictError extends Error {
 
 export async function loadWorkspace(userId: string): Promise<WorkspaceState> {
   try {
-    const serverState = await fetchWorkspaceFromServer();
-    if (serverState) {
+    const payload = await fetchWorkspacePayload();
+    if (payload.encryptedState) {
+      const serverState = await decryptWorkspaceEnvelope(userId, payload.encryptedState);
       const normalizedState = ensureTagDocumentBlocks(serverState);
-      cacheWorkspace(normalizedState);
+      cacheEncryptedWorkspace(userId, payload.encryptedState);
+      clearPlaintextWorkspaceCache();
       return normalizedState;
     }
+    if (payload.state) {
+      await ensureWorkspaceKey(userId);
+      const normalizedState = ensureTagDocumentBlocks(payload.state);
+      const saved = await saveWorkspace(normalizedState, normalizedState.updatedAt || null);
+      return { ...normalizedState, updatedAt: saved.updatedAt };
+    }
   } catch (error) {
-    const cached = readCachedWorkspace();
+    if (error instanceof WorkspaceLockedError) throw error;
+    const cached = await readCachedWorkspace(userId);
     if (cached) return ensureTagDocumentBlocks(cached);
     if (import.meta.env.DEV) {
       console.warn("Using local workspace fallback:", error);
     }
   }
+  await ensureWorkspaceKey(userId);
   return createDefaultWorkspace(userId);
 }
 
 export async function fetchWorkspaceFromServer(): Promise<WorkspaceState | null> {
+  const userId = getCurrentUserId();
+  if (!userId) throw new Error("Missing user id");
+  const payload = await fetchWorkspacePayload();
+  if (payload.encryptedState) {
+    const state = await decryptWorkspaceEnvelope(userId, payload.encryptedState);
+    cacheEncryptedWorkspace(userId, payload.encryptedState);
+    clearPlaintextWorkspaceCache();
+    return ensureTagDocumentBlocks(state);
+  }
+  if (payload.state) return ensureTagDocumentBlocks(payload.state);
+  return null;
+}
+
+async function fetchWorkspacePayload(): Promise<WorkspacePayload> {
   const response = await fetch("/api/workspace");
   if (response.status === 401) throw new Error("Not authenticated");
   if (!response.ok) throw new Error(`Workspace load failed: ${response.status}`);
-  const payload = (await response.json()) as { state: WorkspaceState | null };
-  return payload.state ? ensureTagDocumentBlocks(payload.state) : null;
+  return (await response.json()) as WorkspacePayload;
 }
 
 export async function saveWorkspace(
   state: WorkspaceState,
   baseUpdatedAt: string | null
 ): Promise<{ updatedAt: string }> {
-  cacheWorkspace(state);
+  const updatedAt = new Date().toISOString();
+  const stateForStorage = { ...state, updatedAt };
+  const encryptedState = await encryptWorkspaceState(state.userId, stateForStorage);
+  cacheEncryptedWorkspace(state.userId, encryptedState);
+  clearPlaintextWorkspaceCache();
   const response = await fetch("/api/workspace", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ state, baseUpdatedAt })
+    body: JSON.stringify({ encryptedState, baseUpdatedAt })
   });
   if (response.status === 409) {
     const payload = (await response.json()) as {
       state?: WorkspaceState | null;
+      encryptedState?: EncryptedWorkspaceEnvelope | null;
       serverUpdatedAt?: string | null;
     };
+    let serverState = payload.state ? ensureTagDocumentBlocks(payload.state) : null;
+    if (!serverState && payload.encryptedState) {
+      serverState = ensureTagDocumentBlocks(
+        await decryptWorkspaceEnvelope(state.userId, payload.encryptedState)
+      );
+    }
     throw new WorkspaceConflictError(
-      payload.state ? ensureTagDocumentBlocks(payload.state) : null,
+      serverState,
       payload.serverUpdatedAt || null
     );
   }
@@ -66,19 +115,13 @@ export async function saveWorkspace(
     throw new Error(`Workspace save failed: ${response.status}`);
   }
   const payload = (await response.json()) as { updatedAt?: string };
-  return { updatedAt: payload.updatedAt || state.updatedAt };
+  return { updatedAt: payload.updatedAt || updatedAt };
 }
 
-function cacheWorkspace(state: WorkspaceState): void {
+async function readCachedWorkspace(userId: string): Promise<WorkspaceState | null> {
   try {
-    localStorage.setItem(LOCAL_CACHE_KEY, JSON.stringify(state));
-  } catch {
-    // Local cache is best-effort only.
-  }
-}
-
-function readCachedWorkspace(): WorkspaceState | null {
-  try {
+    const encrypted = readCachedEncryptedWorkspace(userId);
+    if (encrypted) return decryptWorkspaceEnvelope(userId, encrypted);
     const raw = localStorage.getItem(LOCAL_CACHE_KEY);
     return raw ? (JSON.parse(raw) as WorkspaceState) : null;
   } catch {
@@ -105,6 +148,19 @@ export async function ensureUserTimezone(): Promise<void> {
 
 export function clearWorkspaceCache(): void {
   try {
+    const userId = getCurrentUserId();
+    if (userId) {
+      clearEncryptedWorkspaceCache(userId);
+      removeWorkspaceKey(userId);
+    }
+    clearPlaintextWorkspaceCache();
+  } catch {
+    // Local cache is best-effort only.
+  }
+}
+
+function clearPlaintextWorkspaceCache(): void {
+  try {
     localStorage.removeItem(LOCAL_CACHE_KEY);
   } catch {
     // Local cache is best-effort only.
@@ -129,3 +185,45 @@ export async function deleteAccount(confirmation: string): Promise<void> {
   }
   clearWorkspaceCache();
 }
+
+export type ChatGptGrantStatus = {
+  active: boolean;
+  expiresAt: string | null;
+  createdAt?: string | null;
+};
+
+export async function fetchChatGptGrantStatus(): Promise<ChatGptGrantStatus> {
+  const response = await fetch("/api/workspace/chatgpt-grant");
+  if (!response.ok) throw new Error(`Grant status failed: ${response.status}`);
+  return (await response.json()) as ChatGptGrantStatus;
+}
+
+export async function grantChatGptAccess(userId: string): Promise<ChatGptGrantStatus> {
+  const workspaceKey = exportWorkspaceKey(userId);
+  if (!workspaceKey) throw new Error("Recovery key is missing in this browser.");
+  const response = await fetch("/api/workspace/chatgpt-grant", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ workspaceKey })
+  });
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => ({}))) as { error?: string };
+    throw new Error(payload.error || `Grant failed: ${response.status}`);
+  }
+  return (await response.json()) as ChatGptGrantStatus;
+}
+
+export async function revokeChatGptAccess(): Promise<ChatGptGrantStatus> {
+  const response = await fetch("/api/workspace/chatgpt-grant", { method: "DELETE" });
+  if (!response.ok) throw new Error(`Grant revoke failed: ${response.status}`);
+  return (await response.json()) as ChatGptGrantStatus;
+}
+
+function getCurrentUserId(): string | null {
+  return window.__EH_BOOTSTRAP__?.user?.id || null;
+}
+
+type WorkspacePayload = {
+  state?: WorkspaceState | null;
+  encryptedState?: EncryptedWorkspaceEnvelope | null;
+};

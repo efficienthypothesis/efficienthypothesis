@@ -8,6 +8,12 @@ from zoneinfo import ZoneInfo
 from flask import Blueprint, Response, jsonify, request
 
 from config import PRODUCTIVITY_BUCKET, s3, user_table, _get_auth_context
+from routes.workspace_access import require_active_chatgpt_grant
+from routes.workspace_crypto import (
+    decrypt_workspace_envelope,
+    encrypt_workspace_state,
+    is_encrypted_workspace,
+)
 
 
 mcp_bp = Blueprint("mcp", __name__)
@@ -328,24 +334,30 @@ def _workspace_state_key(email):
 
 
 def _load_workspace(email, user_id):
+    grant = require_active_chatgpt_grant(email)
     try:
         obj = s3.get_object(Bucket=PRODUCTIVITY_BUCKET, Key=_workspace_state_key(email))
         state = json.loads(obj["Body"].read().decode("utf-8"))
-        if isinstance(state, dict):
-            return _normalize_workspace(state, user_id or email)
     except Exception:
-        pass
+        return _create_default_workspace(user_id or email)
+    if isinstance(state, dict):
+        if is_encrypted_workspace(state):
+            decrypted = decrypt_workspace_envelope(state, grant["workspaceKeyB64"])
+            return _normalize_workspace(decrypted, user_id or email)
+        return _normalize_workspace(state, user_id or email)
     return _create_default_workspace(user_id or email)
 
 
 def _save_workspace(email, state, user_id):
+    grant = require_active_chatgpt_grant(email)
     now = _now_iso()
     state["updatedAt"] = now
     state["userId"] = user_id or state.get("userId") or email
+    state_for_storage = encrypt_workspace_state(state, grant["workspaceKeyB64"], state["userId"], now)
     s3.put_object(
         Bucket=PRODUCTIVITY_BUCKET,
         Key=_workspace_state_key(email),
-        Body=json.dumps(state, indent=2),
+        Body=json.dumps(state_for_storage, indent=2),
         ContentType="application/json",
     )
 

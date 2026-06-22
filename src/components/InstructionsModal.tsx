@@ -73,6 +73,19 @@ Timetable:
           </section>
 
           <section>
+            <h3>Encryption and ChatGPT</h3>
+            <p>
+              Your workspace is encrypted before it is saved to the server. Copy your recovery key
+              from Settings &gt; Profile and store it privately. If the key is lost, the workspace
+              cannot be recovered.
+            </p>
+            <p>
+              ChatGPT tools need a separate one-month access grant from Settings &gt; Profile. You can
+              revoke that grant at any time.
+            </p>
+          </section>
+
+          <section>
             <h3>Type special characters</h3>
             <p>
               Use a backslash when you want a literal delimiter: <code>\&lt;</code>,{" "}

@@ -41,6 +41,20 @@
       Your ChatGPT conversations are handled by OpenAI under OpenAI's own terms and privacy policy.
     </p>
 
+    <h2>Workspace Encryption</h2>
+    <p>
+      Workspace data is encrypted in your browser before it is stored on Efficient Hypothesis
+      servers. Your browser holds the recovery key. If you lose that key, encrypted workspace data
+      cannot be recovered by Efficient Hypothesis.
+    </p>
+    <p>
+      ChatGPT cannot read or edit encrypted workspace data unless you explicitly grant ChatGPT
+      access from Efficient Hypothesis. A ChatGPT grant stores a temporary workspace key on the
+      server for 30 days so Efficient Hypothesis can process ChatGPT tool requests. During an active
+      grant, Efficient Hypothesis servers can decrypt and process workspace data needed for those
+      ChatGPT requests. You can revoke the grant from Settings.
+    </p>
+
     <h2>How We Use Information</h2>
     <p>We use your information to:</p>
     <ul>
@@ -53,9 +67,9 @@
 
     <h2>Storage and Security</h2>
     <p>
-      Efficient Hypothesis stores workspace and account data using AWS-hosted infrastructure. We use
-      reasonable technical and organizational safeguards, but no internet service can guarantee
-      absolute security.
+      Efficient Hypothesis stores encrypted workspace data and account metadata using AWS-hosted
+      infrastructure. We use reasonable technical and organizational safeguards, but no internet
+      service can guarantee absolute security.
     </p>
 
     <h2>Sharing</h2>

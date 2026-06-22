@@ -452,6 +452,65 @@ input {
   background: rgba(48, 38, 27, 0.28);
 }
 
+.locked-workspace {
+  display: grid;
+  place-items: center;
+  min-height: 0;
+  padding: 24px;
+  background: var(--app-bg);
+}
+
+.unlock-panel {
+  width: min(560px, 100%);
+  border: 1px solid var(--border);
+  background: var(--panel-bg);
+  padding: 22px;
+  box-shadow: 0 18px 44px rgba(48, 38, 27, 0.14);
+}
+
+.unlock-panel h1 {
+  margin: 0 0 8px;
+  font-size: 24px;
+}
+
+.unlock-panel p {
+  margin: 8px 0;
+  line-height: 1.45;
+}
+
+.unlock-panel label {
+  display: grid;
+  gap: 6px;
+  margin: 16px 0 10px;
+}
+
+.unlock-panel textarea {
+  width: 100%;
+  resize: vertical;
+  border: 1px solid var(--border);
+  background: #fffaf3;
+  color: var(--text);
+  font-family: var(--mono);
+  padding: 8px;
+}
+
+.unlock-panel button {
+  border: 1px solid var(--border);
+  background: var(--blue);
+  color: var(--text);
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+.unlock-error {
+  color: var(--danger);
+}
+
+.unlock-warning {
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .settings-modal {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
@@ -506,7 +565,8 @@ input {
 .settings-tabs button,
 .modal-close,
 .routine-toolbar button,
-.archive-row button {
+.archive-row button,
+.encryption-zone button {
   border: 1px solid var(--border);
   background: #f8f2e8;
   color: var(--text);
@@ -588,13 +648,68 @@ input {
 
 .profile-settings {
   display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr) auto auto;
   height: 100%;
 }
 
 .profile-settings > .editor-panel {
   min-height: 0;
   border-right: 0;
+}
+
+.encryption-zone {
+  padding: 12px 14px;
+  border-top: 1px solid var(--border);
+  background: #f7f2ea;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.encryption-zone h3 {
+  margin: 0 0 4px;
+  font-size: 15px;
+}
+
+.encryption-zone p {
+  margin: 4px 0 8px;
+  max-width: 850px;
+  line-height: 1.4;
+}
+
+.settings-button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.settings-button-row button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.recovery-key-output {
+  width: min(680px, 100%);
+  margin-top: 8px;
+  resize: vertical;
+  border: 1px solid var(--border);
+  background: #fffaf3;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 8px;
+}
+
+.chatgpt-grant-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: flex-start;
+  margin-top: 10px;
+}
+
+.encryption-status {
+  color: var(--muted);
 }
 
 .danger-zone {
