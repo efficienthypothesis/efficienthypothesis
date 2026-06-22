@@ -36,14 +36,31 @@ def api_workspace_put():
     state = data.get("state")
     if not isinstance(state, dict):
         return jsonify({"error": "state object is required"}), 400
+    base_updated_at = data.get("baseUpdatedAt")
 
-    now = datetime.datetime.utcnow().isoformat() + "Z"
+    key = _workspace_state_key(email)
+    existing_state = None
+    try:
+        obj = s3.get_object(Bucket=PRODUCTIVITY_BUCKET, Key=key)
+        existing_state = json.loads(obj["Body"].read().decode("utf-8"))
+    except Exception:
+        existing_state = None
+
+    existing_updated_at = existing_state.get("updatedAt") if isinstance(existing_state, dict) else None
+    if existing_state and (not base_updated_at or base_updated_at != existing_updated_at):
+        return jsonify({
+            "error": "workspace_conflict",
+            "serverUpdatedAt": existing_updated_at,
+            "state": existing_state,
+        }), 409
+
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
     state["updatedAt"] = now
     state["userId"] = ctx.get("user_id") or ""
 
     s3.put_object(
         Bucket=PRODUCTIVITY_BUCKET,
-        Key=_workspace_state_key(email),
+        Key=key,
         Body=json.dumps(state, indent=2),
         ContentType="application/json",
     )

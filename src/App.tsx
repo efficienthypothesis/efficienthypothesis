@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { SetStateAction } from "react";
 import type {
   BootstrapPayload,
   DraftItemBlock,
@@ -13,7 +14,13 @@ import { EditorPanel } from "./components/EditorPanel";
 import { InstructionsModal } from "./components/InstructionsModal";
 import { SettingsModal } from "./components/SettingsModal";
 import { createDefaultWorkspace } from "./services/defaultWorkspace";
-import { ensureUserTimezone, loadWorkspace, saveWorkspace } from "./services/workspaceService";
+import {
+  WorkspaceConflictError,
+  ensureUserTimezone,
+  fetchWorkspaceFromServer,
+  loadWorkspace,
+  saveWorkspace
+} from "./services/workspaceService";
 import {
   archiveNode,
   createOrUpdateNodeFromMacro,
@@ -28,6 +35,8 @@ type AppProps = {
 
 const saveDelayMs = 700;
 
+type SaveStatus = "idle" | "syncing" | "saving" | "saved" | "conflict" | "error";
+
 export function App({ bootstrap }: AppProps) {
   const [workspace, setWorkspace] = useState<WorkspaceState>(() =>
     createDefaultWorkspace(bootstrap.user.id)
@@ -35,15 +44,34 @@ export function App({ bootstrap }: AppProps) {
   const [loading, setLoading] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [instructionsOpen, setInstructionsOpen] = useState(false);
-  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const hasLoaded = useRef(false);
   const saveTimer = useRef<number | null>(null);
+  const workspaceRef = useRef(workspace);
+  const lastSyncedUpdatedAt = useRef<string | null>(null);
+  const localRevision = useRef(0);
+  const savedRevision = useRef(0);
+  const saveInFlight = useRef(false);
+  const saveBlockedByConflict = useRef(false);
+  const refreshInFlight = useRef(false);
+
+  useEffect(() => {
+    workspaceRef.current = workspace;
+  }, [workspace]);
+
+  function setLocalWorkspace(next: SetStateAction<WorkspaceState>) {
+    localRevision.current += 1;
+    setWorkspace(next);
+  }
 
   useEffect(() => {
     let cancelled = false;
     Promise.all([ensureUserTimezone(), loadWorkspace(bootstrap.user.id)])
       .then(([, loadedWorkspace]) => {
         if (cancelled) return;
+        lastSyncedUpdatedAt.current = loadedWorkspace.updatedAt || null;
+        savedRevision.current = localRevision.current;
+        saveBlockedByConflict.current = false;
         setWorkspace(loadedWorkspace);
         setLoading(false);
         hasLoaded.current = true;
@@ -60,17 +88,90 @@ export function App({ bootstrap }: AppProps) {
 
   useEffect(() => {
     if (!hasLoaded.current) return;
+    if (localRevision.current === savedRevision.current) return;
+    if (saveBlockedByConflict.current) return;
     if (saveTimer.current) window.clearTimeout(saveTimer.current);
     setSaveStatus("saving");
     saveTimer.current = window.setTimeout(() => {
-      saveWorkspace(workspace)
-        .then(() => setSaveStatus("saved"))
-        .catch(() => setSaveStatus("error"));
+      if (saveInFlight.current) return;
+      saveInFlight.current = true;
+      const revision = localRevision.current;
+      const snapshot = workspaceRef.current;
+      let shouldSaveAgain = false;
+      saveWorkspace(snapshot, lastSyncedUpdatedAt.current)
+        .then(({ updatedAt }) => {
+          lastSyncedUpdatedAt.current = updatedAt;
+          savedRevision.current = revision;
+          if (localRevision.current === revision) {
+            setSaveStatus("saved");
+          } else {
+            shouldSaveAgain = true;
+          }
+        })
+        .catch((error) => {
+          if (error instanceof WorkspaceConflictError) {
+            saveBlockedByConflict.current = true;
+            setSaveStatus("conflict");
+            if (error.serverUpdatedAt) lastSyncedUpdatedAt.current = error.serverUpdatedAt;
+            return;
+          }
+          setSaveStatus("error");
+        })
+        .finally(() => {
+          saveInFlight.current = false;
+          if (shouldSaveAgain && !saveBlockedByConflict.current) {
+            setWorkspace((current) => ({ ...current }));
+          }
+        });
     }, saveDelayMs);
     return () => {
       if (saveTimer.current) window.clearTimeout(saveTimer.current);
     };
   }, [workspace]);
+
+  const refreshFromServerIfClean = useCallback(() => {
+    if (!hasLoaded.current || loading || refreshInFlight.current) return;
+    if (saveInFlight.current || localRevision.current !== savedRevision.current) return;
+    refreshInFlight.current = true;
+    setSaveStatus((current) => (current === "saving" ? current : "syncing"));
+    fetchWorkspaceFromServer()
+      .then((serverWorkspace) => {
+        if (!serverWorkspace) return;
+        const serverUpdatedAt = serverWorkspace.updatedAt || null;
+        if (!isNewerTimestamp(serverUpdatedAt, lastSyncedUpdatedAt.current)) {
+          setSaveStatus((current) => (current === "syncing" ? "saved" : current));
+          return;
+        }
+        lastSyncedUpdatedAt.current = serverUpdatedAt;
+        savedRevision.current = localRevision.current;
+        saveBlockedByConflict.current = false;
+        setWorkspace(serverWorkspace);
+        setSaveStatus("saved");
+      })
+      .catch(() => {
+        setSaveStatus("error");
+      })
+      .finally(() => {
+        refreshInFlight.current = false;
+      });
+  }, [loading]);
+
+  useEffect(() => {
+    function handleFocus() {
+      refreshFromServerIfClean();
+    }
+
+    function handleVisibilityChange() {
+      if (document.visibilityState === "visible") refreshFromServerIfClean();
+    }
+
+    window.addEventListener("focus", handleFocus);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [refreshFromServerIfClean]);
 
   const user = bootstrap.user;
   const visibleDocuments = useMemo(
@@ -84,7 +185,7 @@ export function App({ bootstrap }: AppProps) {
   );
 
   function updateDocument(key: EditorDocumentKey, document: EditorDocument) {
-    setWorkspace((current) => ({
+    setLocalWorkspace((current) => ({
       ...current,
       documents: {
         ...current.documents,
@@ -101,7 +202,7 @@ export function App({ bootstrap }: AppProps) {
     raw: string,
     inferredNodeType: NodeType
   ) {
-    setWorkspace((current) => {
+    setLocalWorkspace((current) => {
       const parsed = parseMacro(raw, block.editingNodeType || inferredNodeType);
       if (!parsed.valid) {
         return {
@@ -166,7 +267,7 @@ export function App({ bootstrap }: AppProps) {
   }
 
   function beginRawEdit(key: EditorDocumentKey, document: EditorDocument, block: SavedNodeBlock) {
-    setWorkspace((current) => ({
+    setLocalWorkspace((current) => ({
       ...current,
       documents: {
         ...current.documents,
@@ -191,7 +292,7 @@ export function App({ bootstrap }: AppProps) {
   }
 
   function archiveSavedBlock(block: SavedNodeBlock) {
-    setWorkspace((current) => archiveNode(current, block.nodeType, block.nodeId));
+    setLocalWorkspace((current) => archiveNode(current, block.nodeType, block.nodeId));
   }
 
   return (
@@ -223,7 +324,7 @@ export function App({ bootstrap }: AppProps) {
         open={settingsOpen}
         state={workspace}
         onClose={() => setSettingsOpen(false)}
-        onStateChange={setWorkspace}
+        onStateChange={setLocalWorkspace}
         onDocumentChange={updateDocument}
         onFinalizeMacro={finalizeMacro}
         onBeginRawEdit={beginRawEdit}
@@ -234,10 +335,21 @@ export function App({ bootstrap }: AppProps) {
   );
 }
 
-function saveStatusText(status: "idle" | "saving" | "saved" | "error", loading: boolean): string {
+function isNewerTimestamp(candidate: string | null, current: string | null): boolean {
+  if (!candidate) return false;
+  if (!current) return true;
+  const candidateMs = Date.parse(candidate);
+  const currentMs = Date.parse(current);
+  if (!Number.isFinite(candidateMs) || !Number.isFinite(currentMs)) return candidate !== current;
+  return candidateMs > currentMs;
+}
+
+function saveStatusText(status: SaveStatus, loading: boolean): string {
   if (loading) return "loading";
+  if (status === "syncing") return "syncing";
   if (status === "saving") return "saving";
   if (status === "saved") return "saved";
+  if (status === "conflict") return "refresh needed";
   if (status === "error") return "offline cache";
   return "";
 }

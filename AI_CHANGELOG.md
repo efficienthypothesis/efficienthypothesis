@@ -1,5 +1,11 @@
 # AI Changelog
 
+## 2026-06-21 - Codex (GPT-5) focus sync
+
+- Codex (GPT-5): added focus/visibility workspace refresh so a clean browser tab pulls newer GPT/MCP changes from the server without a manual page reload.
+- Codex (GPT-5): added `baseUpdatedAt` conflict protection to workspace saves so stale browser state cannot overwrite newer S3 changes made by GPT or another client.
+- Codex (GPT-5): surfaced a `refresh needed` save status when an unsaved local browser edit conflicts with a newer server workspace.
+
 ## 2026-06-21 - Codex (GPT-5) workspace MCP
 
 - Codex (GPT-5): replaced the legacy MCP item tools with workspace-native node tools for `query_nodes`, `get_node`, `create_node`, `update_node`, `archive_node`, and `restore_node`.
