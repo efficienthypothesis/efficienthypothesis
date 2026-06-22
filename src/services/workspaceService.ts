@@ -102,3 +102,30 @@ export async function ensureUserTimezone(): Promise<void> {
     // Timezone improves date rendering, but the editor should still load without it.
   }
 }
+
+export function clearWorkspaceCache(): void {
+  try {
+    localStorage.removeItem(LOCAL_CACHE_KEY);
+  } catch {
+    // Local cache is best-effort only.
+  }
+}
+
+export async function deleteAccount(confirmation: string): Promise<void> {
+  const response = await fetch("/api/account", {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ confirmation })
+  });
+  if (!response.ok) {
+    let detail = "";
+    try {
+      const payload = (await response.json()) as { error?: string };
+      detail = payload.error || "";
+    } catch {
+      detail = "";
+    }
+    throw new Error(detail || `Account deletion failed: ${response.status}`);
+  }
+  clearWorkspaceCache();
+}

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type {
   DraftItemBlock,
+  EHUser,
   EditorDocument,
   EditorDocumentKey,
   NodeType,
@@ -9,10 +10,12 @@ import type {
 } from "../types";
 import { getRoutineDocumentKeys, getRoutineLabels } from "../services/defaultWorkspace";
 import { getNodeByType, restoreNode } from "../services/nodeService";
+import { deleteAccount } from "../services/workspaceService";
 import { EditorPanel } from "./EditorPanel";
 
 type SettingsModalProps = {
   open: boolean;
+  user: EHUser;
   state: WorkspaceState;
   onClose: () => void;
   onStateChange: (state: WorkspaceState) => void;
@@ -32,6 +35,7 @@ type SettingsTab = "tags" | "routine" | "archive" | "profile";
 
 export function SettingsModal({
   open,
+  user,
   state,
   onClose,
   onStateChange,
@@ -42,6 +46,9 @@ export function SettingsModal({
 }: SettingsModalProps) {
   const [tab, setTab] = useState<SettingsTab>("tags");
   const [status, setStatus] = useState("");
+  const [deleteConfirmation, setDeleteConfirmation] = useState("");
+  const [deleteStatus, setDeleteStatus] = useState("");
+  const [deleteBusy, setDeleteBusy] = useState(false);
   if (!open) return null;
 
   function publishRoutine() {
@@ -54,6 +61,21 @@ export function SettingsModal({
       updatedAt: new Date().toISOString()
     });
     setStatus("Routine template timestamp updated. Daily rollover automation is a backend TODO.");
+  }
+
+  function handleDeleteAccount() {
+    const expected = `DELETE ${user.email}`;
+    if (deleteConfirmation !== expected || deleteBusy) return;
+    setDeleteBusy(true);
+    setDeleteStatus("Deleting account...");
+    deleteAccount(deleteConfirmation)
+      .then(() => {
+        window.location.assign("/");
+      })
+      .catch((error) => {
+        setDeleteStatus(error instanceof Error ? error.message : "Account deletion failed.");
+        setDeleteBusy(false);
+      });
   }
 
   return (
@@ -124,17 +146,44 @@ export function SettingsModal({
           ) : null}
 
           {tab === "profile" ? (
-            <EditorPanel
-              title="Profile"
-              document={state.documents.profile}
-              state={state}
-              onDocumentChange={(document) => onDocumentChange("profile", document)}
-              onFinalizeMacro={(document, block, raw, inferred) =>
-                onFinalizeMacro("profile", document, block, raw, inferred)
-              }
-              onBeginRawEdit={(document, block) => onBeginRawEdit("profile", document, block)}
-              onArchiveNode={onArchiveNode}
-            />
+            <div className="profile-settings">
+              <EditorPanel
+                title="Profile"
+                document={state.documents.profile}
+                state={state}
+                onDocumentChange={(document) => onDocumentChange("profile", document)}
+                onFinalizeMacro={(document, block, raw, inferred) =>
+                  onFinalizeMacro("profile", document, block, raw, inferred)
+                }
+                onBeginRawEdit={(document, block) => onBeginRawEdit("profile", document, block)}
+                onArchiveNode={onArchiveNode}
+              />
+              <section className="danger-zone" aria-label="Delete account">
+                <h3>Delete Account</h3>
+                <p>
+                  This permanently removes your Efficient Hypothesis account data, workspace,
+                  OAuth tokens, and legacy app data. It cannot be undone.
+                </p>
+                <label>
+                  Type <code>DELETE {user.email}</code> to confirm.
+                  <input
+                    type="text"
+                    value={deleteConfirmation}
+                    onChange={(event) => setDeleteConfirmation(event.target.value)}
+                    autoComplete="off"
+                  />
+                </label>
+                <button
+                  className="delete-account-button"
+                  type="button"
+                  disabled={deleteConfirmation !== `DELETE ${user.email}` || deleteBusy}
+                  onClick={handleDeleteAccount}
+                >
+                  {deleteBusy ? "Deleting..." : "Delete account"}
+                </button>
+                {deleteStatus ? <p className="delete-status">{deleteStatus}</p> : null}
+              </section>
+            </div>
           ) : null}
         </div>
       </div>

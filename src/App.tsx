@@ -322,6 +322,7 @@ export function App({ bootstrap }: AppProps) {
       <div className={`save-status ${saveStatus}`}>{saveStatusText(saveStatus, loading)}</div>
       <SettingsModal
         open={settingsOpen}
+        user={user}
         state={workspace}
         onClose={() => setSettingsOpen(false)}
         onStateChange={setLocalWorkspace}

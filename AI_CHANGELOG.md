@@ -1,5 +1,12 @@
 # AI Changelog
 
+## 2026-06-22 - Codex (GPT-5) account deletion and support contact
+
+- Codex (GPT-5): added a browser-session-only account deletion endpoint that deletes the user's S3 data prefix, workspace data, OAuth tokens, user record, chat usage/feedback, and legacy task/action/draft/timelog rows.
+- Codex (GPT-5): added a Settings > Profile delete-account danger zone requiring `DELETE <email>` confirmation before irreversible deletion.
+- Codex (GPT-5): updated legal page contact links and in-app instructions to use `neerkuchlous+efficienthypothesis@gmail.com` for support.
+- Codex (GPT-5): updated Privacy and Terms copy to reflect self-service account deletion from Settings > Profile.
+
 ## 2026-06-22 - Codex (GPT-5) public legal pages
 
 - Codex (GPT-5): added public `/privacy` and `/terms` pages for OpenAI app submission, covering OAuth, workspace data, ChatGPT app tool calls, AWS storage, user content, acceptable use, and support contact language.

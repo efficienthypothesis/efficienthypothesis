@@ -79,6 +79,17 @@ Timetable:
               <code>\&gt;</code>, <code>\;</code>, <code>\,</code>, or <code>\\</code>.
             </p>
           </section>
+
+          <section>
+            <h3>Support</h3>
+            <p>
+              If an error appears or something does not save correctly, email{" "}
+              <a href="mailto:neerkuchlous+efficienthypothesis@gmail.com">
+                neerkuchlous+efficienthypothesis@gmail.com
+              </a>{" "}
+              for help.
+            </p>
+          </section>
         </div>
       </div>
     </div>
