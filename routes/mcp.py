@@ -1,50 +1,78 @@
-from decimal import Decimal
 import datetime
 import json
+import re
 import uuid
+from copy import deepcopy
+from zoneinfo import ZoneInfo
 
 from flask import Blueprint, Response, jsonify, request
 
-from config import (
-    PRODUCTIVITY_BUCKET,
-    actions_table,
-    s3,
-    tasks_table,
-    timelogs_table,
-    _get_auth_context,
-    _validate_date_range,
-)
-from routes.folders import _apply_folder_ref, _load_folders, _normalize_folders_data
-from routes.goals import _goals_prefix
-from routes.notes import _load_notes, _save_notes
-from routes.routines import _routines_s3_key
-from routes.schedules import _schedules_s3_key
+from config import PRODUCTIVITY_BUCKET, s3, user_table, _get_auth_context
+
 
 mcp_bp = Blueprint("mcp", __name__)
 
 MCP_PROTOCOL_VERSION = "2024-11-05"
-ITEM_TYPES = ["tasks", "actions", "notes", "folders", "routines", "schedules", "goals"]
-FILTER_OPS = ["eq", "neq", "contains", "starts_with", "in", "exists", "gte", "lte", "between"]
-DEFAULT_QUERY_FIELDS = [
-    "item_type", "id", "name", "folder_id", "date", "created_at", "status", "search_score"
-]
-PROTECTED_UPDATE_FIELDS = {
-    "id", "item_type", "user", "created_at", "task_id", "action_id",
-    "routine_id", "schedule_id",
+NODE_TYPES = ["task", "website", "subscription", "action", "tag", "location", "identity", "asset"]
+TAGGABLE_NODE_TYPES = ["task", "website", "subscription", "action", "identity", "asset"]
+COLLECTIONS = {
+    "task": "tasks",
+    "website": "websites",
+    "subscription": "subscriptions",
+    "action": "actions",
+    "tag": "tags",
+    "location": "locations",
+    "identity": "identities",
+    "asset": "assets",
 }
+DOCUMENT_KEYS = [
+    "tasks",
+    "websites_subscriptions",
+    "timetable",
+    "tags",
+    "profile",
+    "routine_sunday",
+    "routine_monday",
+    "routine_tuesday",
+    "routine_wednesday",
+    "routine_thursday",
+    "routine_friday",
+    "routine_saturday",
+]
+ROUTINE_DOCUMENT_KEYS = [
+    "routine_sunday",
+    "routine_monday",
+    "routine_tuesday",
+    "routine_wednesday",
+    "routine_thursday",
+    "routine_friday",
+    "routine_saturday",
+]
+ROUTINE_LABELS = {
+    "routine_sunday": "Sunday (U)",
+    "routine_monday": "Monday (M)",
+    "routine_tuesday": "Tuesday (T)",
+    "routine_wednesday": "Wednesday (W)",
+    "routine_thursday": "Thursday (R)",
+    "routine_friday": "Friday (F)",
+    "routine_saturday": "Saturday (S)",
+}
+DEFAULT_TAG_COLOR = "#D1D5DB"
+ARCHIVE_LEVELS = [0, 1, 2]
+MISSING = object()
 
 
-def _json_default(value):
-    if isinstance(value, Decimal):
-        if value % 1 == 0:
-            return int(value)
-        return float(value)
-    raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
+def _now_iso():
+    return datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _make_id(prefix):
+    return f"{prefix}_{uuid.uuid4()}"
 
 
 def _json_response(payload, status=200, headers=None):
     return Response(
-        json.dumps(payload, default=_json_default),
+        json.dumps(payload),
         status=status,
         mimetype="application/json",
         headers=headers,
@@ -52,19 +80,14 @@ def _json_response(payload, status=200, headers=None):
 
 
 def _rpc_result(request_id, result):
-    return _json_response({
-        "jsonrpc": "2.0",
-        "id": request_id,
-        "result": result,
-    })
+    return _json_response({"jsonrpc": "2.0", "id": request_id, "result": result})
 
 
 def _rpc_error(request_id, code, message, status=200):
-    return _json_response({
-        "jsonrpc": "2.0",
-        "id": request_id,
-        "error": {"code": code, "message": message},
-    }, status=status)
+    return _json_response(
+        {"jsonrpc": "2.0", "id": request_id, "error": {"code": code, "message": message}},
+        status=status,
+    )
 
 
 def _auth_challenge():
@@ -96,7 +119,7 @@ def _read_only_tool(name, title, description, input_schema, output_schema):
     }
 
 
-def _write_tool(name, title, description, input_schema, output_schema):
+def _write_tool(name, title, description, input_schema, output_schema, destructive=False):
     return {
         "name": name,
         "title": title,
@@ -106,117 +129,66 @@ def _write_tool(name, title, description, input_schema, output_schema):
         "annotations": {
             "readOnlyHint": False,
             "openWorldHint": False,
-            "destructiveHint": False,
+            "destructiveHint": destructive,
         },
     }
 
 
-def _list_input_schema():
-    return {
-        "type": "object",
-        "properties": {
-            "limit": {
-                "type": "integer",
-                "minimum": 1,
-                "maximum": 500,
-                "description": "Maximum number of items to return. Defaults to 100.",
-            },
-            "folder_id": {
-                "type": "string",
-                "description": "Optional stable folder ID to filter by.",
-            },
-        },
-        "additionalProperties": False,
-    }
+def _node_type_schema(description="Node type."):
+    return {"type": "string", "enum": NODE_TYPES, "description": description}
 
 
-def _items_output_schema(field_name):
-    return {
-        "type": "object",
-        "properties": {
-            field_name: {"type": "array", "items": {"type": "object"}},
-            "count": {"type": "integer"},
-        },
-        "required": [field_name, "count"],
-        "additionalProperties": False,
-    }
+def _document_key_schema(description="Optional target editor document."):
+    return {"type": "string", "enum": DOCUMENT_KEYS, "description": description}
 
 
-def _mutation_output_schema(item_field):
+def _node_output_schema():
     return {
         "type": "object",
         "properties": {
             "ok": {"type": "boolean"},
-            item_field: {"type": "object"},
+            "node": {"type": "object"},
+            "created": {"type": "boolean"},
         },
-        "required": ["ok", item_field],
+        "required": ["ok", "node", "created"],
         "additionalProperties": False,
     }
 
 
 TOOLS = [
     _read_only_tool(
-        "query_items",
-        "Query items",
-        "Use this to find only the Efficient Hypothesis records relevant to a prompt, with server-side filtering, text search, sorting, projection, and limits.",
+        "query_nodes",
+        "Query workspace nodes",
+        (
+            "Find Efficient Hypothesis workspace nodes in the new editor model. "
+            "Use this before exact-ID update/archive/restore calls."
+        ),
         {
             "type": "object",
             "properties": {
-                "item_types": {
+                "node_types": {
                     "type": "array",
-                    "items": {"type": "string", "enum": ITEM_TYPES},
-                    "description": "Datasets to query. Defaults to all item types.",
+                    "items": {"type": "string", "enum": NODE_TYPES},
+                    "description": "Node types to include. Defaults to all node types.",
                 },
-                "filters": {
+                "archive_levels": {
                     "type": "array",
-                    "description": "Server-side filters. Values should be explicit strings/numbers/booleans, not relative phrases like yesterday.",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "field": {
-                                "type": "string",
-                                "description": "Field to filter, such as created_at, date, due_datetime, start_datetime, folder_id, parent_id, name, status, item_type, or id.",
-                            },
-                            "op": {
-                                "type": "string",
-                                "enum": FILTER_OPS,
-                                "description": "Filter operator.",
-                            },
-                            "value": {
-                                "description": "Comparison value. Use an array of two values for between.",
-                            },
-                        },
-                        "required": ["field", "op"],
-                        "additionalProperties": False,
-                    },
+                    "items": {"type": "integer", "enum": ARCHIVE_LEVELS},
+                    "description": "Archive levels to include. Defaults to active only: [0].",
+                },
+                "include_deleted": {
+                    "type": "boolean",
+                    "description": "Whether to include soft-deleted nodes. Defaults to false.",
                 },
                 "search": {
                     "type": "string",
-                    "description": "Optional case-insensitive text search across names, folder IDs, dates, statuses, goal schemas, and other compact item text.",
-                },
-                "sort": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "field": {"type": "string"},
-                            "direction": {"type": "string", "enum": ["asc", "desc"]},
-                        },
-                        "required": ["field"],
-                        "additionalProperties": False,
-                    },
-                    "description": "Sort instructions. Defaults to search_score desc when search is present, otherwise date desc.",
-                },
-                "fields": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "Fields to return. Defaults to compact fields: item_type, id, name, folder_id, date, created_at, status, search_score.",
+                    "description": "Optional case-insensitive text search over node names, notes, tags, references, and placements.",
                 },
                 "limit": {
                     "type": "integer",
                     "minimum": 1,
                     "maximum": 500,
-                    "description": "Maximum number of matching items to return. Defaults to 50.",
+                    "description": "Maximum nodes to return. Defaults to 100.",
                 },
             },
             "additionalProperties": False,
@@ -224,549 +196,272 @@ TOOLS = [
         {
             "type": "object",
             "properties": {
-                "items": {"type": "array", "items": {"type": "object"}},
+                "nodes": {"type": "array", "items": {"type": "object"}},
                 "count": {"type": "integer"},
                 "total_matches": {"type": "integer"},
                 "truncated": {"type": "boolean"},
             },
-            "required": ["items", "count", "total_matches", "truncated"],
+            "required": ["nodes", "count", "total_matches", "truncated"],
             "additionalProperties": False,
         },
     ),
     _read_only_tool(
-        "list_tasks",
-        "List tasks",
-        "Use this when the user wants to view their Efficient Hypothesis tasks.",
+        "get_node",
+        "Get workspace node",
+        "Read one Efficient Hypothesis workspace node by exact node type and ID.",
         {
             "type": "object",
             "properties": {
-                **_list_input_schema()["properties"],
-                "status": {
+                "node_type": _node_type_schema(),
+                "node_id": {"type": "string", "description": "Exact node ID."},
+            },
+            "required": ["node_type", "node_id"],
+            "additionalProperties": False,
+        },
+        {
+            "type": "object",
+            "properties": {"node": {"type": "object"}},
+            "required": ["node"],
+            "additionalProperties": False,
+        },
+    ),
+    _write_tool(
+        "create_node",
+        "Create workspace node",
+        (
+            "Create a structured node and insert it into the matching editor section. "
+            "This cannot create or edit free-text lines. For routine templates, create an action "
+            "with document_key set to a routine weekday document."
+        ),
+        {
+            "type": "object",
+            "properties": {
+                "node_type": _node_type_schema(),
+                "name": {"type": "string", "description": "Node name."},
+                "note": {"type": "string", "description": "Optional note."},
+                "tag_name": {
                     "type": "string",
-                    "enum": ["all", "incomplete", "complete"],
-                    "description": "Optional completion filter. Defaults to all.",
+                    "description": "Optional tag name. Missing tags are auto-created with the default color.",
                 },
-            },
-            "additionalProperties": False,
-        },
-        _items_output_schema("tasks"),
-    ),
-    _read_only_tool(
-        "list_actions",
-        "List actions",
-        "Use this when the user wants to view their scheduled or planned Efficient Hypothesis actions.",
-        _list_input_schema(),
-        _items_output_schema("actions"),
-    ),
-    _read_only_tool(
-        "list_notes",
-        "List notes",
-        "Use this when the user wants to view their Efficient Hypothesis notes.",
-        _list_input_schema(),
-        _items_output_schema("notes"),
-    ),
-    _read_only_tool(
-        "list_folders",
-        "List folders",
-        "Use this when the user wants to view their Efficient Hypothesis folders or project hierarchy.",
-        {
-            "type": "object",
-            "properties": {
-                "limit": {
-                    "type": "integer",
-                    "minimum": 1,
-                    "maximum": 500,
-                    "description": "Maximum number of folders to return. Defaults to 100.",
-                },
-            },
-            "additionalProperties": False,
-        },
-        _items_output_schema("folders"),
-    ),
-    _read_only_tool(
-        "list_routines",
-        "List routines",
-        "Use this when the user wants to view their recurring task templates in Efficient Hypothesis.",
-        _list_input_schema(),
-        _items_output_schema("routines"),
-    ),
-    _read_only_tool(
-        "list_schedules",
-        "List schedules",
-        "Use this when the user wants to view their recurring action schedule templates in Efficient Hypothesis.",
-        _list_input_schema(),
-        _items_output_schema("schedules"),
-    ),
-    _read_only_tool(
-        "list_goals",
-        "List goals",
-        "Use this when the user wants to view their Efficient Hypothesis goals and goal schemas.",
-        {
-            "type": "object",
-            "properties": {
-                "limit": {
-                    "type": "integer",
-                    "minimum": 1,
-                    "maximum": 500,
-                    "description": "Maximum number of goals to return. Defaults to 100.",
-                },
-            },
-            "additionalProperties": False,
-        },
-        _items_output_schema("goals"),
-    ),
-    _write_tool(
-        "create_note",
-        "Create note",
-        "Create a new Efficient Hypothesis note. Date must be explicit, such as 2026-05-25.",
-        {
-            "type": "object",
-            "properties": {
-                "name": {"type": "string", "description": "Note title."},
-                "date": {"type": "string", "description": "Explicit note date in YYYY-MM-DD or ISO format."},
-                "folder_id": {"type": "string", "description": "Optional stable folder ID."},
-            },
-            "required": ["name", "date"],
-            "additionalProperties": False,
-        },
-        _mutation_output_schema("note"),
-    ),
-    _write_tool(
-        "create_task",
-        "Create task",
-        "Create a new Efficient Hypothesis task. Datetimes must be explicit ISO strings.",
-        {
-            "type": "object",
-            "properties": {
-                "name": {"type": "string", "description": "Task name."},
-                "assign_datetime": {"type": "string", "description": "Explicit ISO datetime when the task is assigned."},
-                "due_datetime": {"type": "string", "description": "Explicit ISO datetime when the task is due."},
-                "folder_id": {"type": "string", "description": "Optional stable folder ID."},
-                "parent_id": {"type": "string", "description": "Optional parent task ID for task hierarchy."},
-            },
-            "required": ["name", "assign_datetime", "due_datetime"],
-            "additionalProperties": False,
-        },
-        _mutation_output_schema("task"),
-    ),
-    _write_tool(
-        "create_action",
-        "Create action",
-        "Create a new Efficient Hypothesis action. Datetimes must be explicit ISO strings.",
-        {
-            "type": "object",
-            "properties": {
-                "name": {"type": "string", "description": "Action name."},
-                "start_datetime": {"type": "string", "description": "Explicit ISO datetime when the action starts."},
-                "end_datetime": {"type": "string", "description": "Explicit ISO datetime when the action ends."},
-                "folder_id": {"type": "string", "description": "Optional stable folder ID."},
-                "is_planned": {"type": "boolean", "description": "Whether this is a planned action. Defaults to false."},
-            },
-            "required": ["name", "start_datetime", "end_datetime"],
-            "additionalProperties": False,
-        },
-        _mutation_output_schema("action"),
-    ),
-    _write_tool(
-        "complete_task",
-        "Complete task",
-        "Mark an existing Efficient Hypothesis task complete by task_id. Use query_items first if the task ID is not known.",
-        {
-            "type": "object",
-            "properties": {
-                "task_id": {"type": "string", "description": "The task_id of the task to complete."},
-            },
-            "required": ["task_id"],
-            "additionalProperties": False,
-        },
-        {
-            "type": "object",
-            "properties": {
-                "ok": {"type": "boolean"},
-                "task_id": {"type": "string"},
-                "completed_at": {"type": "string"},
-            },
-            "required": ["ok", "task_id", "completed_at"],
-            "additionalProperties": False,
-        },
-    ),
-    _write_tool(
-        "update_item",
-        "Update item",
-        "Update fields on an existing Efficient Hypothesis item by exact type and ID. This does not delete the item. Use query_items first if the exact ID is not known.",
-        {
-            "type": "object",
-            "properties": {
-                "item_type": {
-                    "type": "string",
-                    "enum": ITEM_TYPES,
-                    "description": "Type of item to update.",
-                },
-                "id": {
-                    "type": "string",
-                    "description": "Exact item ID. For folders use the stable folder ID. For goals this is the goal name.",
-                },
+                "document_key": _document_key_schema(
+                    "Optional target editor document. Actions may target timetable or a routine weekday."
+                ),
                 "fields": {
                     "type": "object",
-                    "description": "Field updates to apply. Use null to remove optional fields. ID, ownership, and created_at fields cannot be changed.",
+                    "description": (
+                        "Type-specific fields. task: datetime. subscription: rate. website: identity_names. "
+                        "action: time_local. tag: color. location: address. identity: reference_name. "
+                        "asset: reference_location_name."
+                    ),
                 },
             },
-            "required": ["item_type", "id", "fields"],
+            "required": ["node_type", "name"],
             "additionalProperties": False,
         },
+        _node_output_schema(),
+    ),
+    _write_tool(
+        "update_node",
+        "Update workspace node",
+        (
+            "Update a structured node by exact ID. This cannot edit free-text lines or move document blocks. "
+            "Use tag_name null to clear an item's tag."
+        ),
         {
             "type": "object",
             "properties": {
-                "ok": {"type": "boolean"},
-                "item_type": {"type": "string"},
-                "id": {"type": "string"},
-                "item": {"type": "object"},
+                "node_type": _node_type_schema(),
+                "node_id": {"type": "string", "description": "Exact node ID."},
+                "fields": {
+                    "type": "object",
+                    "description": (
+                        "Fields to update. Common: name, note, tag_name. Type-specific fields match create_node."
+                    ),
+                },
             },
-            "required": ["ok", "item_type", "id", "item"],
+            "required": ["node_type", "node_id", "fields"],
             "additionalProperties": False,
         },
+        _node_output_schema(),
+    ),
+    _write_tool(
+        "archive_node",
+        "Archive workspace node",
+        (
+            "Move a node one archive level deeper: 0 to 1, or 1 to 2. "
+            "This tool will not soft-delete nodes from level 2."
+        ),
+        {
+            "type": "object",
+            "properties": {
+                "node_type": _node_type_schema(),
+                "node_id": {"type": "string", "description": "Exact node ID."},
+            },
+            "required": ["node_type", "node_id"],
+            "additionalProperties": False,
+        },
+        _node_output_schema(),
+    ),
+    _write_tool(
+        "restore_node",
+        "Restore workspace node",
+        (
+            "Move a node one archive level shallower: 2 to 1, or 1 to 0. "
+            "This tool cannot restore soft-deleted nodes."
+        ),
+        {
+            "type": "object",
+            "properties": {
+                "node_type": _node_type_schema(),
+                "node_id": {"type": "string", "description": "Exact node ID."},
+            },
+            "required": ["node_type", "node_id"],
+            "additionalProperties": False,
+        },
+        _node_output_schema(),
     ),
 ]
 
 
-def _limit(arguments):
-    value = arguments.get("limit", 100)
+def _workspace_state_key(email):
+    return f"{email}/workspace/state.json"
+
+
+def _load_workspace(email, user_id):
     try:
-        value = int(value)
-    except (TypeError, ValueError):
-        value = 100
-    return max(1, min(value, 500))
+        obj = s3.get_object(Bucket=PRODUCTIVITY_BUCKET, Key=_workspace_state_key(email))
+        state = json.loads(obj["Body"].read().decode("utf-8"))
+        if isinstance(state, dict):
+            return _normalize_workspace(state, user_id or email)
+    except Exception:
+        pass
+    return _create_default_workspace(user_id or email)
 
 
-def _query_limit(arguments):
-    value = dict(arguments or {})
-    value.setdefault("limit", 50)
-    return _limit(value)
-
-
-def _filter_folder(items, folder_id):
-    if not folder_id:
-        return items
-    return [item for item in items if item.get("folder_id") == folder_id]
-
-
-def _scan_user_items(table, email):
-    resp = table.scan(
-        FilterExpression="#u = :email",
-        ExpressionAttributeNames={"#u": "user"},
-        ExpressionAttributeValues={":email": email},
+def _save_workspace(email, state, user_id):
+    now = _now_iso()
+    state["updatedAt"] = now
+    state["userId"] = user_id or state.get("userId") or email
+    s3.put_object(
+        Bucket=PRODUCTIVITY_BUCKET,
+        Key=_workspace_state_key(email),
+        Body=json.dumps(state, indent=2),
+        ContentType="application/json",
     )
-    return resp.get("Items", [])
 
 
-def _load_s3_json(key, default):
-    try:
-        obj = s3.get_object(Bucket=PRODUCTIVITY_BUCKET, Key=key)
-        return json.loads(obj["Body"].read().decode("utf-8"))
-    except Exception:
-        return default
-
-
-def _list_goals(email):
-    prefix = _goals_prefix(email)
-    try:
-        resp = s3.list_objects_v2(Bucket=PRODUCTIVITY_BUCKET, Prefix=prefix)
-    except Exception:
-        return []
-
-    goals = []
-    for obj in resp.get("Contents", []):
-        key = obj["Key"]
-        if not key.endswith(".json"):
-            continue
-        name = key[len(prefix):].replace(".json", "")
-        try:
-            body = s3.get_object(
-                Bucket=PRODUCTIVITY_BUCKET, Key=key
-            )["Body"].read().decode("utf-8")
-            goal = json.loads(body)
-        except Exception:
-            goal = {}
-        goal["name"] = name
-        goals.append(goal)
-    return goals
-
-
-def _canonical_item_type(item_type):
-    aliases = {
-        "task": "tasks",
-        "action": "actions",
-        "note": "notes",
-        "folder": "folders",
-        "routine": "routines",
-        "schedule": "schedules",
-        "goal": "goals",
-    }
-    return aliases.get(item_type, item_type)
-
-
-def _item_id(item_type, item):
-    id_fields = {
-        "tasks": "task_id",
-        "actions": "action_id",
-        "notes": "id",
-        "folders": "id",
-        "routines": "id",
-        "schedules": "id",
-        "goals": "name",
-    }
-    return item.get(id_fields[item_type])
-
-
-def _item_name(item_type, item):
-    if item_type == "folders":
-        return item.get("name")
-    if item_type == "goals":
-        return item.get("display_name") or item.get("name")
-    return item.get("name")
-
-
-def _item_date(item_type, item):
-    if item_type == "tasks":
-        return item.get("due_datetime") or item.get("assign_datetime") or item.get("created_at")
-    if item_type == "actions":
-        return item.get("start_datetime") or item.get("end_datetime") or item.get("created_at")
-    if item_type == "notes":
-        return item.get("date") or item.get("created_at")
-    if item_type in ("routines", "schedules"):
-        return item.get("first_day") or item.get("created_at")
-    if item_type == "goals":
-        return item.get("created_at")
-    return None
-
-
-def _item_status(item_type, item):
-    if item_type == "tasks":
-        if item.get("due_status") in ("met", "done") or item.get("end_datetime"):
-            return "complete"
-        return "incomplete"
-    if item_type in ("routines", "schedules"):
-        return "active" if item.get("active", True) else "inactive"
-    if item_type == "actions":
-        return "planned" if item.get("is_planned") else "manifested"
-    return None
-
-
-def _augment_item(item_type, item):
-    augmented = dict(item)
-    augmented["item_type"] = item_type
-    augmented["id"] = _item_id(item_type, item)
-    augmented["name"] = _item_name(item_type, item)
-    augmented["date"] = _item_date(item_type, item)
-    augmented["status"] = _item_status(item_type, item)
-    return augmented
-
-
-def _load_items_by_type(email, item_type):
-    if item_type == "tasks":
-        return [_augment_item(item_type, item) for item in _scan_user_items(tasks_table, email)]
-    if item_type == "actions":
-        return [_augment_item(item_type, item) for item in _scan_user_items(actions_table, email)]
-    if item_type == "notes":
-        return [_augment_item(item_type, item) for item in _load_notes(email).get("notes", [])]
-    if item_type == "folders":
-        return [_augment_item(item_type, item) for item in _normalize_folders_data(email, _load_folders(email)).get("folders", [])]
-    if item_type == "routines":
-        return [
-            _augment_item(item_type, item)
-            for item in _load_s3_json(_routines_s3_key(email), [])
-        ]
-    if item_type == "schedules":
-        return [
-            _augment_item(item_type, item)
-            for item in _load_s3_json(_schedules_s3_key(email), [])
-        ]
-    if item_type == "goals":
-        return [_augment_item(item_type, item) for item in _list_goals(email)]
-    raise ValueError(f"Unsupported item type: {item_type}")
-
-
-def _field_value(item, field):
-    aliases = {
-        "type": "item_type",
-        "itemType": "item_type",
-        "title": "name",
-    }
-    field = aliases.get(field, field)
-    return item.get(field)
-
-
-def _coerce_text(value):
-    if value is None:
-        return ""
-    if isinstance(value, (dict, list)):
-        return json.dumps(value, default=_json_default, sort_keys=True)
-    return str(value)
-
-
-def _compare_values(left, right):
-    left_text = _coerce_text(left)
-    right_text = _coerce_text(right)
-    if isinstance(left, (int, float, Decimal)) and isinstance(right, (int, float, Decimal)):
-        return (left > right) - (left < right)
-    return (left_text > right_text) - (left_text < right_text)
-
-
-def _filter_matches(item, flt):
-    field = flt.get("field")
-    op = flt.get("op")
-    value = flt.get("value")
-    if not field or op not in FILTER_OPS:
-        raise ValueError(f"Invalid filter: {flt}")
-
-    actual = _field_value(item, field)
-    if op == "exists":
-        return bool(actual) == bool(value if value is not None else True)
-    if op == "eq":
-        return actual == value
-    if op == "neq":
-        return actual != value
-    if op == "contains":
-        return _coerce_text(value).lower() in _coerce_text(actual).lower()
-    if op == "starts_with":
-        return _coerce_text(actual).lower().startswith(_coerce_text(value).lower())
-    if op == "in":
-        if not isinstance(value, list):
-            raise ValueError("Filter op 'in' requires an array value")
-        return actual in value
-    if op == "gte":
-        if actual is None:
-            return False
-        return _compare_values(actual, value) >= 0
-    if op == "lte":
-        if actual is None:
-            return False
-        return _compare_values(actual, value) <= 0
-    if op == "between":
-        if not isinstance(value, list) or len(value) != 2:
-            raise ValueError("Filter op 'between' requires a two-item array value")
-        if actual is None:
-            return False
-        return _compare_values(actual, value[0]) >= 0 and _compare_values(actual, value[1]) <= 0
-    return False
-
-
-def _search_text(item):
-    searchable = []
-    for key in [
-        "item_type", "id", "name", "folder_id", "parent_id", "date", "created_at", "status",
-        "assign_datetime", "due_datetime", "start_datetime", "end_datetime",
-        "first_day", "pattern", "display_name",
-    ]:
-        searchable.append(_coerce_text(item.get(key)))
-    if item.get("fields"):
-        searchable.append(_coerce_text(item.get("fields")))
-    return " ".join(part for part in searchable if part)
-
-
-def _search_score(item, search):
-    if not search:
-        return 0
-    text = _search_text(item).lower()
-    terms = [term for term in search.lower().split() if term]
-    if not terms:
-        return 0
-    score = 0
-    name = _coerce_text(item.get("name")).lower()
-    folder_id = _coerce_text(item.get("folder_id")).lower()
-    for term in terms:
-        if term in text:
-            score += 1
-        if term in name:
-            score += 3
-        if term in folder_id:
-            score += 2
-    return score
-
-
-def _sort_key(value):
-    if value is None:
-        return ""
-    return _coerce_text(value)
-
-
-def _apply_sort(items, sort_spec, has_search):
-    sort_spec = sort_spec or []
-    if not sort_spec:
-        sort_spec = [{"field": "search_score", "direction": "desc"}] if has_search else [
-            {"field": "date", "direction": "desc"}
-        ]
-    for spec in reversed(sort_spec):
-        field = spec.get("field")
-        if not field:
-            continue
-        reverse = spec.get("direction", "asc") == "desc"
-        if field == "search_score":
-            items.sort(key=lambda item: item.get("search_score") or 0, reverse=reverse)
-        else:
-            items.sort(key=lambda item: _sort_key(_field_value(item, field)), reverse=reverse)
-    return items
-
-
-def _project_item(item, fields):
-    projected = {}
-    for field in fields:
-        if field in item:
-            projected[field] = item[field]
-    return projected
-
-
-def _query_items(email, arguments):
-    requested_types = arguments.get("item_types") or ITEM_TYPES
-    item_types = []
-    for item_type in requested_types:
-        canonical = _canonical_item_type(item_type)
-        if canonical not in ITEM_TYPES:
-            raise ValueError(f"Unsupported item type: {item_type}")
-        if canonical not in item_types:
-            item_types.append(canonical)
-
-    filters = arguments.get("filters") or []
-    search = (arguments.get("search") or "").strip()
-    fields = arguments.get("fields") or DEFAULT_QUERY_FIELDS
-    if not isinstance(fields, list) or not all(isinstance(field, str) for field in fields):
-        raise ValueError("fields must be an array of strings")
-    limit = _query_limit(arguments)
-
-    items = []
-    for item_type in item_types:
-        items.extend(_load_items_by_type(email, item_type))
-
-    matched = []
-    for item in items:
-        if filters and not all(_filter_matches(item, flt) for flt in filters):
-            continue
-        score = _search_score(item, search)
-        if search and score <= 0:
-            continue
-        item["search_score"] = score
-        matched.append(item)
-
-    _apply_sort(matched, arguments.get("sort"), bool(search))
-    total_matches = len(matched)
-    projected = [_project_item(item, fields) for item in matched[:limit]]
-
-    return {
-        "structuredContent": {
-            "items": projected,
-            "count": len(projected),
-            "total_matches": total_matches,
-            "truncated": total_matches > len(projected),
+def _normalize_workspace(state, user_id):
+    state = deepcopy(state)
+    now = _now_iso()
+    state.setdefault("schemaVersion", 1)
+    state.setdefault("userId", user_id)
+    state.setdefault("createdAt", now)
+    state.setdefault("updatedAt", now)
+    nodes = state.setdefault("nodes", {})
+    for collection in COLLECTIONS.values():
+        nodes.setdefault(collection, {})
+    documents = state.setdefault("documents", {})
+    defaults = _default_documents(user_id)
+    for key, document in defaults.items():
+        documents.setdefault(key, document)
+    state.setdefault(
+        "routineAsset",
+        {
+            "id": _make_id("routine"),
+            "userId": user_id,
+            "timetableIds": [None, None, None, None, None, None, None],
+            "createdAt": now,
+            "updatedAt": now,
         },
-        "content": [
-            {
-                "type": "text",
-                "text": (
-                    f"Returned {len(projected)} of {total_matches} matching items."
-                ),
-            }
-        ],
+    )
+    return state
+
+
+def _create_default_workspace(user_id):
+    now = _now_iso()
+    return {
+        "schemaVersion": 1,
+        "userId": user_id,
+        "documents": _default_documents(user_id),
+        "nodes": {collection: {} for collection in COLLECTIONS.values()},
+        "routineAsset": {
+            "id": _make_id("routine"),
+            "userId": user_id,
+            "timetableIds": [None, None, None, None, None, None, None],
+            "createdAt": now,
+            "updatedAt": now,
+        },
+        "createdAt": now,
+        "updatedAt": now,
     }
+
+
+def _default_documents(user_id):
+    return {
+        "tasks": _make_document(user_id, "tasks", [_section("Tasks"), _empty()]),
+        "websites_subscriptions": _make_document(
+            user_id,
+            "websites_subscriptions",
+            [_section("Websites"), _empty(), _section("Subscriptions"), _empty()],
+        ),
+        "timetable": _make_document(user_id, "timetable", [_section("Timetable"), _empty()]),
+        "tags": _make_document(user_id, "tags", [_section("Tags"), _empty()]),
+        "profile": _make_document(
+            user_id,
+            "profile",
+            [_section("Locations"), _empty(), _section("Identities"), _empty(), _section("Assets"), _empty()],
+        ),
+        **{
+            key: _make_document(user_id, key, [_section(label), _empty()])
+            for key, label in ROUTINE_LABELS.items()
+        },
+    }
+
+
+def _make_document(user_id, key, blocks):
+    now = _now_iso()
+    return {
+        "id": _make_id("doc"),
+        "userId": user_id,
+        "key": key,
+        "version": 1,
+        "blocks": blocks,
+        "createdAt": now,
+        "updatedAt": now,
+    }
+
+
+def _section(label):
+    return {"type": "section", "id": _make_id("sec"), "label": label, "frozen": True}
+
+
+def _empty():
+    return {"type": "empty", "id": _make_id("blk")}
+
+
+def _saved_node_block(node_type, node_id):
+    return {
+        "type": "saved_node",
+        "id": _make_id("blk"),
+        "nodeType": node_type,
+        "nodeId": node_id,
+        "collapsedNote": True,
+    }
+
+
+def _collection_for(node_type):
+    if node_type not in COLLECTIONS:
+        raise ValueError(f"Unsupported node_type: {node_type}")
+    return COLLECTIONS[node_type]
+
+
+def _get_node(state, node_type, node_id):
+    return state.get("nodes", {}).get(_collection_for(node_type), {}).get(node_id)
+
+
+def _set_node(state, node_type, node):
+    state["nodes"][_collection_for(node_type)][node["id"]] = node
+    state["updatedAt"] = _now_iso()
 
 
 def _require_nonempty(value, field):
@@ -775,445 +470,659 @@ def _require_nonempty(value, field):
     return value.strip()
 
 
-def _validate_date_field(value, field):
-    value = _require_nonempty(value, field)
-    err = _validate_date_range(value)
-    if err:
-        raise ValueError(err)
-    return value
+def _clean_optional_string(value):
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError("Expected a string or null")
+    value = value.strip()
+    return value or None
 
 
-def _mutation_result(field_name, item):
+def _normalize_tag_name(name):
+    return name.strip().lower()
+
+
+def _find_tag_by_normalized_name(state, normalized_name):
+    for tag in state["nodes"]["tags"].values():
+        if tag.get("normalizedName") == normalized_name:
+            return tag
+    return None
+
+
+def _ensure_tag(state, user_id, tag_name):
+    tag_name = _clean_optional_string(tag_name)
+    if not tag_name:
+        return None
+    normalized = _normalize_tag_name(tag_name)
+    existing = _find_tag_by_normalized_name(state, normalized)
+    if existing:
+        _ensure_saved_block(state, "tag", existing["id"], "tags", "Tags")
+        return existing["id"]
+
+    now = _now_iso()
+    tag_id = _make_id("tag")
+    tag = {
+        "id": tag_id,
+        "userId": user_id,
+        "name": tag_name,
+        "note": None,
+        "color": DEFAULT_TAG_COLOR,
+        "normalizedName": normalized,
+        "archive": 0,
+        "createdAt": now,
+        "updatedAt": now,
+        "deletedAt": None,
+    }
+    _set_node(state, "tag", tag)
+    _ensure_saved_block(state, "tag", tag_id, "tags", "Tags")
+    return tag_id
+
+
+def _tag_name(state, tag_id):
+    if not tag_id:
+        return ""
+    return state["nodes"]["tags"].get(tag_id, {}).get("name", "")
+
+
+def _default_document_target(node_type, document_key=None):
+    if document_key:
+        if document_key not in DOCUMENT_KEYS:
+            raise ValueError(f"Unsupported document_key: {document_key}")
+        if node_type == "action" and document_key in ["timetable", *ROUTINE_DOCUMENT_KEYS]:
+            return document_key, ROUTINE_LABELS.get(document_key, "Timetable")
+        allowed = {
+            "task": ("tasks", "Tasks"),
+            "website": ("websites_subscriptions", "Websites"),
+            "subscription": ("websites_subscriptions", "Subscriptions"),
+            "tag": ("tags", "Tags"),
+            "location": ("profile", "Locations"),
+            "identity": ("profile", "Identities"),
+            "asset": ("profile", "Assets"),
+        }
+        default_key, label = allowed.get(node_type, (None, None))
+        if document_key == default_key:
+            return document_key, label
+        raise ValueError(f"{node_type} nodes cannot be inserted into {document_key}")
+
+    defaults = {
+        "task": ("tasks", "Tasks"),
+        "website": ("websites_subscriptions", "Websites"),
+        "subscription": ("websites_subscriptions", "Subscriptions"),
+        "action": ("timetable", "Timetable"),
+        "tag": ("tags", "Tags"),
+        "location": ("profile", "Locations"),
+        "identity": ("profile", "Identities"),
+        "asset": ("profile", "Assets"),
+    }
+    return defaults[node_type]
+
+
+def _ensure_saved_block(state, node_type, node_id, document_key=None, section_label=None):
+    document_key, section_label = (
+        (document_key, section_label) if document_key and section_label else _default_document_target(node_type, document_key)
+    )
+    document = state["documents"][document_key]
+    if any(
+        block.get("type") == "saved_node"
+        and block.get("nodeType") == node_type
+        and block.get("nodeId") == node_id
+        for block in document.get("blocks", [])
+    ):
+        return
+
+    blocks = document.setdefault("blocks", [])
+    insert_at = len(blocks)
+    section_index = next(
+        (
+            index
+            for index, block in enumerate(blocks)
+            if block.get("type") == "section" and block.get("label") == section_label
+        ),
+        -1,
+    )
+    if section_index >= 0:
+        insert_at = len(blocks)
+        for index in range(section_index + 1, len(blocks)):
+            if blocks[index].get("type") == "section":
+                insert_at = index
+                break
+        while insert_at > section_index + 1 and blocks[insert_at - 1].get("type") == "empty":
+            insert_at -= 1
+
+    blocks.insert(insert_at, _saved_node_block(node_type, node_id))
+    if not blocks or blocks[-1].get("type") != "empty":
+        blocks.append(_empty())
+    _touch_document(document)
+
+
+def _touch_document(document):
+    document["version"] = int(document.get("version", 1)) + 1
+    document["updatedAt"] = _now_iso()
+
+
+def _placements_for_node(state, node_type, node_id):
+    placements = []
+    for key, document in state.get("documents", {}).items():
+        for index, block in enumerate(document.get("blocks", [])):
+            if (
+                block.get("type") == "saved_node"
+                and block.get("nodeType") == node_type
+                and block.get("nodeId") == node_id
+            ):
+                placements.append({"document_key": key, "block_id": block.get("id"), "line": index + 1})
+    return placements
+
+
+def _get_user_timezone(email):
+    try:
+        item = user_table.get_item(Key={"email": email}).get("Item") or {}
+        return ZoneInfo(item.get("timezone") or "UTC")
+    except Exception:
+        return ZoneInfo("UTC")
+
+
+def _parse_time(raw):
+    if not raw:
+        return None
+    match = re.match(r"^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$", raw.strip().lower())
+    if not match:
+        return None
+    hour = int(match.group(1))
+    minute = int(match.group(2) or 0)
+    suffix = match.group(3)
+    if suffix == "pm" and hour < 12:
+        hour += 12
+    if suffix == "am" and hour == 12:
+        hour = 0
+    if hour > 23 or minute > 59:
+        return None
+    return hour, minute
+
+
+def _has_explicit_time(raw):
+    if not raw or not str(raw).strip():
+        return False
+    value = str(raw).strip()
+    relative = re.match(r"^(today|tomorrow)\s+(.+)$", value.lower())
+    if relative:
+        return _parse_time(relative.group(2)) is not None
+    us_match = re.match(r"^(\d{1,2})/(\d{1,2})(?:/(\d{2,4}))?(?:\s*,?\s+(.+))?$", value)
+    if us_match:
+        return _parse_time(us_match.group(4)) is not None
+    return bool(re.search(r"\b\d{1,2}:\d{2}\b", value) or re.search(r"\b\d{1,2}(?::\d{2})?\s*(am|pm)\b", value, re.I))
+
+
+def _parse_task_datetime(raw, user_tz):
+    if not raw or not str(raw).strip():
+        return None
+    value = str(raw).strip()
+    lower = value.lower()
+    now_local = datetime.datetime.now(datetime.timezone.utc).astimezone(user_tz)
+
+    if lower in ("today", "tomorrow"):
+        date = now_local.date()
+        if lower == "tomorrow":
+            date += datetime.timedelta(days=1)
+        return datetime.datetime.combine(date, datetime.time(0, 0), user_tz).astimezone(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
+
+    relative = re.match(r"^(today|tomorrow)\s+(.+)$", lower)
+    if relative:
+        parsed_time = _parse_time(relative.group(2))
+        if not parsed_time:
+            return None
+        date = now_local.date()
+        if relative.group(1) == "tomorrow":
+            date += datetime.timedelta(days=1)
+        hour, minute = parsed_time
+        return datetime.datetime.combine(date, datetime.time(hour, minute), user_tz).astimezone(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
+
+    match = re.match(r"^(\d{1,2})/(\d{1,2})(?:/(\d{2,4}))?(?:\s*,?\s+(.+))?$", value)
+    if not match:
+        return None
+    month = int(match.group(1))
+    day = int(match.group(2))
+    year_raw = match.group(3)
+    year = now_local.year if not year_raw else (2000 + int(year_raw) if len(year_raw) == 2 else int(year_raw))
+    parsed_time = _parse_time(match.group(4))
+    if match.group(4) and not parsed_time:
+        return None
+    hour, minute = parsed_time or (0, 0)
+    try:
+        local = datetime.datetime(year, month, day, hour, minute, tzinfo=user_tz)
+    except ValueError:
+        return None
+    return local.astimezone(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _normalize_color(value):
+    if isinstance(value, str) and re.match(r"^#[0-9A-Fa-f]{6}$", value.strip()):
+        return value.strip()
+    return DEFAULT_TAG_COLOR
+
+
+def _rate_from_fields(fields):
+    rate = fields.get("rate")
+    if rate is None:
+        return None
+    if not isinstance(rate, dict):
+        raise ValueError("fields.rate must be an object or null")
+    amount_raw = rate.get("amount")
+    if "intervalCount" in rate:
+        count_raw = rate.get("intervalCount")
+    elif "interval_count" in rate:
+        count_raw = rate.get("interval_count")
+    else:
+        count_raw = 1
+    unit = _normalize_interval_unit(rate.get("intervalUnit") or rate.get("interval_unit"))
+    if not unit:
+        raise ValueError("rate intervalUnit must be day(s), week(s), month(s), or year(s)")
+    try:
+        amount = float(amount_raw)
+        interval_count = int(count_raw)
+    except (TypeError, ValueError):
+        raise ValueError("rate amount must be numeric and intervalCount must be an integer")
+    if amount < 0 or interval_count <= 0:
+        raise ValueError("rate amount must be non-negative and intervalCount must be positive")
     return {
-        "structuredContent": {
-            "ok": True,
-            field_name: item,
-        },
-        "content": [
-            {
-                "type": "text",
-                "text": f"Created {field_name}: {item.get('name') or item.get('id')}.",
-            }
-        ],
+        "amount": amount,
+        "currency": _normalize_currency(rate.get("currency") or "USD"),
+        "intervalCount": interval_count,
+        "intervalUnit": unit,
     }
 
 
-def _create_note(email, arguments):
-    name = _require_nonempty(arguments.get("name"), "name")
-    date = _validate_date_field(arguments.get("date"), "date")
-
-    note = {
-        "id": str(uuid.uuid4()),
-        "name": name,
-        "date": date,
-        "folder_id": arguments.get("folder_id"),
-        "created_at": datetime.datetime.utcnow().isoformat() + "Z",
-    }
-    note = _apply_folder_ref(email, note, arguments)
-    note = {key: value for key, value in note.items() if value is not None}
-
-    notes_data = _load_notes(email)
-    notes = notes_data.get("notes", [])
-    notes.append(note)
-    notes_data["notes"] = notes
-    _save_notes(email, notes_data)
-    return _mutation_result("note", note)
+def _normalize_currency(value):
+    currency = str(value or "USD").strip()
+    return currency.upper() if re.match(r"^[a-z]{3}$", currency, re.I) else currency
 
 
-def _create_task(email, arguments):
-    name = _require_nonempty(arguments.get("name"), "name")
-    assign_datetime = _validate_date_field(arguments.get("assign_datetime"), "assign_datetime")
-    due_datetime = _validate_date_field(arguments.get("due_datetime"), "due_datetime")
-
-    duplicate_resp = tasks_table.scan(
-        FilterExpression="#u = :email AND #n = :name AND assign_datetime = :assign AND due_datetime = :due",
-        ExpressionAttributeNames={"#u": "user", "#n": "name"},
-        ExpressionAttributeValues={
-            ":email": email,
-            ":name": name,
-            ":assign": assign_datetime,
-            ":due": due_datetime,
-        },
-    )
-    if duplicate_resp.get("Items"):
-        raise ValueError("A task with this name, assign date, and due date already exists")
-
-    task = {
-        "task_id": str(uuid.uuid4()),
-        "user": email,
-        "parent_id": arguments.get("parent_id"),
-        "name": name,
-        "assign_datetime": assign_datetime,
-        "due_datetime": due_datetime,
-        "due_status": "pending",
-        "folder_id": arguments.get("folder_id"),
-        "created_at": datetime.datetime.utcnow().isoformat() + "Z",
-    }
-    task = _apply_folder_ref(email, task, arguments)
-    task = {key: value for key, value in task.items() if value is not None}
-    tasks_table.put_item(Item=task)
-    return _mutation_result("task", _augment_item("tasks", task))
+def _normalize_interval_unit(value):
+    normalized = str(value or "").strip().lower()
+    if normalized in ("day", "days"):
+        return "days"
+    if normalized in ("week", "weeks"):
+        return "weeks"
+    if normalized in ("month", "months"):
+        return "months"
+    if normalized in ("year", "years"):
+        return "years"
+    return None
 
 
-def _create_action(email, arguments):
-    name = _require_nonempty(arguments.get("name"), "name")
-    start_datetime = _validate_date_field(arguments.get("start_datetime"), "start_datetime")
-    end_datetime = _validate_date_field(arguments.get("end_datetime"), "end_datetime")
-
-    action = {
-        "action_id": str(uuid.uuid4()),
-        "user": email,
-        "name": name,
-        "start_datetime": start_datetime,
-        "end_datetime": end_datetime,
-        "folder_id": arguments.get("folder_id"),
-        "is_planned": bool(arguments.get("is_planned", False)),
-        "created_at": datetime.datetime.utcnow().isoformat() + "Z",
-    }
-    action = _apply_folder_ref(email, action, arguments)
-    action = {key: value for key, value in action.items() if value is not None}
-    actions_table.put_item(Item=action)
-    return _mutation_result("action", _augment_item("actions", action))
+def _find_node_by_name(state, node_type, name):
+    if not name:
+        return None
+    normalized = name.strip().lower()
+    for node in state["nodes"][_collection_for(node_type)].values():
+        if node.get("name", "").strip().lower() == normalized:
+            return node
+    return None
 
 
-def _complete_task(email, arguments):
-    task_id = _require_nonempty(arguments.get("task_id"), "task_id")
-    resp = tasks_table.get_item(Key={"task_id": task_id})
-    task = resp.get("Item")
-    if not task or task.get("user") != email:
-        raise ValueError("Task not found")
-
-    completed_at = datetime.datetime.utcnow().isoformat() + "Z"
-
-    open_resp = timelogs_table.scan(
-        FilterExpression="#u = :email AND parent_id = :pid AND attribute_not_exists(#e)",
-        ExpressionAttributeNames={"#u": "user", "#e": "end"},
-        ExpressionAttributeValues={":email": email, ":pid": task_id},
-    )
-    for log in open_resp.get("Items", []):
-        timelogs_table.update_item(
-            Key={"log_id": log["log_id"]},
-            UpdateExpression="SET #e = :now",
-            ExpressionAttributeNames={"#e": "end"},
-            ExpressionAttributeValues={":now": completed_at},
-        )
-
-    tasks_table.update_item(
-        Key={"task_id": task_id},
-        UpdateExpression="SET end_datetime = :end, due_status = :ds",
-        ExpressionAttributeValues={
-            ":end": completed_at,
-            ":ds": "met",
-        },
-    )
+def _base_node(state, user_id, node_type, node_id, name, existing=None):
+    now = _now_iso()
     return {
-        "structuredContent": {
-            "ok": True,
-            "task_id": task_id,
-            "completed_at": completed_at,
-        },
-        "content": [
-            {
-                "type": "text",
-                "text": f"Completed task: {task.get('name') or task_id}.",
-            }
-        ],
+        "id": node_id,
+        "userId": user_id,
+        "name": name,
+        "archive": existing.get("archive", 0) if existing else 0,
+        "createdAt": existing.get("createdAt", now) if existing else now,
+        "updatedAt": now,
+        "deletedAt": existing.get("deletedAt") if existing else None,
     }
 
 
-def _validate_update_fields(fields):
+def _node_to_raw_macro(state, node_type, node):
+    tag = _tag_name(state, node.get("tagId")) if "tagId" in node else ""
+    note = f"\n{_escape_macro(node.get('note'))}" if node.get("note") else ""
+    if node_type == "task":
+        return f"<{_escape_macro(node.get('name'))}; {_escape_macro(node.get('datetimeRaw') or node.get('datetimeUtc') or '')}; {_escape_macro(tag)}{note}>"
+    if node_type == "subscription":
+        return f"<{_escape_macro(node.get('name'))}; {_escape_macro(_format_rate(node.get('rate')))}; {_escape_macro(tag)}{note}>"
+    if node_type == "website":
+        identities = [
+            *(state["nodes"]["identities"].get(item_id, {}).get("name", item_id) for item_id in node.get("identityIds", [])),
+            *node.get("unresolvedIdentities", []),
+        ]
+        return f"<{_escape_macro(node.get('name'))}; {_escape_macro(', '.join(identities))}; {_escape_macro(tag)}{note}>"
+    if node_type == "action":
+        return f"<{_escape_macro(node.get('name'))}; {_escape_macro(node.get('timeLocal') or '')}; {_escape_macro(tag)}{note}>"
+    if node_type == "tag":
+        return f"<{_escape_macro(node.get('name'))}; {_escape_macro(node.get('color'))}{note}>"
+    if node_type == "location":
+        return f"<{_escape_macro(node.get('name'))}; {_escape_macro(node.get('address') or '')}>"
+    if node_type == "identity":
+        reference = node.get("unresolvedReference") or ""
+        if node.get("referenceWebsiteId"):
+            reference = state["nodes"]["websites"].get(node["referenceWebsiteId"], {}).get("name", reference)
+        if node.get("referenceAssetId"):
+            reference = state["nodes"]["assets"].get(node["referenceAssetId"], {}).get("name", reference)
+        return f"<{_escape_macro(node.get('name'))}; {_escape_macro(reference)}; {_escape_macro(tag)}>"
+    reference = node.get("unresolvedReference") or ""
+    if node.get("referenceLocationId"):
+        reference = state["nodes"]["locations"].get(node["referenceLocationId"], {}).get("name", reference)
+    return f"<{_escape_macro(node.get('name'))}; {_escape_macro(reference)}; {_escape_macro(tag)}>"
+
+
+def _escape_macro(value):
+    return re.sub(r"([<>;,\\])", r"\\\1", str(value or ""))
+
+
+def _format_rate(rate):
+    if not rate:
+        return ""
+    return f"{rate.get('amount')}, {rate.get('currency')}, {rate.get('intervalCount')}, {rate.get('intervalUnit')}"
+
+
+def _create_node(email, user_id, arguments):
+    state = _load_workspace(email, user_id)
+    node_type = _require_nonempty(arguments.get("node_type"), "node_type")
+    _collection_for(node_type)
+    name = _require_nonempty(arguments.get("name"), "name")
+    raw_fields = arguments.get("fields") or {}
+    if not isinstance(raw_fields, dict):
+        raise ValueError("fields must be an object")
+    fields = dict(raw_fields)
+    if "tag_name" in arguments and "tag_name" not in fields and "tagName" not in fields:
+        fields["tag_name"] = arguments.get("tag_name")
+    note = arguments["note"] if "note" in arguments else MISSING
+
+    if node_type == "tag":
+        normalized = _normalize_tag_name(name)
+        existing = _find_tag_by_normalized_name(state, normalized)
+        node_id = existing["id"] if existing else _make_id("tag")
+        node = {
+            **_base_node(state, user_id, node_type, node_id, name, existing),
+            "note": _clean_optional_string(note) if note is not MISSING else (existing.get("note") if existing else None),
+            "color": _normalize_color(fields.get("color")),
+            "normalizedName": normalized,
+        }
+        created = existing is None
+    else:
+        node_id = _make_id(node_type)
+        node = _build_node_from_fields(state, user_id, node_type, node_id, name, note, fields, email)
+        created = True
+
+    node["rawMacro"] = _node_to_raw_macro(state, node_type, node)
+    _set_node(state, node_type, node)
+    document_key, section_label = _default_document_target(node_type, arguments.get("document_key"))
+    _ensure_saved_block(state, node_type, node["id"], document_key, section_label)
+    _save_workspace(email, state, user_id)
+    return _mutation_result("created" if created else "updated", _augment_node(state, node_type, node), created)
+
+
+def _build_node_from_fields(state, user_id, node_type, node_id, name, note, fields, email, existing=None):
+    base = _base_node(state, user_id, node_type, node_id, name, existing)
+    tag_id = existing.get("tagId") if existing else None
+    if node_type in TAGGABLE_NODE_TYPES:
+        if "tag_name" in fields or "tagName" in fields:
+            tag_name = fields.get("tag_name") if "tag_name" in fields else fields.get("tagName")
+            tag_id = _ensure_tag(state, user_id, tag_name)
+
+    explicit_note = (
+        _clean_optional_string(note)
+        if note is not MISSING
+        else (existing.get("note") if existing and "note" in existing else None)
+    )
+
+    if node_type == "task":
+        datetime_raw = fields.get("datetime")
+        if datetime_raw is None:
+            datetime_raw = fields.get("datetime_raw", existing.get("datetimeRaw") if existing else None)
+        datetime_raw = _clean_optional_string(datetime_raw)
+        return {
+            **base,
+            "note": explicit_note,
+            "datetimeUtc": _parse_task_datetime(datetime_raw, _get_user_timezone(email)),
+            "datetimeRaw": datetime_raw,
+            "datetimeHasTime": _has_explicit_time(datetime_raw),
+            "tagId": tag_id,
+        }
+    if node_type == "subscription":
+        rate = _rate_from_fields(fields) if "rate" in fields else (existing.get("rate") if existing else None)
+        return {**base, "note": explicit_note, "rate": rate, "tagId": tag_id}
+    if node_type == "website":
+        identity_names = fields.get("identity_names", fields.get("identities", [] if not existing else None))
+        if identity_names is None:
+            identity_ids = existing.get("identityIds", [])
+            unresolved = existing.get("unresolvedIdentities", [])
+        else:
+            if not isinstance(identity_names, list):
+                raise ValueError("fields.identity_names must be an array of strings")
+            identity_ids, unresolved = _resolve_identity_names(state, identity_names)
+        return {**base, "note": explicit_note, "identityIds": identity_ids, "unresolvedIdentities": unresolved, "tagId": tag_id}
+    if node_type == "action":
+        time_local = fields.get("time_local", fields.get("timeLocal", existing.get("timeLocal") if existing else None))
+        return {**base, "note": explicit_note, "timeLocal": _clean_optional_string(time_local), "tagId": tag_id}
+    if node_type == "location":
+        address = fields.get("address", existing.get("address") if existing else None)
+        return {**base, "address": _clean_optional_string(address)}
+    if node_type == "identity":
+        reference = fields.get("reference_name", fields.get("reference", existing.get("unresolvedReference") if existing else None))
+        website = _find_node_by_name(state, "website", reference)
+        asset = _find_node_by_name(state, "asset", reference)
+        return {
+            **base,
+            "referenceWebsiteId": website.get("id") if website else None,
+            "referenceAssetId": asset.get("id") if asset and not website else None,
+            "unresolvedReference": None if website or asset else _clean_optional_string(reference),
+            "tagId": tag_id,
+        }
+    if node_type == "asset":
+        reference = fields.get("reference_location_name", fields.get("reference", existing.get("unresolvedReference") if existing else None))
+        location = _find_node_by_name(state, "location", reference)
+        return {
+            **base,
+            "referenceLocationId": location.get("id") if location else None,
+            "unresolvedReference": None if location else _clean_optional_string(reference),
+            "tagId": tag_id,
+        }
+    raise ValueError(f"Unsupported node_type: {node_type}")
+
+
+def _resolve_identity_names(state, names):
+    identity_ids = []
+    unresolved = []
+    for name in names:
+        if not isinstance(name, str) or not name.strip():
+            continue
+        identity = _find_node_by_name(state, "identity", name)
+        if identity:
+            identity_ids.append(identity["id"])
+        else:
+            unresolved.append(name.strip())
+    return identity_ids, unresolved
+
+
+def _update_node(email, user_id, arguments):
+    state = _load_workspace(email, user_id)
+    node_type = _require_nonempty(arguments.get("node_type"), "node_type")
+    node_id = _require_nonempty(arguments.get("node_id"), "node_id")
+    existing = _get_node(state, node_type, node_id)
+    if not existing:
+        raise ValueError("Node not found")
+    if existing.get("deletedAt"):
+        raise ValueError("Soft-deleted nodes cannot be updated")
+    fields = arguments.get("fields")
     if not isinstance(fields, dict) or not fields:
         raise ValueError("fields must be a non-empty object")
-    blocked = sorted(set(fields) & PROTECTED_UPDATE_FIELDS)
-    if blocked:
-        raise ValueError(f"Protected fields cannot be updated: {', '.join(blocked)}")
-    return fields
 
+    next_name = _require_nonempty(fields.get("name"), "fields.name") if "name" in fields else existing.get("name")
+    note = fields["note"] if "note" in fields else MISSING
 
-def _update_dynamo_item(table, key_name, item_type, email, item_id, fields):
-    resp = table.get_item(Key={key_name: item_id})
-    item = resp.get("Item")
-    if not item or item.get("user") != email:
-        raise ValueError("Item not found")
-
-    for field in ("assign_datetime", "due_datetime", "start_datetime", "end_datetime"):
-        if field in fields and fields[field] is not None:
-            err = _validate_date_range(fields[field])
-            if err:
-                raise ValueError(err)
-
-    set_parts = []
-    remove_parts = []
-    attr_names = {}
-    attr_values = {}
-    for field, value in fields.items():
-        placeholder = f"#f_{field}"
-        attr_names[placeholder] = field
-        if value is None:
-            remove_parts.append(placeholder)
-            item.pop(field, None)
-        else:
-            value_ph = f":v_{field}"
-            set_parts.append(f"{placeholder} = {value_ph}")
-            attr_values[value_ph] = value
-            item[field] = value
-
-    expr = ""
-    if set_parts:
-        expr += "SET " + ", ".join(set_parts)
-    if remove_parts:
-        expr += (" " if expr else "") + "REMOVE " + ", ".join(remove_parts)
-    if not expr:
-        raise ValueError("No fields to update")
-
-    update_args = {
-        "Key": {key_name: item_id},
-        "UpdateExpression": expr,
-        "ExpressionAttributeNames": attr_names,
-    }
-    if attr_values:
-        update_args["ExpressionAttributeValues"] = attr_values
-    table.update_item(**update_args)
-    return _augment_item(item_type, item)
-
-
-def _update_list_item(email, key, id_field, item_type, item_id, fields):
-    items = _load_s3_json(key, [])
-    if not isinstance(items, list):
-        raise ValueError("Stored item collection is not a list")
-
-    for item in items:
-        if item.get(id_field) == item_id:
-            for field, value in fields.items():
-                if value is None:
-                    item.pop(field, None)
-                else:
-                    item[field] = value
-            s3.put_object(
-                Bucket=PRODUCTIVITY_BUCKET,
-                Key=key,
-                Body=json.dumps(items, indent=2, default=_json_default),
-                ContentType="application/json",
-            )
-            return _augment_item(item_type, item)
-    raise ValueError("Item not found")
-
-
-def _update_note(email, note_id, fields):
-    if "date" in fields and fields["date"] is not None:
-        err = _validate_date_range(fields["date"])
-        if err:
-            raise ValueError(err)
-
-    notes_data = _load_notes(email)
-    notes = notes_data.get("notes", [])
-    for note in notes:
-        if note.get("id") == note_id:
-            for field, value in fields.items():
-                if value is None:
-                    note.pop(field, None)
-                else:
-                    note[field] = value
-            notes_data["notes"] = notes
-            _save_notes(email, notes_data)
-            return _augment_item("notes", note)
-    raise ValueError("Item not found")
-
-
-def _update_folder(email, item_id, fields):
-    folders_data = _normalize_folders_data(email, _load_folders(email))
-    folders = folders_data.get("folders", [])
-    for folder in folders:
-        if folder.get("id") == item_id:
-            for field, value in fields.items():
-                if value is None:
-                    folder.pop(field, None)
-                else:
-                    folder[field] = value
-            folders_data = _normalize_folders_data(email, folders_data)
-            updated = next((f for f in folders_data.get("folders", []) if f.get("id") == item_id), folder)
-            s3.put_object(
-                Bucket=PRODUCTIVITY_BUCKET,
-                Key=f"{email}/folders.json",
-                Body=json.dumps(folders_data, indent=2, default=_json_default),
-                ContentType="application/json",
-            )
-            return _augment_item("folders", updated)
-    raise ValueError("Item not found")
-
-
-def _update_goal(email, goal_name, fields):
-    key = _goals_prefix(email) + goal_name + ".json"
-    try:
-        body = s3.get_object(
-            Bucket=PRODUCTIVITY_BUCKET, Key=key
-        )["Body"].read().decode("utf-8")
-        goal = json.loads(body)
-    except Exception:
-        raise ValueError("Item not found")
-
-    for field, value in fields.items():
-        if value is None:
-            goal.pop(field, None)
-        else:
-            goal[field] = value
-    s3.put_object(
-        Bucket=PRODUCTIVITY_BUCKET,
-        Key=key,
-        Body=json.dumps(goal, indent=2, default=_json_default),
-        ContentType="application/json",
-    )
-    goal["name"] = goal_name
-    return _augment_item("goals", goal)
-
-
-def _update_item(email, arguments):
-    item_type = _canonical_item_type(_require_nonempty(arguments.get("item_type"), "item_type"))
-    if item_type not in ITEM_TYPES:
-        raise ValueError(f"Unsupported item type: {item_type}")
-    item_id = _require_nonempty(arguments.get("id"), "id")
-    fields = _validate_update_fields(arguments.get("fields"))
-    if item_type == "tasks":
-        if "folder_id" in fields:
-            fields = {**fields, **_apply_folder_ref(email, {}, fields)}
-        item = _update_dynamo_item(tasks_table, "task_id", "tasks", email, item_id, fields)
-    elif item_type == "actions":
-        if "folder_id" in fields:
-            fields = {**fields, **_apply_folder_ref(email, {}, fields)}
-        item = _update_dynamo_item(actions_table, "action_id", "actions", email, item_id, fields)
-    elif item_type == "notes":
-        if "folder_id" in fields:
-            fields = {**fields, **_apply_folder_ref(email, {}, fields)}
-        item = _update_note(email, item_id, fields)
-    elif item_type == "folders":
-        item = _update_folder(email, item_id, fields)
-    elif item_type == "routines":
-        if "folder_id" in fields:
-            fields = {**fields, **_apply_folder_ref(email, {}, fields)}
-        item = _update_list_item(email, _routines_s3_key(email), "id", "routines", item_id, fields)
-    elif item_type == "schedules":
-        if "folder_id" in fields:
-            fields = {**fields, **_apply_folder_ref(email, {}, fields)}
-        item = _update_list_item(email, _schedules_s3_key(email), "id", "schedules", item_id, fields)
-    elif item_type == "goals":
-        item = _update_goal(email, item_id, fields)
+    if node_type == "tag":
+        normalized = _normalize_tag_name(next_name)
+        duplicate = _find_tag_by_normalized_name(state, normalized)
+        if duplicate and duplicate["id"] != node_id:
+            raise ValueError("Another tag already uses that normalized name")
+        node = {
+            **_base_node(state, user_id, node_type, node_id, next_name, existing),
+            "note": _clean_optional_string(note) if note is not MISSING else existing.get("note"),
+            "color": _normalize_color(fields.get("color", existing.get("color"))),
+            "normalizedName": normalized,
+        }
     else:
-        raise ValueError(f"Unsupported item type: {item_type}")
+        node = _build_node_from_fields(state, user_id, node_type, node_id, next_name, note, fields, email, existing)
 
+    node["rawMacro"] = _node_to_raw_macro(state, node_type, node)
+    _set_node(state, node_type, node)
+    _save_workspace(email, state, user_id)
+    return _mutation_result("updated", _augment_node(state, node_type, node), False)
+
+
+def _archive_node(email, user_id, arguments):
+    return _move_archive(email, user_id, arguments, 1, "archived")
+
+
+def _restore_node(email, user_id, arguments):
+    return _move_archive(email, user_id, arguments, -1, "restored")
+
+
+def _move_archive(email, user_id, arguments, direction, action):
+    state = _load_workspace(email, user_id)
+    node_type = _require_nonempty(arguments.get("node_type"), "node_type")
+    node_id = _require_nonempty(arguments.get("node_id"), "node_id")
+    node = _get_node(state, node_type, node_id)
+    if not node:
+        raise ValueError("Node not found")
+    if node.get("deletedAt"):
+        raise ValueError("Soft-deleted nodes cannot be archived or restored by MCP")
+    archive = int(node.get("archive", 0))
+    if direction > 0 and archive >= 2:
+        raise ValueError("Node is already at archive level 2; MCP will not soft-delete it")
+    if direction < 0 and archive <= 0:
+        raise ValueError("Node is already active")
+    node["archive"] = archive + direction
+    node["updatedAt"] = _now_iso()
+    _set_node(state, node_type, node)
+    _save_workspace(email, state, user_id)
+    return _mutation_result(action, _augment_node(state, node_type, node), False)
+
+
+def _augment_node(state, node_type, node):
+    augmented = deepcopy(node)
+    augmented["node_type"] = node_type
+    augmented["id"] = node.get("id")
+    augmented["placements"] = _placements_for_node(state, node_type, node.get("id"))
+    if node.get("tagId"):
+        tag = state["nodes"]["tags"].get(node["tagId"], {})
+        augmented["tagName"] = tag.get("name")
+        augmented["tagColor"] = tag.get("color")
+        augmented["tagArchive"] = tag.get("archive")
+    return augmented
+
+
+def _all_augmented_nodes(state):
+    nodes = []
+    for node_type, collection in COLLECTIONS.items():
+        nodes.extend(_augment_node(state, node_type, node) for node in state["nodes"][collection].values())
+    return nodes
+
+
+def _query_nodes(email, user_id, arguments):
+    state = _load_workspace(email, user_id)
+    node_types = arguments.get("node_types") or NODE_TYPES
+    archive_levels = arguments.get("archive_levels")
+    if archive_levels is None:
+        archive_levels = [0]
+    include_deleted = bool(arguments.get("include_deleted", False))
+    search = (arguments.get("search") or "").strip().lower()
+    limit = _limit(arguments)
+
+    requested = set(node_types)
+    matched = []
+    for node in _all_augmented_nodes(state):
+        if node["node_type"] not in requested:
+            continue
+        if int(node.get("archive", 0)) not in archive_levels:
+            continue
+        if node.get("deletedAt") and not include_deleted:
+            continue
+        if search and search not in json.dumps(node, sort_keys=True).lower():
+            continue
+        matched.append(node)
+
+    matched.sort(key=lambda item: (item.get("archive", 0), item.get("node_type", ""), item.get("name", "").lower()))
+    total = len(matched)
+    projected = matched[:limit]
     return {
         "structuredContent": {
-            "ok": True,
-            "item_type": item_type,
-            "id": item_id,
-            "item": item,
+            "nodes": projected,
+            "count": len(projected),
+            "total_matches": total,
+            "truncated": total > len(projected),
         },
-        "content": [
-            {
-                "type": "text",
-                "text": f"Updated {item_type} item: {item.get('name') or item_id}.",
-            }
-        ],
+        "content": [{"type": "text", "text": f"Returned {len(projected)} of {total} workspace nodes."}],
     }
 
 
-def _tool_result(field_name, items, limit):
-    items = items[:limit]
+def _get_node_result(email, user_id, arguments):
+    state = _load_workspace(email, user_id)
+    node_type = _require_nonempty(arguments.get("node_type"), "node_type")
+    node_id = _require_nonempty(arguments.get("node_id"), "node_id")
+    node = _get_node(state, node_type, node_id)
+    if not node:
+        raise ValueError("Node not found")
+    augmented = _augment_node(state, node_type, node)
     return {
-        "structuredContent": {
-            field_name: items,
-            "count": len(items),
-        },
-        "content": [
-            {
-                "type": "text",
-                "text": f"Returned {len(items)} {field_name}.",
-            }
-        ],
+        "structuredContent": {"node": augmented},
+        "content": [{"type": "text", "text": f"Loaded {node_type}: {node.get('name') or node_id}."}],
     }
+
+
+def _mutation_result(action, node, created):
+    return {
+        "structuredContent": {"ok": True, "node": node, "created": bool(created)},
+        "content": [{"type": "text", "text": f"{action.capitalize()} {node.get('node_type')}: {node.get('name') or node.get('id')}."}],
+    }
+
+
+def _limit(arguments):
+    try:
+        value = int((arguments or {}).get("limit", 100))
+    except (TypeError, ValueError):
+        value = 100
+    return max(1, min(value, 500))
 
 
 def _call_tool(name, arguments, ctx):
     arguments = arguments or {}
     email = ctx["email"]
-    limit = _limit(arguments)
+    user_id = ctx.get("user_id") or email
 
-    if name == "query_items":
-        return _query_items(email, arguments)
-
-    if name == "create_note":
-        return _create_note(email, arguments)
-
-    if name == "create_task":
-        return _create_task(email, arguments)
-
-    if name == "create_action":
-        return _create_action(email, arguments)
-
-    if name == "complete_task":
-        return _complete_task(email, arguments)
-
-    if name == "update_item":
-        return _update_item(email, arguments)
-
-    if name == "list_tasks":
-        items = _filter_folder(_scan_user_items(tasks_table, email), arguments.get("folder_id"))
-        status = arguments.get("status", "all")
-        if status == "complete":
-            items = [
-                item for item in items
-                if item.get("due_status") in ("met", "done") or item.get("end_datetime")
-            ]
-        elif status == "incomplete":
-            items = [
-                item for item in items
-                if item.get("due_status") not in ("met", "done") and not item.get("end_datetime")
-            ]
-        return _tool_result("tasks", items, limit)
-
-    if name == "list_actions":
-        items = _filter_folder(_scan_user_items(actions_table, email), arguments.get("folder_id"))
-        return _tool_result("actions", items, limit)
-
-    if name == "list_notes":
-        items = _filter_folder(_load_notes(email).get("notes", []), arguments.get("folder_id"))
-        return _tool_result("notes", items, limit)
-
-    if name == "list_folders":
-        return _tool_result("folders", _normalize_folders_data(email, _load_folders(email)).get("folders", []), limit)
-
-    if name == "list_routines":
-        items = _filter_folder(
-            _load_s3_json(_routines_s3_key(email), []),
-            arguments.get("folder_id"),
-        )
-        return _tool_result("routines", items, limit)
-
-    if name == "list_schedules":
-        items = _filter_folder(
-            _load_s3_json(_schedules_s3_key(email), []),
-            arguments.get("folder_id"),
-        )
-        return _tool_result("schedules", items, limit)
-
-    if name == "list_goals":
-        return _tool_result("goals", _list_goals(email), limit)
-
+    if name == "query_nodes":
+        return _query_nodes(email, user_id, arguments)
+    if name == "get_node":
+        return _get_node_result(email, user_id, arguments)
+    if name == "create_node":
+        return _create_node(email, user_id, arguments)
+    if name == "update_node":
+        return _update_node(email, user_id, arguments)
+    if name == "archive_node":
+        return _archive_node(email, user_id, arguments)
+    if name == "restore_node":
+        return _restore_node(email, user_id, arguments)
     raise KeyError(name)
 
 
 @mcp_bp.route("/mcp", methods=["GET"])
 @mcp_bp.route("/mcp-v2", methods=["GET"])
+@mcp_bp.route("/mcp-v3", methods=["GET"])
 def mcp_info():
-    return jsonify({
-        "name": "Efficient Hypothesis",
-        "description": "MCP endpoint for Efficient Hypothesis read and non-destructive write tools.",
-        "protocolVersion": MCP_PROTOCOL_VERSION,
-        "tools": [tool["name"] for tool in TOOLS],
-    })
+    return jsonify(
+        {
+            "name": "Efficient Hypothesis",
+            "description": "Workspace-native MCP endpoint for Efficient Hypothesis structured nodes.",
+            "protocolVersion": MCP_PROTOCOL_VERSION,
+            "tools": [tool["name"] for tool in TOOLS],
+        }
+    )
 
 
 @mcp_bp.route("/mcp", methods=["POST"])
 @mcp_bp.route("/mcp-v2", methods=["POST"])
+@mcp_bp.route("/mcp-v3", methods=["POST"])
 def mcp_rpc():
     payload = request.get_json(silent=True) or {}
     request_id = payload.get("id")
@@ -1221,24 +1130,21 @@ def mcp_rpc():
     params = payload.get("params") or {}
 
     if method == "initialize":
-        return _rpc_result(request_id, {
-            "protocolVersion": MCP_PROTOCOL_VERSION,
-            "capabilities": {"tools": {}},
-            "serverInfo": {
-                "name": "efficient-hypothesis",
-                "version": "0.1.0",
+        return _rpc_result(
+            request_id,
+            {
+                "protocolVersion": MCP_PROTOCOL_VERSION,
+                "capabilities": {"tools": {}},
+                "serverInfo": {"name": "efficient-hypothesis", "version": "0.3.0"},
             },
-        })
+        )
 
     if method == "notifications/initialized":
         return ("", 204)
-
     if method == "ping":
         return _rpc_result(request_id, {})
-
     if method == "tools/list":
         return _rpc_result(request_id, {"tools": TOOLS})
-
     if method == "tools/call":
         ctx = _get_auth_context()
         if not ctx:
@@ -1249,7 +1155,7 @@ def mcp_rpc():
             return _rpc_result(request_id, _call_tool(name, arguments, ctx))
         except KeyError:
             return _rpc_error(request_id, -32602, f"Unknown tool: {name}")
-        except ValueError as exc:
+        except (TypeError, ValueError) as exc:
             return _rpc_error(request_id, -32602, str(exc))
 
     return _rpc_error(request_id, -32601, f"Method not found: {method}")

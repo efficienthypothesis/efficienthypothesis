@@ -1,10 +1,10 @@
 # MCP Notes
 
-## Current ChatGPT connector setup
+## Current ChatGPT Connector Setup
 
-Use the versioned endpoint for ChatGPT Developer Mode:
+Use the new workspace-native endpoint for the Efficient Hypothesis GPT App:
 
-- MCP server URL: `https://efficienthypothesis.com/mcp-v2`
+- MCP server URL: `https://efficienthypothesis.com/mcp-v3`
 - Authentication: OAuth
 - Registration method: User-defined OAuth client
 - Authorization URL: `https://efficienthypothesis.com/oauth/authorize`
@@ -15,13 +15,26 @@ Use the versioned endpoint for ChatGPT Developer Mode:
 - Scope: `full_access`
 - OIDC: disabled
 
-`/mcp` is still served, but ChatGPT cached the first tool manifest seen at that
-URL during development. Use `/mcp-v2` for the active connector to avoid stale
-manifest behavior.
+OAuth is intentionally unchanged. The `/mcp`, `/mcp-v2`, and `/mcp-v3`
+routes now all serve the new workspace-native tool manifest, but ChatGPT can
+cache tool manifests by URL during development. Prefer `/mcp-v3` for the active
+connector so the GPT App does not see a stale `/mcp-v2` manifest.
 
-## Current tools
+## Current Tools
 
-Read/query tools:
+Read tools:
+
+- `query_nodes`
+- `get_node`
+
+Write tools:
+
+- `create_node`
+- `update_node`
+- `archive_node`
+- `restore_node`
+
+The old DynamoDB/S3 item tools are intentionally retired from MCP:
 
 - `query_items`
 - `list_tasks`
@@ -31,89 +44,105 @@ Read/query tools:
 - `list_routines`
 - `list_schedules`
 - `list_goals`
-
-Non-destructive write tools:
-
-- `create_note`
 - `create_task`
 - `create_action`
+- `create_note`
 - `complete_task`
 
-No delete tools are currently exposed through MCP.
+## Workspace Model
 
-## Folder identity model
+MCP reads and writes the same S3-backed workspace state used by the React app:
 
-Folders use stable IDs and parent IDs. Folder paths are no longer part of the
-canonical architecture:
+```text
+s3://eh-app-data/<email>/workspace/state.json
+```
+
+Structured data lives in normalized node collections:
+
+- `task`
+- `website`
+- `subscription`
+- `action`
+- `tag`
+- `location`
+- `identity`
+- `asset`
+
+Editor layout lives in workspace documents. GPT-created nodes are inserted as
+`saved_node` blocks into the correct section automatically:
+
+- `task` -> `tasks` / `Tasks`
+- `website` -> `websites_subscriptions` / `Websites`
+- `subscription` -> `websites_subscriptions` / `Subscriptions`
+- `action` -> `timetable` / `Timetable`
+- `tag` -> `tags` / `Tags`
+- `location` -> `profile` / `Locations`
+- `identity` -> `profile` / `Identities`
+- `asset` -> `profile` / `Assets`
+
+Routine weekday templates are managed with `action` nodes in these documents:
+
+- `routine_sunday`
+- `routine_monday`
+- `routine_tuesday`
+- `routine_wednesday`
+- `routine_thursday`
+- `routine_friday`
+- `routine_saturday`
+
+To create a routine template action, call `create_node` with
+`node_type: "action"` and the target `document_key`, such as
+`routine_monday`.
+
+## Mutation Rules
+
+- GPT can create, read, update, archive, and restore structured nodes.
+- GPT cannot create, edit, or delete free-text editor rows.
+- `update_node`, `archive_node`, and `restore_node` require exact node IDs.
+- Tags are normalized with `trim().toLowerCase()`.
+- If a node is created or updated with a missing `tag_name`, MCP auto-creates
+  the tag with default color `#D1D5DB` and inserts it into the Tags editor.
+- Archiving moves one level deeper: `0 -> 1 -> 2`.
+- Restoring moves one level shallower: `2 -> 1 -> 0`.
+- MCP does not soft-delete level 2 nodes and cannot restore soft-deleted nodes.
+- Existing archived tags can still be referenced by active nodes. The item keeps
+  its `tagId`; the response includes `tagArchive` so clients can see that the
+  referenced tag is archived.
+
+## Field Guidance
+
+Common fields:
+
+- `name`
+- `note`
+- `tag_name` for taggable node types
+
+Type-specific fields:
+
+- `task`: `fields.datetime`
+- `subscription`: `fields.rate` with `amount`, `currency`, `intervalCount`,
+  and `intervalUnit`
+- `website`: `fields.identity_names`
+- `action`: `fields.time_local`
+- `tag`: `fields.color`
+- `location`: `fields.address`
+- `identity`: `fields.reference_name`
+- `asset`: `fields.reference_location_name`
+
+Example subscription rate:
 
 ```json
 {
-  "id": "fld_...",
-  "parent_id": "fld_...",
-  "name": "Project",
-  "color": "#000000"
+  "amount": 51.27,
+  "currency": "USD",
+  "intervalCount": 1,
+  "intervalUnit": "month"
 }
 ```
 
-Items use `folder_id` as the folder reference. The legacy `folder` path field
-has been removed from new writes and should not be used by MCP tools or clients.
+The server stores interval units in plural canonical form, such as `months`.
 
-Folder moves update `parent_id`; related items remain attached by `folder_id`.
-
-Tasks also use `parent_id` for task/subtask hierarchy. The legacy task `path`
-field has been removed from new writes and should not be used by MCP tools or
-clients.
-
-The original folder ID migration script is:
-
-```sh
-python3 migrate_folder_ids.py --profile eh       # dry run
-python3 migrate_folder_ids.py --profile eh --apply
-```
-
-`--apply` backs up affected data to:
-
-```text
-s3://eh-app-data/backups/folder-id-migration/<timestamp>/
-```
-
-The path-removal migration script is:
-
-```sh
-python3 remove_folder_paths.py --profile eh       # dry run
-python3 remove_folder_paths.py --profile eh --apply
-```
-
-`--apply` backs up affected data to:
-
-```text
-s3://eh-app-data/backups/remove-folder-paths/<timestamp>/
-```
-
-The task hierarchy migration script is:
-
-```sh
-python3 migrate_task_parent_ids.py --profile eh       # dry run
-python3 migrate_task_parent_ids.py --profile eh --apply
-```
-
-`--apply` backs up affected tasks to:
-
-```text
-s3://eh-app-data/backups/task-parent-id-migration/<timestamp>/
-```
-
-## Query guidance
-
-Prefer `query_items` for most reads. It supports server-side item type
-selection, filters, text search, sorting, projection, and limits. Use explicit
-dates/datetimes in filters rather than relative phrases. For example, convert
-"yesterday" to a concrete ISO date range before calling the tool.
-
-Prefer `fields` projection to keep responses small. Use `query_items` to find
-exact IDs before calling write/update tools.
-
-## AWS API Gateway auth challenge header
+## AWS API Gateway Auth Challenge Header
 
 Production smoke testing on 2026-05-25 showed that unauthenticated MCP
 `tools/call` requests correctly return HTTP 401, but API Gateway remaps the

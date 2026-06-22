@@ -1,5 +1,12 @@
 # AI Changelog
 
+## 2026-06-21 - Codex (GPT-5) workspace MCP
+
+- Codex (GPT-5): replaced the legacy MCP item tools with workspace-native node tools for `query_nodes`, `get_node`, `create_node`, `update_node`, `archive_node`, and `restore_node`.
+- Codex (GPT-5): added `/mcp-v3` as the new GPT App endpoint while preserving the existing OAuth authorization and token flow.
+- Codex (GPT-5): wired MCP mutations to the current S3 workspace document model so created nodes appear in the correct editor sections, including routine weekday action templates.
+- Codex (GPT-5): added MCP tag auto-creation, exact-ID update/archive/restore behavior, archive-level stepping, and documentation for the new GPT connector setup.
+
 ## 2026-06-18 - Codex (GPT-5)
 
 - Archived the pre-React Efficient Hypothesis code at `archives/efficienthypothesis-legacy-2026-06-18.zip`.
