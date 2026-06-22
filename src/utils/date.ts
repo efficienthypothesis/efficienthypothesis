@@ -139,9 +139,9 @@ export function getTaskDateTone(iso: string | null, today = new Date()): TaskDat
   if (Number.isNaN(taskDate.getTime())) return null;
 
   const dayDifference = localDayNumber(taskDate) - localDayNumber(today);
-  if (dayDifference <= -7) return null;
   if (dayDifference < 0) return "recent-past";
   if (dayDifference === 0) return "today";
+  if (dayDifference >= 7) return null;
   return "future";
 }
 

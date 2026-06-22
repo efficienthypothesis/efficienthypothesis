@@ -50,7 +50,10 @@ describe("date utilities", () => {
     );
     expect(getTaskDateTone(new Date(2026, 5, 22, 0, 1, 0, 0).toISOString(), today)).toBe("today");
     expect(getTaskDateTone(new Date(2026, 5, 23, 0, 0, 0, 0).toISOString(), today)).toBe("future");
-    expect(getTaskDateTone(new Date(2026, 5, 15, 23, 59, 0, 0).toISOString(), today)).toBeNull();
+    expect(getTaskDateTone(new Date(2026, 5, 15, 23, 59, 0, 0).toISOString(), today)).toBe(
+      "recent-past"
+    );
+    expect(getTaskDateTone(new Date(2026, 5, 29, 0, 0, 0, 0).toISOString(), today)).toBeNull();
     expect(getTaskDateTone("garbage", today)).toBeNull();
   });
 });
