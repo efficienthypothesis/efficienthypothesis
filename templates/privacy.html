@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+
+{% block title %}Privacy Policy - Efficient Hypothesis{% endblock %}
+
+{% block head %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/navbar.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/footer.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/legal.css') }}">
+{% endblock %}
+
+{% block navbar %}
+  {% include "navbar.html" %}
+{% endblock %}
+
+{% block content %}
+  <article class="legal-page">
+    <h1>Privacy Policy</h1>
+    <p class="updated">Last updated: June 22, 2026</p>
+
+    <p>
+      Efficient Hypothesis is a personal productivity workspace. This Privacy Policy explains what
+      information we collect, how we use it, and what choices you have when you use the website,
+      OAuth login, and the Efficient Hypothesis ChatGPT app.
+    </p>
+
+    <h2>Information We Collect</h2>
+    <p>We collect the information needed to operate your account and workspace, including:</p>
+    <ul>
+      <li>Google account information used for sign-in, such as your name, email address, Google user ID, and profile photo.</li>
+      <li>Workspace content you create or edit, including tasks, websites, subscriptions, timetable actions, tags, routines, locations, identities, assets, notes, archive state, and related metadata.</li>
+      <li>Authentication and session data needed to keep you signed in and protect your account.</li>
+      <li>Technical data such as request metadata, error logs, and timestamps used to operate, debug, secure, and improve the service.</li>
+    </ul>
+
+    <h2>ChatGPT App Use</h2>
+    <p>
+      If you connect Efficient Hypothesis to ChatGPT, OpenAI may send tool requests to Efficient
+      Hypothesis so the app can create, read, update, archive, or restore structured workspace nodes
+      that you ask ChatGPT to manage. Efficient Hypothesis stores the resulting workspace changes.
+      Your ChatGPT conversations are handled by OpenAI under OpenAI's own terms and privacy policy.
+    </p>
+
+    <h2>How We Use Information</h2>
+    <p>We use your information to:</p>
+    <ul>
+      <li>Provide, save, sync, and display your productivity workspace.</li>
+      <li>Authenticate your account and preserve your existing OAuth access.</li>
+      <li>Process actions you request through the website or ChatGPT app.</li>
+      <li>Maintain security, prevent abuse, troubleshoot problems, and improve reliability.</li>
+      <li>Respond to support, privacy, or account requests.</li>
+    </ul>
+
+    <h2>Storage and Security</h2>
+    <p>
+      Efficient Hypothesis stores workspace and account data using AWS-hosted infrastructure. We use
+      reasonable technical and organizational safeguards, but no internet service can guarantee
+      absolute security.
+    </p>
+
+    <h2>Sharing</h2>
+    <p>
+      We do not sell your personal information. We may share information with service providers that
+      help operate the service, such as AWS for hosting and storage, Google for OAuth sign-in, and
+      OpenAI when you use the ChatGPT app. We may also disclose information if required by law or to
+      protect the rights, safety, and security of users or the service.
+    </p>
+
+    <h2>Retention and Deletion</h2>
+    <p>
+      We keep your account and workspace data while your account is active or as needed to provide
+      the service. Archived items remain stored so they can be restored unless they are deleted under
+      a future deletion workflow or removed through an account request. Some data may remain in
+      backups or logs for a limited period.
+    </p>
+
+    <h2>Your Choices</h2>
+    <p>
+      You can stop using the website, disconnect the ChatGPT app in ChatGPT, or contact us to request
+      account or data deletion. You can also manage workspace content directly in Efficient
+      Hypothesis.
+    </p>
+
+    <h2>Children</h2>
+    <p>
+      Efficient Hypothesis is not intended for children under 13. Do not use the service if you are
+      not old enough to consent to online services in your location.
+    </p>
+
+    <h2>Changes</h2>
+    <p>
+      We may update this Privacy Policy as the service changes. The updated date above shows when the
+      latest version took effect.
+    </p>
+
+    <h2>Contact</h2>
+    <p>
+      For privacy questions or requests, contact <a href="mailto:support@efficienthypothesis.com">support@efficienthypothesis.com</a>.
+    </p>
+  </article>
+{% endblock %}
+
+{% block footer %}
+  {% include "footer.html" %}
+{% endblock %}

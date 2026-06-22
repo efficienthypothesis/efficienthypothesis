@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+
+{% block title %}Terms of Service - Efficient Hypothesis{% endblock %}
+
+{% block head %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/navbar.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/footer.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/legal.css') }}">
+{% endblock %}
+
+{% block navbar %}
+  {% include "navbar.html" %}
+{% endblock %}
+
+{% block content %}
+  <article class="legal-page">
+    <h1>Terms of Service</h1>
+    <p class="updated">Last updated: June 22, 2026</p>
+
+    <div class="legal-callout">
+      By using Efficient Hypothesis, you agree to these Terms. If you do not agree, do not use the
+      service.
+    </div>
+
+    <h2>The Service</h2>
+    <p>
+      Efficient Hypothesis is a personal productivity workspace for managing tasks, websites,
+      subscriptions, timetable actions, tags, routines, profile references, and related notes. The
+      service includes the Efficient Hypothesis website and the Efficient Hypothesis ChatGPT app.
+    </p>
+
+    <h2>Your Account</h2>
+    <p>
+      You sign in with Google OAuth. You are responsible for maintaining access to your Google
+      account and for the activity that occurs through your Efficient Hypothesis account. You must
+      provide accurate information and use the service only if you are legally allowed to do so.
+    </p>
+
+    <h2>Your Content</h2>
+    <p>
+      You keep ownership of the content you add to Efficient Hypothesis. You grant us permission to
+      store, process, display, sync, and transmit that content as needed to operate the service and
+      complete actions you request.
+    </p>
+
+    <h2>ChatGPT App Actions</h2>
+    <p>
+      If you connect and use the Efficient Hypothesis ChatGPT app, you authorize ChatGPT to send
+      tool requests to Efficient Hypothesis on your behalf. Those tool requests may create, read,
+      update, archive, or restore structured workspace nodes. Review important changes, because AI
+      systems can misunderstand instructions or make mistakes.
+    </p>
+
+    <h2>Acceptable Use</h2>
+    <p>You agree not to:</p>
+    <ul>
+      <li>Use the service for illegal, harmful, abusive, deceptive, or privacy-invasive activity.</li>
+      <li>Attempt to access another user's account, data, or private workspace.</li>
+      <li>Interfere with the service, bypass security controls, or overload the infrastructure.</li>
+      <li>Upload or store content that you do not have the right to use.</li>
+    </ul>
+
+    <h2>No Professional Advice</h2>
+    <p>
+      Efficient Hypothesis is a productivity tool. It does not provide legal, financial, medical, tax,
+      or other professional advice. You are responsible for decisions you make using information in
+      your workspace or generated through ChatGPT.
+    </p>
+
+    <h2>Third-Party Services</h2>
+    <p>
+      Efficient Hypothesis relies on third-party services such as Google OAuth, AWS hosting and
+      storage, and OpenAI when you use the ChatGPT app. Your use of those services may also be
+      governed by their own terms and policies.
+    </p>
+
+    <h2>Availability and Changes</h2>
+    <p>
+      We may modify, suspend, or discontinue parts of the service. We aim to keep the service useful
+      and reliable, but we do not guarantee uninterrupted availability or that every feature will
+      always work without errors.
+    </p>
+
+    <h2>Disclaimers</h2>
+    <p>
+      The service is provided "as is" and "as available" without warranties of any kind to the
+      fullest extent allowed by law. We are not responsible for lost data, lost profits, indirect
+      damages, or consequences resulting from use of the service except where liability cannot be
+      limited by law.
+    </p>
+
+    <h2>Termination</h2>
+    <p>
+      You may stop using the service at any time. We may suspend or terminate access if you violate
+      these Terms, create risk for the service or other users, or if continued operation becomes
+      impractical.
+    </p>
+
+    <h2>Contact</h2>
+    <p>
+      For questions about these Terms, contact <a href="mailto:support@efficienthypothesis.com">support@efficienthypothesis.com</a>.
+    </p>
+  </article>
+{% endblock %}
+
+{% block footer %}
+  {% include "footer.html" %}
+{% endblock %}

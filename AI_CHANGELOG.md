@@ -1,5 +1,11 @@
 # AI Changelog
 
+## 2026-06-22 - Codex (GPT-5) public legal pages
+
+- Codex (GPT-5): added public `/privacy` and `/terms` pages for OpenAI app submission, covering OAuth, workspace data, ChatGPT app tool calls, AWS storage, user content, acceptable use, and support contact language.
+- Codex (GPT-5): linked Privacy and Terms from the public footer.
+- Codex (GPT-5): added `APP_SUBMISSION_TODO.md` to track the pending demo recording URL.
+
 ## 2026-06-21 - Codex (GPT-5) task date colors
 
 - Codex (GPT-5): colored valid task date text by local-day urgency: recent past dates green, today orange, future dates red, and dates seven or more days old in the normal text color.
