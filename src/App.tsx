@@ -10,6 +10,7 @@ import type {
   WorkspaceState
 } from "./types";
 import { Navbar } from "./components/Navbar";
+import { AccountModal } from "./components/AccountModal";
 import { EditorPanel } from "./components/EditorPanel";
 import { InstructionsModal } from "./components/InstructionsModal";
 import { SettingsModal } from "./components/SettingsModal";
@@ -45,6 +46,7 @@ export function App({ bootstrap }: AppProps) {
   );
   const [loading, setLoading] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
   const [instructionsOpen, setInstructionsOpen] = useState(false);
   const [locked, setLocked] = useState(false);
   const [recoveryKeyInput, setRecoveryKeyInput] = useState("");
@@ -323,6 +325,7 @@ export function App({ bootstrap }: AppProps) {
         <Navbar
           user={user}
           onSettings={() => setSettingsOpen(true)}
+          onAccount={() => setAccountOpen(true)}
           onInstructions={() => setInstructionsOpen(true)}
         />
         <main className="locked-workspace">
@@ -350,6 +353,7 @@ export function App({ bootstrap }: AppProps) {
             </p>
           </section>
         </main>
+        <AccountModal open={accountOpen} user={user} onClose={() => setAccountOpen(false)} />
         <InstructionsModal open={instructionsOpen} onClose={() => setInstructionsOpen(false)} />
       </div>
     );
@@ -360,6 +364,7 @@ export function App({ bootstrap }: AppProps) {
       <Navbar
         user={user}
         onSettings={() => setSettingsOpen(true)}
+        onAccount={() => setAccountOpen(true)}
         onInstructions={() => setInstructionsOpen(true)}
       />
       <main className="workspace">
@@ -382,7 +387,6 @@ export function App({ bootstrap }: AppProps) {
       <div className={`save-status ${saveStatus}`}>{saveStatusText(saveStatus, loading)}</div>
       <SettingsModal
         open={settingsOpen}
-        user={user}
         state={workspace}
         onClose={() => setSettingsOpen(false)}
         onStateChange={setLocalWorkspace}
@@ -391,6 +395,7 @@ export function App({ bootstrap }: AppProps) {
         onBeginRawEdit={beginRawEdit}
         onArchiveNode={archiveSavedBlock}
       />
+      <AccountModal open={accountOpen} user={user} onClose={() => setAccountOpen(false)} />
       <InstructionsModal open={instructionsOpen} onClose={() => setInstructionsOpen(false)} />
     </div>
   );

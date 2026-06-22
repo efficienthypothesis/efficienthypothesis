@@ -1,5 +1,10 @@
 # AI Changelog
 
+## 2026-06-22 - Codex (GPT-5) account modal split
+
+- Codex (GPT-5): moved encryption controls and delete-account controls out of Settings into a separate Account modal opened from the profile menu.
+- Codex (GPT-5): updated Instructions, Privacy, Terms, and MCP notes to point recovery-key, ChatGPT-grant, and account-deletion users to the new Account modal.
+
 ## 2026-06-22 - Codex (GPT-5) encrypted workspace storage
 
 - Codex (GPT-5): added browser-held AES-GCM workspace encryption, encrypted local cache, recovery-key import/export, and a locked-workspace recovery screen.

@@ -521,6 +521,16 @@ input {
   box-shadow: 0 24px 70px rgba(48, 38, 27, 0.25);
 }
 
+.account-modal {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: min(720px, calc(100vw - 44px));
+  max-height: min(760px, calc(100vh - 44px));
+  border: 1px solid var(--border);
+  background: var(--panel-bg);
+  box-shadow: 0 24px 70px rgba(48, 38, 27, 0.25);
+}
+
 .instructions-modal {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
@@ -597,6 +607,11 @@ input {
   overflow: hidden;
 }
 
+.account-body {
+  min-height: 0;
+  overflow: auto;
+}
+
 .instructions-body {
   min-height: 0;
   overflow: auto;
@@ -643,17 +658,6 @@ input {
 
 .settings-body > .editor-panel {
   height: 100%;
-  border-right: 0;
-}
-
-.profile-settings {
-  display: grid;
-  grid-template-rows: minmax(0, 1fr) auto auto;
-  height: 100%;
-}
-
-.profile-settings > .editor-panel {
-  min-height: 0;
   border-right: 0;
 }
 
@@ -753,6 +757,11 @@ input {
 
 .delete-status {
   color: var(--danger);
+}
+
+.account-body .encryption-zone,
+.account-body .danger-zone {
+  border-top: 0;
 }
 
 .routine-settings {

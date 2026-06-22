@@ -76,11 +76,11 @@ Timetable:
             <h3>Encryption and ChatGPT</h3>
             <p>
               Your workspace is encrypted before it is saved to the server. Copy your recovery key
-              from Settings &gt; Profile and store it privately. If the key is lost, the workspace
+              from Account &gt; Encryption and store it privately. If the key is lost, the workspace
               cannot be recovered.
             </p>
             <p>
-              ChatGPT tools need a separate one-month access grant from Settings &gt; Profile. You can
+              ChatGPT tools need a separate one-month access grant from Account &gt; Encryption. You can
               revoke that grant at any time.
             </p>
           </section>

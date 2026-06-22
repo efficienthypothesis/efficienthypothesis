@@ -6,10 +6,11 @@ import { ProfileMenu } from "./ProfileMenu";
 type NavbarProps = {
   user: EHUser;
   onSettings: () => void;
+  onAccount: () => void;
   onInstructions: () => void;
 };
 
-export function Navbar({ user, onSettings, onInstructions }: NavbarProps) {
+export function Navbar({ user, onSettings, onAccount, onInstructions }: NavbarProps) {
   const today = new Date();
   const dates = getSevenDayWindow(today);
   const todayKey = today.toDateString();
@@ -33,7 +34,12 @@ export function Navbar({ user, onSettings, onInstructions }: NavbarProps) {
         </div>
       </div>
       <div className="topbar-right">
-        <ProfileMenu user={user} onSettings={onSettings} onInstructions={onInstructions} />
+        <ProfileMenu
+          user={user}
+          onSettings={onSettings}
+          onAccount={onAccount}
+          onInstructions={onInstructions}
+        />
       </div>
     </header>
   );
