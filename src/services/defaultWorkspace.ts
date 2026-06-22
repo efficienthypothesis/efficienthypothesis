@@ -64,6 +64,7 @@ export function emptyNodeCollections(): NodeCollections {
 
 export function createDefaultWorkspace(userId: string): WorkspaceState {
   const now = nowIso();
+  const today = new Date();
   const documents = {
     tasks: makeDocument(userId, "tasks", [section("Tasks"), empty()]),
     websites_subscriptions: makeDocument(userId, "websites_subscriptions", [
@@ -114,6 +115,12 @@ export function createDefaultWorkspace(userId: string): WorkspaceState {
     documents,
     nodes: emptyNodeCollections(),
     routineAsset,
+    dailyTimetable: {
+      activeLocalDate: formatLocalDateKey(today),
+      activeRoutineDocumentKey: routineKeys[today.getDay()],
+      activeTimetableDocumentId: documents.timetable.id,
+      updatedAt: now
+    },
     createdAt: now,
     updatedAt: now
   };
@@ -125,4 +132,11 @@ export function getRoutineDocumentKeys(): EditorDocumentKey[] {
 
 export function getRoutineLabels(): string[] {
   return routineLabels;
+}
+
+function formatLocalDateKey(date: Date): string {
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }

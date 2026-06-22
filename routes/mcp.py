@@ -386,6 +386,15 @@ def _normalize_workspace(state, user_id):
             "updatedAt": now,
         },
     )
+    state.setdefault(
+        "dailyTimetable",
+        {
+            "activeLocalDate": None,
+            "activeRoutineDocumentKey": None,
+            "activeTimetableDocumentId": None,
+            "updatedAt": now,
+        },
+    )
     return state
 
 
@@ -401,6 +410,12 @@ def _create_default_workspace(user_id):
             "userId": user_id,
             "timetableIds": [None, None, None, None, None, None, None],
             "createdAt": now,
+            "updatedAt": now,
+        },
+        "dailyTimetable": {
+            "activeLocalDate": None,
+            "activeRoutineDocumentKey": None,
+            "activeTimetableDocumentId": None,
             "updatedAt": now,
         },
         "createdAt": now,

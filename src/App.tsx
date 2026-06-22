@@ -29,6 +29,7 @@ import {
   createOrUpdateNodeFromMacro,
   nodeToMacro
 } from "./services/nodeService";
+import { applyRoutineRollover } from "./services/routineRollover";
 import { parseMacro } from "./utils/macroParser";
 import { makeRawEditDraftBlocks } from "./utils/model";
 
@@ -76,11 +77,18 @@ export function App({ bootstrap }: AppProps) {
     Promise.all([ensureUserTimezone(), loadWorkspace(bootstrap.user.id)])
       .then(([, loadedWorkspace]) => {
         if (cancelled) return;
+        const rollover = applyRoutineRollover(loadedWorkspace);
         lastSyncedUpdatedAt.current = loadedWorkspace.updatedAt || null;
-        savedRevision.current = localRevision.current;
+        if (rollover.changed) {
+          savedRevision.current = localRevision.current;
+          localRevision.current += 1;
+          setSaveStatus("saving");
+        } else {
+          savedRevision.current = localRevision.current;
+        }
         saveBlockedByConflict.current = false;
         setLocked(false);
-        setWorkspace(loadedWorkspace);
+        setWorkspace(rollover.state);
         setLoading(false);
         hasLoaded.current = true;
       })
@@ -143,6 +151,18 @@ export function App({ bootstrap }: AppProps) {
     };
   }, [workspace]);
 
+  const applyRoutineRolloverIfClean = useCallback(() => {
+    if (!hasLoaded.current || loading) return false;
+    if (saveInFlight.current || localRevision.current !== savedRevision.current) return false;
+    const rollover = applyRoutineRollover(workspaceRef.current);
+    if (!rollover.changed) return false;
+    saveBlockedByConflict.current = false;
+    localRevision.current += 1;
+    setWorkspace(rollover.state);
+    setSaveStatus("saving");
+    return true;
+  }, [loading]);
+
   const refreshFromServerIfClean = useCallback(() => {
     if (!hasLoaded.current || loading || refreshInFlight.current) return;
     if (saveInFlight.current || localRevision.current !== savedRevision.current) return;
@@ -153,13 +173,23 @@ export function App({ bootstrap }: AppProps) {
         if (!serverWorkspace) return;
         const serverUpdatedAt = serverWorkspace.updatedAt || null;
         if (!isNewerTimestamp(serverUpdatedAt, lastSyncedUpdatedAt.current)) {
-          setSaveStatus((current) => (current === "syncing" ? "saved" : current));
+          if (!applyRoutineRolloverIfClean()) {
+            setSaveStatus((current) => (current === "syncing" ? "saved" : current));
+          }
           return;
         }
+        const rollover = applyRoutineRollover(serverWorkspace);
         lastSyncedUpdatedAt.current = serverUpdatedAt;
-        savedRevision.current = localRevision.current;
         saveBlockedByConflict.current = false;
-        setWorkspace(serverWorkspace);
+        if (rollover.changed) {
+          savedRevision.current = localRevision.current;
+          localRevision.current += 1;
+          setWorkspace(rollover.state);
+          setSaveStatus("saving");
+          return;
+        }
+        savedRevision.current = localRevision.current;
+        setWorkspace(rollover.state);
         setSaveStatus("saved");
       })
       .catch(() => {
@@ -168,7 +198,7 @@ export function App({ bootstrap }: AppProps) {
       .finally(() => {
         refreshInFlight.current = false;
       });
-  }, [loading]);
+  }, [applyRoutineRolloverIfClean, loading]);
 
   useEffect(() => {
     function handleFocus() {
@@ -186,6 +216,13 @@ export function App({ bootstrap }: AppProps) {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [refreshFromServerIfClean]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      applyRoutineRolloverIfClean();
+    }, 60_000);
+    return () => window.clearInterval(timer);
+  }, [applyRoutineRolloverIfClean]);
 
   const user = bootstrap.user;
   const visibleDocuments = useMemo(

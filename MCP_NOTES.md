@@ -104,6 +104,13 @@ To create a routine template action, call `create_node` with
 `node_type: "action"` and the target `document_key`, such as
 `routine_monday`.
 
+The browser applies daily timetable rollover after decrypting the workspace. On
+the first load/focus for a new local date, active action nodes from the prior
+main `timetable` document are archived to level 1, and the current weekday
+routine document is cloned into fresh action nodes in the main `timetable`.
+The workspace `dailyTimetable` metadata records the active local date so this
+does not rerun repeatedly on the same day.
+
 ## Mutation Rules
 
 - GPT can create, read, update, archive, and restore structured nodes.

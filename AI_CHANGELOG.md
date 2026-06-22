@@ -1,5 +1,11 @@
 # AI Changelog
 
+## 2026-06-22 - Codex (GPT-5) routine timetable rollover
+
+- Codex (GPT-5): added browser-side daily timetable rollover that archives the previous active timetable action nodes and materializes the current weekday routine into fresh timetable action nodes.
+- Codex (GPT-5): added daily timetable metadata to new/default workspaces and MCP-normalized workspaces so rollover only happens once per local date.
+- Codex (GPT-5): added unit tests for routine rollover archiving and materialization behavior.
+
 ## 2026-06-22 - Codex (GPT-5) account modal split
 
 - Codex (GPT-5): moved encryption controls and delete-account controls out of Settings into a separate Account modal opened from the profile menu.

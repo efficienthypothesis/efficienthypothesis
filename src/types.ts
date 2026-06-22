@@ -128,6 +128,13 @@ export type RoutineAsset = {
   updatedAt: string;
 };
 
+export type DailyTimetableState = {
+  activeLocalDate: string | null;
+  activeRoutineDocumentKey: EditorDocumentKey | null;
+  activeTimetableDocumentId: string | null;
+  updatedAt: string;
+};
+
 export type TaskNode = BaseNode & {
   note: string | null;
   datetimeUtc: string | null;
@@ -189,6 +196,7 @@ export type WorkspaceState = {
   documents: Record<EditorDocumentKey, EditorDocument>;
   nodes: NodeCollections;
   routineAsset: RoutineAsset;
+  dailyTimetable?: DailyTimetableState;
   createdAt: string;
   updatedAt: string;
 };
