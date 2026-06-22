@@ -4,6 +4,7 @@
 
 - Codex (GPT-5): colored valid task date text by local-day urgency: recent past dates green, today orange, future dates red, and dates seven or more days old in the normal text color.
 - Codex (GPT-5): limited the color treatment to the date line of saved task rows, leaving task names, tags, note previews, unsupported date text, and time lines unchanged.
+- Codex (GPT-5): swapped the past/future task date colors so recent past dates render red and future dates render green.
 
 ## 2026-06-21 - Codex (GPT-5) focus sync
 
