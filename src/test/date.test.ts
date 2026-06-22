@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   formatDateTimeLocal,
+  getTaskDateTone,
   hasExplicitTime,
   isSupportedTaskDateInput,
   parseLocalDateTimeToUtc
@@ -40,5 +41,16 @@ describe("date utilities", () => {
     expect(parseLocalDateTimeToUtc("5/5/2026 garbage")).toBeNull();
     expect(isSupportedTaskDateInput("May 5")).toBe(false);
     expect(isSupportedTaskDateInput("5/5/2026, 2:00pm")).toBe(true);
+  });
+
+  it("classifies valid task dates relative to the current local date", () => {
+    const today = new Date(2026, 5, 22, 9, 0, 0, 0);
+    expect(getTaskDateTone(new Date(2026, 5, 21, 23, 30, 0, 0).toISOString(), today)).toBe(
+      "recent-past"
+    );
+    expect(getTaskDateTone(new Date(2026, 5, 22, 0, 1, 0, 0).toISOString(), today)).toBe("today");
+    expect(getTaskDateTone(new Date(2026, 5, 23, 0, 0, 0, 0).toISOString(), today)).toBe("future");
+    expect(getTaskDateTone(new Date(2026, 5, 15, 23, 59, 0, 0).toISOString(), today)).toBeNull();
+    expect(getTaskDateTone("garbage", today)).toBeNull();
   });
 });

@@ -131,6 +131,24 @@ export function formatDateTimeLocal(iso: string | null, includeTime = true): str
   return `${dateText},\n${timeText}`;
 }
 
+export type TaskDateTone = "recent-past" | "today" | "future";
+
+export function getTaskDateTone(iso: string | null, today = new Date()): TaskDateTone | null {
+  if (!iso) return null;
+  const taskDate = new Date(iso);
+  if (Number.isNaN(taskDate.getTime())) return null;
+
+  const dayDifference = localDayNumber(taskDate) - localDayNumber(today);
+  if (dayDifference <= -7) return null;
+  if (dayDifference < 0) return "recent-past";
+  if (dayDifference === 0) return "today";
+  return "future";
+}
+
+function localDayNumber(date: Date): number {
+  return Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / 86_400_000;
+}
+
 export function formatTimeLocal(raw: string | null): string {
   if (!raw) return "";
   const parsed = parseTime(raw);

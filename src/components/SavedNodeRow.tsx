@@ -1,5 +1,7 @@
+import type { ReactNode } from "react";
 import type { AnyNode, AssetNode, IdentityNode, NodeType, TaskNode, WorkspaceState } from "../types";
-import { formatDateTimeLocal, formatTimeLocal } from "../utils/date";
+import type { TaskDateTone } from "../utils/date";
+import { formatDateTimeLocal, formatTimeLocal, getTaskDateTone } from "../utils/date";
 import { formatSubscriptionRateDisplay } from "../utils/subscriptions";
 import {
   getNodeByType,
@@ -30,6 +32,7 @@ export function SavedNodeRow({
   }
 
   const fields = getFields(state, nodeType, node);
+  const taskDateTone = getTaskDateToneForNode(nodeType, node);
   const tagColor = "tagId" in node ? getTagColor(state, node.tagId) : null;
   const note = "note" in node ? node.note : null;
   const notePreviewLines = note ? getNotePreviewLines(note) : [];
@@ -47,7 +50,7 @@ export function SavedNodeRow({
     >
       <div className="saved-fields">
         <div className="saved-field saved-field-name">{formatNameField(fields[0])}</div>
-        <div className="saved-field">{fields[1]}</div>
+        <div className="saved-field">{formatTaskDateField(fields[1], taskDateTone)}</div>
         <div className="saved-field">{fields[2]}</div>
       </div>
       {notePreviewLines.length > 0 ? (
@@ -76,6 +79,35 @@ export function formatNameField(name: string): string {
     .map((part) => part.trim())
     .filter(Boolean);
   return parts.length > 1 ? parts.join("\n") : name;
+}
+
+function formatTaskDateField(value: string, tone: TaskDateTone | null): ReactNode {
+  if (!tone || !value) return value;
+  const [dateLine, ...restLines] = value.split("\n");
+  return (
+    <>
+      <span className={`task-date-text ${dateToneClassName(tone)}`}>{dateLine}</span>
+      {restLines.map((line, index) => (
+        <span key={`${line}:${index}`}>
+          {"\n"}
+          {line}
+        </span>
+      ))}
+    </>
+  );
+}
+
+function dateToneClassName(tone: TaskDateTone): string {
+  if (tone === "recent-past") return "recent-past";
+  if (tone === "today") return "today";
+  return "future";
+}
+
+function getTaskDateToneForNode(nodeType: NodeType, node: AnyNode): TaskDateTone | null {
+  if (nodeType !== "task" || !("datetimeUtc" in node)) return null;
+  const task = node as TaskNode;
+  if (shouldRenderTaskDatetimeRaw(task)) return null;
+  return getTaskDateTone(task.datetimeUtc);
 }
 
 function getFields(state: WorkspaceState, nodeType: NodeType, node: AnyNode): [string, string, string] {
