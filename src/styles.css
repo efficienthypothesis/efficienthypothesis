@@ -1,15 +1,16 @@
 :root {
   color-scheme: light;
-  --app-bg: #f4ecdf;
-  --nav-bg: #e8ddce;
-  --panel-bg: #fbf7ef;
-  --gutter-bg: #ede3d4;
-  --section-bg: #d9d4cb;
-  --border: #c8bbab;
-  --text: #29231d;
-  --muted: #756a5f;
-  --blue: #cfe4ff;
-  --blue-border: #82aeda;
+  --app-bg: #f5f7fb;
+  --nav-bg: #ffffff;
+  --panel-bg: #fbfcff;
+  --gutter-bg: #eef2f7;
+  --section-bg: #e4e9f2;
+  --border: #d8dee8;
+  --text: #172033;
+  --muted: #64748b;
+  --blue: #dce8ff;
+  --blue-border: #9ab6ee;
+  --accent: #233a8b;
   --danger: #9f2f2f;
   --task-date-past: #b3342f;
   --task-date-today: #b96812;
@@ -106,7 +107,7 @@ input {
   grid-template-columns: repeat(7, 1fr);
   overflow: hidden;
   border: 1px solid var(--border);
-  background: #f8f2e8;
+  background: #f8fafc;
 }
 
 .week-cell {
@@ -117,7 +118,7 @@ input {
   border-right: 1px solid var(--border);
   font-family: var(--mono);
   font-size: 13px;
-  color: #44392e;
+  color: #334155;
 }
 
 .week-cell:last-child {
@@ -125,8 +126,9 @@ input {
 }
 
 .week-cell.active {
-  background: var(--blue);
-  box-shadow: inset 0 0 0 1px var(--blue-border);
+  background: var(--accent);
+  color: #ffffff;
+  box-shadow: inset 0 0 0 1px #182a68;
 }
 
 .profile-menu {
@@ -140,7 +142,7 @@ input {
   border-radius: 50%;
   padding: 0;
   overflow: hidden;
-  background: #f9f3e9;
+  background: #f8fafc;
   color: var(--text);
   cursor: pointer;
 }
@@ -164,8 +166,8 @@ input {
   z-index: 30;
   min-width: 132px;
   border: 1px solid var(--border);
-  background: #fbf7ef;
-  box-shadow: 0 12px 24px rgba(67, 48, 27, 0.15);
+  background: var(--panel-bg);
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.14);
   padding: 4px;
 }
 
@@ -210,7 +212,7 @@ input {
 .editor-scroll {
   height: 100%;
   overflow: auto;
-  scrollbar-color: #b8ab9a transparent;
+  scrollbar-color: #b9c2cf transparent;
   scrollbar-width: thin;
   font-family: var(--mono);
   font-size: 13px;
@@ -269,7 +271,7 @@ input {
   min-height: 22px;
   padding: 0 8px;
   background: var(--section-bg);
-  color: #38312a;
+  color: #1f2937;
   font-weight: 650;
   white-space: pre-wrap;
 }
@@ -310,16 +312,16 @@ input {
 }
 
 .editable-line:focus {
-  background: #fffbf5;
-  box-shadow: inset 2px 0 0 #a98d66;
+  background: #f8fbff;
+  box-shadow: inset 2px 0 0 #4866b0;
 }
 
 .draft-line {
-  background: #fff8e8;
+  background: #f4f7ff;
 }
 
 .draft-line.invalid {
-  background: #fff0ee;
+  background: #fff5f5;
   box-shadow: inset 2px 0 0 var(--danger);
 }
 
@@ -331,7 +333,7 @@ input {
   height: 22px;
   padding: 0 8px;
   overflow: hidden;
-  color: rgba(117, 106, 95, 0.52);
+  color: rgba(100, 116, 139, 0.58);
   font-family: var(--mono);
   font-size: 13px;
   line-height: 22px;
@@ -344,7 +346,7 @@ input {
 }
 
 .field-hint-value {
-  color: rgba(117, 106, 95, 0.52);
+  color: rgba(100, 116, 139, 0.58);
 }
 
 .draft-error {
@@ -382,7 +384,7 @@ input {
       color-mix(in srgb, var(--tag-color, transparent) 30%, transparent),
       transparent 70%
     ),
-    #fffbf5;
+    #f8fbff;
 }
 
 .saved-row.missing {
@@ -449,7 +451,7 @@ input {
   z-index: 50;
   display: grid;
   place-items: center;
-  background: rgba(48, 38, 27, 0.28);
+  background: rgba(15, 23, 42, 0.28);
 }
 
 .locked-workspace {
@@ -465,7 +467,7 @@ input {
   border: 1px solid var(--border);
   background: var(--panel-bg);
   padding: 22px;
-  box-shadow: 0 18px 44px rgba(48, 38, 27, 0.14);
+  box-shadow: 0 18px 44px rgba(15, 23, 42, 0.14);
 }
 
 .unlock-panel h1 {
@@ -488,7 +490,7 @@ input {
   width: 100%;
   resize: vertical;
   border: 1px solid var(--border);
-  background: #fffaf3;
+  background: #ffffff;
   color: var(--text);
   font-family: var(--mono);
   padding: 8px;
@@ -518,7 +520,7 @@ input {
   height: min(760px, calc(100vh - 44px));
   border: 1px solid var(--border);
   background: var(--panel-bg);
-  box-shadow: 0 24px 70px rgba(48, 38, 27, 0.25);
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.22);
 }
 
 .account-modal {
@@ -528,7 +530,7 @@ input {
   max-height: min(760px, calc(100vh - 44px));
   border: 1px solid var(--border);
   background: var(--panel-bg);
-  box-shadow: 0 24px 70px rgba(48, 38, 27, 0.25);
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.22);
 }
 
 .instructions-modal {
@@ -538,7 +540,7 @@ input {
   max-height: min(760px, calc(100vh - 44px));
   border: 1px solid var(--border);
   background: var(--panel-bg);
-  box-shadow: 0 24px 70px rgba(48, 38, 27, 0.25);
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.22);
 }
 
 .settings-top {
@@ -578,7 +580,7 @@ input {
 .archive-row button,
 .encryption-zone button {
   border: 1px solid var(--border);
-  background: #f8f2e8;
+  background: #f8fafc;
   color: var(--text);
   padding: 6px 10px;
   cursor: pointer;
@@ -586,7 +588,7 @@ input {
 
 .delete-account-button {
   border: 1px solid #9f2f2f;
-  background: #fff2ef;
+  background: #fff5f5;
   color: #9f2f2f;
   padding: 7px 10px;
   cursor: pointer;
@@ -642,7 +644,7 @@ input {
 
 .instructions-body code {
   padding: 1px 4px;
-  background: #eee4d5;
+  background: #eef2f7;
   border: 1px solid var(--border);
 }
 
@@ -650,7 +652,7 @@ input {
   margin: 8px 0 0;
   padding: 10px 12px;
   overflow: auto;
-  background: #f8f2e8;
+  background: #f8fafc;
   border: 1px solid var(--border);
   white-space: pre-wrap;
   line-height: 1.45;
@@ -664,7 +666,7 @@ input {
 .encryption-zone {
   padding: 12px 14px;
   border-top: 1px solid var(--border);
-  background: #f7f2ea;
+  background: #f8fafc;
   color: var(--text);
   font-size: 13px;
 }
@@ -697,7 +699,7 @@ input {
   margin-top: 8px;
   resize: vertical;
   border: 1px solid var(--border);
-  background: #fffaf3;
+  background: #ffffff;
   color: var(--text);
   font-family: var(--mono);
   font-size: 12px;
@@ -719,7 +721,7 @@ input {
 .danger-zone {
   padding: 12px 14px;
   border-top: 1px solid var(--border);
-  background: #fff8f3;
+  background: #fff7f7;
   color: var(--text);
   font-size: 13px;
 }

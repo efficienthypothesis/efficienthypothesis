@@ -1,21 +1,21 @@
 /* === FOOTER === */
 .footer {
   padding: 24px 48px;
-  background: #f8f9fa;
-  border-top: 1px solid #e5e7eb;
+  background: #eef2f7;
+  border-top: 1px solid #d8dee8;
   text-align: center;
   font-size: 0.82rem;
-  color: #5f6368;
+  color: #64748b;
   font-family: 'Inter', 'Roboto', sans-serif;
 }
 
 .footer a {
-  color: #5f6368;
+  color: #64748b;
   text-decoration: none;
 }
 
 .footer a:hover {
-  color: #202124;
+  color: #172033;
   text-decoration: underline;
 }
 

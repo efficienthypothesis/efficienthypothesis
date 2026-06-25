@@ -1,7 +1,7 @@
 .legal-page {
   max-width: 920px;
   margin: 0 auto;
-  color: #29231d;
+  color: #172033;
   line-height: 1.65;
 }
 
@@ -13,7 +13,7 @@
 
 .legal-page .updated {
   margin: 0 0 32px;
-  color: #756a5f;
+  color: #64748b;
   font-size: 0.95rem;
 }
 
@@ -36,7 +36,7 @@
 }
 
 .legal-page a {
-  color: #6a4b24;
+  color: #233a8b;
   text-decoration: underline;
   text-underline-offset: 3px;
 }
@@ -44,8 +44,8 @@
 .legal-callout {
   margin: 24px 0;
   padding: 16px 18px;
-  background: #fbf7ef;
-  border: 1px solid #c8bbab;
+  background: #f8fafc;
+  border: 1px solid #d8dee8;
 }
 
 .footer {

@@ -1,5 +1,9 @@
 # AI Changelog
 
+## 2026-06-24 - Codex (GPT-5) grey-blue palette refresh
+
+- Codex (GPT-5): updated only the app and public-page color palette from warm beige/brown tones to a cleaner grey-blue/slate aesthetic while preserving the existing layout, logo, and functionality.
+
 ## 2026-06-24 - Codex (GPT-5) legacy route removal
 
 - Codex (GPT-5): removed pre-React Efficient Hypothesis route registrations and legacy route modules for old DynamoDB/S3 tasks, actions, routines, schedules, goals, folders, notes, drafts, timelogs, homescreen, mobile auth, and in-app chatbot APIs.

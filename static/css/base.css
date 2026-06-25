@@ -7,8 +7,8 @@
 
 body {
   font-family: 'Inter', 'Roboto', -apple-system, BlinkMacSystemFont, sans-serif;
-  color: #202124;
-  background: #fff;
+  color: #172033;
+  background: #f5f7fb;
   min-height: 100vh;
 }
 
@@ -17,7 +17,7 @@ main {
 }
 
 a {
-  color: #1a73e8;
+  color: #233a8b;
   text-decoration: none;
 }
 

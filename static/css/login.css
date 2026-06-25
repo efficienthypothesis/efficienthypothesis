@@ -11,19 +11,19 @@
   align-items: center;
   justify-content: center;
   padding: 48px;
-  background: #fff;
+  background: #ffffff;
 }
 
 .login-left h1 {
   font-size: 1.8rem;
   font-weight: 600;
-  color: #202124;
+  color: #172033;
   margin-bottom: 8px;
 }
 
 .login-left p {
   font-size: 0.95rem;
-  color: #5f6368;
+  color: #64748b;
   margin-bottom: 32px;
 }
 
@@ -33,7 +33,7 @@
 
 .login-right {
   flex: 1;
-  background: #f8f9fa;
+  background: #eef2f7;
   display: flex;
   align-items: center;
   justify-content: center;
