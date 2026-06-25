@@ -797,10 +797,15 @@ input {
   display: grid;
   grid-template-columns: 1fr 1fr;
   height: 100%;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .archive-panel {
+  display: grid;
+  grid-template-rows: 26px minmax(0, 1fr);
   min-width: 0;
+  min-height: 0;
   border-right: 1px solid var(--border);
 }
 
@@ -818,8 +823,9 @@ input {
 }
 
 .archive-editor {
-  height: calc(100% - 26px);
-  overflow: auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
   font-family: var(--mono);
   font-size: 13px;
 }

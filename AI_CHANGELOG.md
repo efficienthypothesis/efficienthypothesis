@@ -1,5 +1,9 @@
 # AI Changelog
 
+## 2026-06-24 - Codex (GPT-5) archive tab scrolling fix
+
+- Codex (GPT-5): fixed the Settings Archive tab layout so archived item lists use a bounded scroll area and long archived task lists can be scrolled inside the modal.
+
 ## 2026-06-24 - Codex (GPT-5) grey-blue palette refresh
 
 - Codex (GPT-5): updated only the app and public-page color palette from warm beige/brown tones to a cleaner grey-blue/slate aesthetic while preserving the existing layout, logo, and functionality.
