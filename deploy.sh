@@ -21,7 +21,7 @@ rm -rf "$BUILD_DIR"
 cd "$SCRIPT_DIR"
 npm run build
 mkdir -p "$BUILD_DIR"
-cp app.py config.py chatbot_system_prompt.txt "$BUILD_DIR/"
+cp app.py config.py "$BUILD_DIR/"
 cp -R routes templates static "$BUILD_DIR/"
 if [[ -f requirements-lambda.txt ]]; then
   python3 -m pip install \
