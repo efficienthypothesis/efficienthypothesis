@@ -53,7 +53,7 @@ export function SettingsModal({
       },
       updatedAt: new Date().toISOString()
     });
-    setStatus("Routine template timestamp updated. Daily rollover automation is a backend TODO.");
+    setStatus("Routine template timestamp updated. The next local-date rollover will use this template.");
   }
 
   return (

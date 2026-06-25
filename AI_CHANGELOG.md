@@ -1,5 +1,11 @@
 # AI Changelog
 
+## 2026-06-24 - Codex (GPT-5) legacy route removal
+
+- Codex (GPT-5): removed pre-React Efficient Hypothesis route registrations and legacy route modules for old DynamoDB/S3 tasks, actions, routines, schedules, goals, folders, notes, drafts, timelogs, homescreen, mobile auth, and in-app chatbot APIs.
+- Codex (GPT-5): deleted obsolete migration scripts, chatbot prompt, and old architecture reference file that described the pre-workspace implementation.
+- Codex (GPT-5): updated public landing copy, OAuth consent copy, and Routine settings status text to describe the current encrypted workspace and MCP v3 model.
+
 ## 2026-06-22 - Codex (GPT-5) routine timetable rollover
 
 - Codex (GPT-5): added browser-side daily timetable rollover that archives the previous active timetable action nodes and materializes the current weekday routine into fresh timetable action nodes.

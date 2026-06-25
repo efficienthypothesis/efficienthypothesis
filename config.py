@@ -1,5 +1,4 @@
 import boto3
-import datetime
 import json
 import hmac
 import hashlib
@@ -14,22 +13,11 @@ GOOGLE_CLIENT_ID = os.getenv(
     "GOOGLE_CLIENT_ID",
     "902463711334-g7pehqqis9eh4uq2d8a5mbijf0incu93.apps.googleusercontent.com",
 )
-IOS_GOOGLE_CLIENT_ID = os.getenv(
-    "IOS_GOOGLE_CLIENT_ID",
-    "902463711334-s86okoiv6cd94bn9mkklq7t5j5vm9neq.apps.googleusercontent.com",
-)
-GOOGLE_ALLOWED_CLIENT_IDS = [
-    cid.strip()
-    for cid in (
-        [GOOGLE_CLIENT_ID, IOS_GOOGLE_CLIENT_ID]
-        + os.getenv("GOOGLE_ALLOWED_CLIENT_IDS", "").split(",")
-    )
-    if cid and cid.strip()
-]
 
 # === DynamoDB setup ===
 dynamodb = boto3.resource("dynamodb", region_name="us-east-2")
 user_table = dynamodb.Table("Users")
+# Legacy tables are retained here only so account deletion can remove old user data.
 tasks_table = dynamodb.Table("Tasks")
 actions_table = dynamodb.Table("Actions")
 drafts_table = dynamodb.Table("Drafts")
@@ -39,7 +27,6 @@ oauth_tokens_table = dynamodb.Table("OAuthTokens")
 # === S3 setup ===
 s3 = boto3.client("s3", region_name="us-east-2")
 PRODUCTIVITY_BUCKET = "eh-app-data"
-DEFAULT_COLOR = "#000000"
 
 # === OAuth signing key ===
 OAUTH_SIGNING_KEY = os.getenv("OAUTH_SIGNING_KEY", "CHANGE_ME_oauth_signing_key")
@@ -92,21 +79,6 @@ def _hash_token(token):
     return hashlib.sha256(token.encode()).hexdigest()
 
 
-def _validate_date_range(date_str):
-    """Check that a date/datetime string falls within current year or next year.
-    Returns None if valid, or an error string if invalid."""
-    if not date_str:
-        return None
-    try:
-        year = int(date_str[:4])
-    except (ValueError, IndexError):
-        return None  # can't parse, let other validation handle it
-    now_year = datetime.datetime.now(datetime.timezone.utc).year
-    if year < now_year or year > now_year + 1:
-        return f"Date must be within {now_year} or {now_year + 1}"
-    return None
-
-
 def _get_auth_context():
     """Return auth context dict or None. Supports session cookies and Bearer tokens."""
     if "user" in session:
@@ -142,17 +114,3 @@ def _require_auth():
 def _is_programmatic(ctx):
     """True when the request comes from an OAuth bearer token (MCP/chatbot)."""
     return ctx["source"] == "bearer"
-
-
-def _pattern_matches_date(pattern, first_day, check_date):
-    """Check if check_date matches the recurrence pattern starting from first_day.
-    Pattern format: 'interval:N' or 'set:0,1,3' (0=Mon...6=Sun)."""
-    if pattern.startswith("interval:"):
-        n = int(pattern.split(":")[1])
-        if n < 1:
-            n = 1
-        return (check_date - first_day).days % n == 0
-    if pattern.startswith("set:"):
-        days = [int(d) for d in pattern.split(":")[1].split(",")]
-        return check_date.weekday() in days
-    return False

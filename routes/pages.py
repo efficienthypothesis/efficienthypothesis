@@ -6,13 +6,6 @@ pages_bp = Blueprint('pages', __name__)
 APP_PAGES = {
     "home",
     "workspace",
-    "projects",
-    "tasks",
-    "weekly",
-    "monthly",
-    "dashboard",
-    "settings",
-    "ai",
 }
 
 
@@ -45,48 +38,6 @@ def dynamic_page(page):
         return render_template(f"{page}.html")
     except Exception:
         return "<h1>404 - Page Not Found</h1>", 404
-
-
-@pages_bp.route('/projects')
-def projects_page():
-    if "user" not in session:
-        return redirect(url_for('pages.login_page'))
-    return render_template("app.html", user=session["user"], initial_page="projects")
-
-
-@pages_bp.route('/tasks')
-def tasks_page():
-    if "user" not in session:
-        return redirect(url_for('pages.login_page'))
-    return render_template("app.html", user=session["user"], initial_page="tasks")
-
-
-@pages_bp.route('/monthly')
-def monthly():
-    if "user" not in session:
-        return redirect(url_for('pages.login_page'))
-    return render_template("app.html", user=session["user"], initial_page="monthly")
-
-
-@pages_bp.route('/weekly')
-def weekly():
-    if "user" not in session:
-        return redirect(url_for('pages.login_page'))
-    return render_template("app.html", user=session["user"], initial_page="weekly")
-
-
-@pages_bp.route('/dashboard')
-def dashboard():
-    if "user" not in session:
-        return redirect(url_for('pages.login_page'))
-    return render_template("app.html", user=session["user"], initial_page="dashboard")
-
-
-@pages_bp.route('/settings')
-def settings():
-    if "user" not in session:
-        return redirect(url_for('pages.login_page'))
-    return render_template("app.html", user=session["user"], initial_page="settings")
 
 
 @pages_bp.route('/home')
