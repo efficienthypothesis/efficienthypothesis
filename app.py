@@ -13,6 +13,11 @@ def _required_env(name):
 app = Flask(__name__, template_folder='templates', static_folder='static')
 app.secret_key = _required_env("FLASK_SECRET_KEY")
 app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['SESSION_COOKIE_SECURE'] = (
+    os.getenv("SESSION_COOKIE_SECURE", "1").lower() not in {"0", "false", "no"}
+)
 
 # Register blueprints
 from routes.pages import pages_bp

@@ -1,5 +1,14 @@
 # AI Changelog
 
+## 2026-06-26 - Codex (GPT-5) auth and new-user hardening
+
+- Codex (GPT-5): added secure session-cookie defaults, verified-email enforcement, malformed-login handling, and session rotation during Google login.
+- Codex (GPT-5): narrowed public template routing to intentional public pages and validated saved user timezones.
+- Codex (GPT-5): made malformed workspace API payloads return clean errors and validated ChatGPT grant keys before saving.
+- Codex (GPT-5): validated dynamically registered OAuth redirect URIs and URL-encoded OAuth redirect parameters.
+- Codex (GPT-5): fixed first-login workspace persistence so brand-new encrypted workspaces are saved immediately after server load confirms no workspace exists.
+- Codex (GPT-5): fixed MCP task datetime parsing to use the authenticated user's saved timezone by user ID.
+
 ## 2026-06-26 - Codex (GPT-5) signup redirect fix
 
 - Codex (GPT-5): updated Google sign-in redirects so newly authenticated users land on `/workspace` instead of the removed legacy `/tasks` page, and failed login attempts remain on `/login`.

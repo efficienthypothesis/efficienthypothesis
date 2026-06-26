@@ -641,9 +641,9 @@ def _placements_for_node(state, node_type, node_id):
     return placements
 
 
-def _get_user_timezone(email):
+def _get_user_timezone(user_id):
     try:
-        item = user_table.get_item(Key={"email": email}).get("Item") or {}
+        item = user_table.get_item(Key={"user_id": user_id}).get("Item") or {}
         return ZoneInfo(item.get("timezone") or "UTC")
     except Exception:
         return ZoneInfo("UTC")
@@ -868,7 +868,7 @@ def _create_node(email, user_id, arguments):
         created = existing is None
     else:
         node_id = _make_id(node_type)
-        node = _build_node_from_fields(state, user_id, node_type, node_id, name, note, fields, email)
+        node = _build_node_from_fields(state, user_id, node_type, node_id, name, note, fields)
         created = True
 
     node["rawMacro"] = _node_to_raw_macro(state, node_type, node)
@@ -879,7 +879,7 @@ def _create_node(email, user_id, arguments):
     return _mutation_result("created" if created else "updated", _augment_node(state, node_type, node), created)
 
 
-def _build_node_from_fields(state, user_id, node_type, node_id, name, note, fields, email, existing=None):
+def _build_node_from_fields(state, user_id, node_type, node_id, name, note, fields, existing=None):
     base = _base_node(state, user_id, node_type, node_id, name, existing)
     tag_id = existing.get("tagId") if existing else None
     if node_type in TAGGABLE_NODE_TYPES:
@@ -901,7 +901,7 @@ def _build_node_from_fields(state, user_id, node_type, node_id, name, note, fiel
         return {
             **base,
             "note": explicit_note,
-            "datetimeUtc": _parse_task_datetime(datetime_raw, _get_user_timezone(email)),
+            "datetimeUtc": _parse_task_datetime(datetime_raw, _get_user_timezone(user_id)),
             "datetimeRaw": datetime_raw,
             "datetimeHasTime": _has_explicit_time(datetime_raw),
             "tagId": tag_id,
@@ -990,7 +990,7 @@ def _update_node(email, user_id, arguments):
             "normalizedName": normalized,
         }
     else:
-        node = _build_node_from_fields(state, user_id, node_type, node_id, next_name, note, fields, email, existing)
+        node = _build_node_from_fields(state, user_id, node_type, node_id, next_name, note, fields, existing)
 
     node["rawMacro"] = _node_to_raw_macro(state, node_type, node)
     _set_node(state, node_type, node)

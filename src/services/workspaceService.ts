@@ -31,7 +31,12 @@ export class WorkspaceConflictError extends Error {
   }
 }
 
-export async function loadWorkspace(userId: string): Promise<WorkspaceState> {
+export type LoadWorkspaceResult = {
+  state: WorkspaceState;
+  shouldPersist: boolean;
+};
+
+export async function loadWorkspaceWithMetadata(userId: string): Promise<LoadWorkspaceResult> {
   try {
     const payload = await fetchWorkspacePayload();
     if (payload.encryptedState) {
@@ -39,24 +44,33 @@ export async function loadWorkspace(userId: string): Promise<WorkspaceState> {
       const normalizedState = ensureTagDocumentBlocks(serverState);
       cacheEncryptedWorkspace(userId, payload.encryptedState);
       clearPlaintextWorkspaceCache();
-      return normalizedState;
+      return { state: normalizedState, shouldPersist: false };
     }
     if (payload.state) {
       await ensureWorkspaceKey(userId);
       const normalizedState = ensureTagDocumentBlocks(payload.state);
       const saved = await saveWorkspace(normalizedState, normalizedState.updatedAt || null);
-      return { ...normalizedState, updatedAt: saved.updatedAt };
+      return {
+        state: { ...normalizedState, updatedAt: saved.updatedAt },
+        shouldPersist: false
+      };
     }
+    await ensureWorkspaceKey(userId);
+    return { state: createDefaultWorkspace(userId), shouldPersist: true };
   } catch (error) {
     if (error instanceof WorkspaceLockedError) throw error;
     const cached = await readCachedWorkspace(userId);
-    if (cached) return ensureTagDocumentBlocks(cached);
+    if (cached) return { state: ensureTagDocumentBlocks(cached), shouldPersist: false };
     if (import.meta.env.DEV) {
       console.warn("Using local workspace fallback:", error);
     }
   }
   await ensureWorkspaceKey(userId);
-  return createDefaultWorkspace(userId);
+  return { state: createDefaultWorkspace(userId), shouldPersist: false };
+}
+
+export async function loadWorkspace(userId: string): Promise<WorkspaceState> {
+  return (await loadWorkspaceWithMetadata(userId)).state;
 }
 
 export async function fetchWorkspaceFromServer(): Promise<WorkspaceState | null> {

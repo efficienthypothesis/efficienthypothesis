@@ -3,6 +3,7 @@ import datetime
 import secrets
 import time
 import json
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 from config import (
     s3, PRODUCTIVITY_BUCKET, oauth_tokens_table,
     _require_auth, _is_programmatic, _hash_token, _create_access_token,
@@ -13,6 +14,49 @@ oauth_bp = Blueprint('oauth', __name__)
 
 def _issuer():
     return request.url_root.rstrip("/")
+
+
+def _redirect_with_params(redirect_uri, params):
+    parsed = urlparse(redirect_uri)
+    query_pairs = parse_qsl(parsed.query, keep_blank_values=True)
+    query_pairs.extend((key, value) for key, value in params.items() if value is not None)
+    return urlunparse(parsed._replace(query=urlencode(query_pairs)))
+
+
+def _valid_redirect_uri(uri):
+    if not isinstance(uri, str):
+        return False
+    if len(uri) > 2048:
+        return False
+    parsed = urlparse(uri)
+    if parsed.fragment or not parsed.scheme or not parsed.netloc:
+        return False
+    if parsed.scheme == "https":
+        return True
+    if parsed.scheme == "http" and parsed.hostname in {"localhost", "127.0.0.1"}:
+        return True
+    return False
+
+
+def _normalize_redirect_uris(raw_redirect_uris):
+    if not raw_redirect_uris or not isinstance(raw_redirect_uris, list):
+        raise ValueError("redirect_uris is required (array)")
+    if len(raw_redirect_uris) > 10:
+        raise ValueError("redirect_uris may contain at most 10 URLs")
+    redirect_uris = []
+    seen = set()
+    for raw_uri in raw_redirect_uris:
+        if not isinstance(raw_uri, str):
+            raise ValueError("redirect_uris must contain strings")
+        uri = raw_uri.strip()
+        if not _valid_redirect_uri(uri):
+            raise ValueError("redirect_uris must be HTTPS URLs, except localhost HTTP for development")
+        if uri not in seen:
+            redirect_uris.append(uri)
+            seen.add(uri)
+    if not redirect_uris:
+        raise ValueError("redirect_uris is required (array)")
+    return redirect_uris
 
 
 @oauth_bp.route('/.well-known/oauth-protected-resource', methods=['GET'])
@@ -98,13 +142,16 @@ def api_oauth_clients_create():
         return err
     if _is_programmatic(ctx):
         return jsonify({"error": "Requires browser session"}), 403
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     name = (data.get("name") or "").strip()
-    redirect_uris = data.get("redirect_uris", [])
     if not name:
         return jsonify({"error": "name is required"}), 400
-    if not redirect_uris or not isinstance(redirect_uris, list):
-        return jsonify({"error": "redirect_uris is required (array)"}), 400
+    if len(name) > 80:
+        return jsonify({"error": "name is too long"}), 400
+    try:
+        redirect_uris = _normalize_redirect_uris(data.get("redirect_uris", []))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
 
     client_id = "eh_" + secrets.token_hex(16)
     client_secret = "ehs_" + secrets.token_hex(32)
@@ -164,6 +211,8 @@ def oauth_authorize_get():
 
     if response_type != "code":
         return jsonify({"error": "unsupported_response_type"}), 400
+    if scope != "full_access":
+        return jsonify({"error": "invalid_scope"}), 400
 
     email = session["user"]["email"]
     clients = _load_registered_oauth_clients(email)
@@ -193,6 +242,8 @@ def oauth_authorize_post():
     redirect_uri = request.form.get("redirect_uri", "")
     state = request.form.get("state", "")
     scope = request.form.get("scope", "full_access")
+    if scope != "full_access":
+        return jsonify({"error": "invalid_scope"}), 400
 
     email = session["user"]["email"]
     user_id = session["user"]["id"]
@@ -203,8 +254,10 @@ def oauth_authorize_post():
         return jsonify({"error": "invalid_client"}), 400
 
     if action == "deny":
-        sep = "&" if "?" in redirect_uri else "?"
-        return redirect(redirect_uri + sep + "error=access_denied&state=" + state)
+        return redirect(_redirect_with_params(redirect_uri, {
+            "error": "access_denied",
+            "state": state,
+        }))
 
     # Generate auth code
     code = secrets.token_urlsafe(32)
@@ -223,8 +276,10 @@ def oauth_authorize_post():
         "created_at": datetime.datetime.utcnow().isoformat() + "Z",
     })
 
-    sep = "&" if "?" in redirect_uri else "?"
-    return redirect(redirect_uri + sep + "code=" + code + "&state=" + state)
+    return redirect(_redirect_with_params(redirect_uri, {
+        "code": code,
+        "state": state,
+    }))
 
 
 @oauth_bp.route('/oauth/token', methods=['POST'])

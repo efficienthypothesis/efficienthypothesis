@@ -21,7 +21,7 @@ import {
   ensureUserTimezone,
   fetchWorkspaceFromServer,
   importWorkspaceKey,
-  loadWorkspace,
+  loadWorkspaceWithMetadata,
   saveWorkspace
 } from "./services/workspaceService";
 import {
@@ -74,12 +74,15 @@ export function App({ bootstrap }: AppProps) {
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([ensureUserTimezone(), loadWorkspace(bootstrap.user.id)])
-      .then(([, loadedWorkspace]) => {
+    Promise.all([ensureUserTimezone(), loadWorkspaceWithMetadata(bootstrap.user.id)])
+      .then(([, loadResult]) => {
         if (cancelled) return;
+        const loadedWorkspace = loadResult.state;
         const rollover = applyRoutineRollover(loadedWorkspace);
-        lastSyncedUpdatedAt.current = loadedWorkspace.updatedAt || null;
-        if (rollover.changed) {
+        lastSyncedUpdatedAt.current = loadResult.shouldPersist
+          ? null
+          : loadedWorkspace.updatedAt || null;
+        if (rollover.changed || loadResult.shouldPersist) {
           savedRevision.current = localRevision.current;
           localRevision.current += 1;
           setSaveStatus("saving");

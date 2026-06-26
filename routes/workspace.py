@@ -48,7 +48,7 @@ def api_workspace_put():
     if err:
         return err
     email = ctx["email"]
-    data = request.get_json() or {}
+    data = request.get_json(silent=True) or {}
     state = data.get("state")
     encrypted_state = data.get("encryptedState")
     if encrypted_state is not None and not is_encrypted_workspace(encrypted_state):
@@ -116,9 +116,12 @@ def api_workspace_chatgpt_grant_post():
         return err
     if _is_programmatic(ctx):
         return jsonify({"error": "ChatGPT grant requires a browser session"}), 403
-    data = request.get_json() or {}
+    data = request.get_json(silent=True) or {}
     workspace_key = data.get("workspaceKey", "")
-    grant = save_chatgpt_grant(ctx["email"], workspace_key)
+    try:
+        grant = save_chatgpt_grant(ctx["email"], workspace_key)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
     return jsonify({
         "active": True,
         "expiresAt": grant["expiresAt"],

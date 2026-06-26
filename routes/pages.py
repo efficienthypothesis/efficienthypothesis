@@ -1,4 +1,5 @@
 from flask import Blueprint, render_template, request, redirect, url_for, session, jsonify, Response
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from config import s3, PRODUCTIVITY_BUCKET, GOOGLE_CLIENT_ID, _require_auth, user_table
 
 pages_bp = Blueprint('pages', __name__)
@@ -6,6 +7,11 @@ pages_bp = Blueprint('pages', __name__)
 APP_PAGES = {
     "home",
     "workspace",
+}
+
+PUBLIC_PAGES = {
+    "privacy",
+    "terms",
 }
 
 
@@ -34,10 +40,9 @@ def dynamic_page(page):
         if "user" not in session:
             return redirect(url_for('pages.login_page'))
         return render_template("app.html", user=session["user"], initial_page=page)
-    try:
+    if page in PUBLIC_PAGES:
         return render_template(f"{page}.html")
-    except Exception:
-        return "<h1>404 - Page Not Found</h1>", 404
+    return "<h1>404 - Page Not Found</h1>", 404
 
 
 @pages_bp.route('/home')
@@ -69,10 +74,19 @@ def api_user_timezone():
             "created_at": item.get("created_at", None),
         })
 
-    data = request.get_json()
-    tz = data.get("timezone", "").strip()
+    data = request.get_json(silent=True) or {}
+    tz = data.get("timezone", "")
+    if not isinstance(tz, str):
+        return jsonify({"error": "timezone must be a string"}), 400
+    tz = tz.strip()
     if not tz:
         return jsonify({"error": "timezone is required"}), 400
+    if len(tz) > 64:
+        return jsonify({"error": "timezone is too long"}), 400
+    try:
+        ZoneInfo(tz)
+    except ZoneInfoNotFoundError:
+        return jsonify({"error": "timezone is invalid"}), 400
     user_table.update_item(
         Key={"user_id": user_id},
         UpdateExpression="SET #tz = :tz",

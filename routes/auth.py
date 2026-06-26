@@ -9,15 +9,21 @@ auth_bp = Blueprint('auth', __name__)
 
 @auth_bp.route('/auth/callback', methods=['POST'])
 def auth_callback():
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     token = data.get("credential")
+    if not token:
+        return jsonify({"error": "Missing credential"}), 400
     try:
         idinfo = id_token.verify_oauth2_token(token, requests.Request(), GOOGLE_CLIENT_ID)
-        user_id = idinfo["sub"]
-        email = idinfo["email"]
+        user_id = idinfo.get("sub")
+        email = idinfo.get("email")
+        if not user_id or not email or idinfo.get("email_verified") is not True:
+            return jsonify({"error": "Google account email must be verified"}), 403
         name = idinfo.get("name", "")
         picture = idinfo.get("picture", "")
 
+        oauth_next = session.get("oauth_next")
+        session.clear()
         session["user"] = {"id": user_id, "email": email, "name": name, "picture": picture}
 
         # Update user record. Set created_at only if it doesn't exist yet.
@@ -32,7 +38,6 @@ def auth_callback():
             },
         )
 
-        oauth_next = session.pop("oauth_next", None)
         resp_data = {"message": "Login successful", "user": session["user"]}
         if oauth_next:
             resp_data["redirect"] = oauth_next
