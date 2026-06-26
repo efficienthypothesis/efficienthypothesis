@@ -8,6 +8,14 @@ import time
 import os
 from flask import session, request, jsonify
 
+
+def _required_env(name):
+    value = os.getenv(name)
+    if not value:
+        raise RuntimeError(f"{name} environment variable is required")
+    return value
+
+
 # === Google OAuth config ===
 GOOGLE_CLIENT_ID = os.getenv(
     "GOOGLE_CLIENT_ID",
@@ -29,7 +37,7 @@ s3 = boto3.client("s3", region_name="us-east-2")
 PRODUCTIVITY_BUCKET = "eh-app-data"
 
 # === OAuth signing key ===
-OAUTH_SIGNING_KEY = os.getenv("OAUTH_SIGNING_KEY", "CHANGE_ME_oauth_signing_key")
+OAUTH_SIGNING_KEY = _required_env("OAUTH_SIGNING_KEY")
 
 
 # === OAuth token helpers ===

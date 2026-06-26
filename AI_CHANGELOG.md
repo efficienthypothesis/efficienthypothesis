@@ -1,5 +1,10 @@
 # AI Changelog
 
+## 2026-06-25 - Codex (GPT-5) public repository preparation
+
+- Codex (GPT-5): removed insecure Flask/OAuth signing-key placeholder fallbacks so deployed environments must provide explicit secrets.
+- Codex (GPT-5): removed the tracked legacy archive zip from the current tree before making the repository public.
+
 ## 2026-06-24 - Codex (GPT-5) archive tab scrolling fix
 
 - Codex (GPT-5): fixed the Settings Archive tab layout so archived item lists use a bounded scroll area and long archived task lists can be scrolled inside the modal.
