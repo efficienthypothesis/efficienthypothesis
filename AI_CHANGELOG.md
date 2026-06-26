@@ -1,5 +1,9 @@
 # AI Changelog
 
+## 2026-06-26 - Codex (GPT-5) signup redirect fix
+
+- Codex (GPT-5): updated Google sign-in redirects so newly authenticated users land on `/workspace` instead of the removed legacy `/tasks` page, and failed login attempts remain on `/login`.
+
 ## 2026-06-25 - Codex (GPT-5) public repository preparation
 
 - Codex (GPT-5): removed insecure Flask/OAuth signing-key placeholder fallbacks so deployed environments must provide explicit secrets.

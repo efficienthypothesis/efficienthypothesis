@@ -50,7 +50,7 @@ def home_app():
 @pages_bp.route('/login')
 def login_page():
     if "user" in session:
-        return redirect(url_for('pages.home_app'))
+        return redirect(url_for('pages.dynamic_page', page='workspace'))
     return render_template("login.html", google_client_id=GOOGLE_CLIENT_ID)
 
 

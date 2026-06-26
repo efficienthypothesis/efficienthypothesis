@@ -8,12 +8,14 @@ function handleCredentialResponse(response) {
     .then(function (data) {
       if (data.redirect) {
         window.location.href = data.redirect;
+      } else if (data.user) {
+        window.location.href = '/workspace';
       } else {
-        window.location.href = '/tasks';
+        throw new Error(data.error || 'Login failed');
       }
     })
     .catch(function () {
-      window.location.href = '/tasks';
+      window.location.href = '/login';
     });
 }
 
