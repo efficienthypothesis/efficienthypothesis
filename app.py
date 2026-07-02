@@ -18,6 +18,9 @@ app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['SESSION_COOKIE_SECURE'] = (
     os.getenv("SESSION_COOKIE_SECURE", "1").lower() not in {"0", "false", "no"}
 )
+session_cookie_domain = os.getenv("SESSION_COOKIE_DOMAIN", "").strip()
+if session_cookie_domain:
+    app.config['SESSION_COOKIE_DOMAIN'] = session_cookie_domain
 
 # Register blueprints
 from routes.pages import pages_bp

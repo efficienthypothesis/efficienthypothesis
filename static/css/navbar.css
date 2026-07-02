@@ -3,6 +3,9 @@
   padding: 12px 24px; background: #ffffff; border-bottom: 1px solid #d8dee8;
 }
 .top-navbar .logo-full img { height: 28px; }
+.top-navbar .nav-links {
+  display: inline-flex; align-items: center; gap: 16px;
+}
 .top-navbar .nav-links a {
   color: #233a8b; text-decoration: none; font-size: 0.9rem; font-weight: 500;
 }

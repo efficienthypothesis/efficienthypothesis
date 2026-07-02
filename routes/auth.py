@@ -23,6 +23,7 @@ def auth_callback():
         picture = idinfo.get("picture", "")
 
         oauth_next = session.get("oauth_next")
+        login_next = session.get("login_next")
         session.clear()
         session["user"] = {"id": user_id, "email": email, "name": name, "picture": picture}
 
@@ -41,6 +42,8 @@ def auth_callback():
         resp_data = {"message": "Login successful", "user": session["user"]}
         if oauth_next:
             resp_data["redirect"] = oauth_next
+        elif login_next:
+            resp_data["redirect"] = login_next
         return jsonify(resp_data), 200
     except ValueError as e:
         print("Login error:", e)

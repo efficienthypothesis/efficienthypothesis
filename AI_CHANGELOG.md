@@ -1,5 +1,11 @@
 # AI Changelog
 
+## 2026-07-01 - Codex (GPT-5) home subdomain and app menu
+
+- Codex (GPT-5): added a signed-in `/apps` menu for launching current and future Efficient Hypothesis app surfaces.
+- Codex (GPT-5): moved the authenticated home workspace entry point to `home.efficienthypothesis.com` and made `/home` redirect there.
+- Codex (GPT-5): configured shared-session support for Efficient Hypothesis subdomains.
+
 ## 2026-07-01 - Codex (GPT-5) task AI context
 
 - Codex (GPT-5): added hidden task `AI_context` storage with client-side normalization for legacy task nodes.

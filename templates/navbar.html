@@ -1,6 +1,11 @@
 <nav class="top-navbar">
   <a href="/" class="logo-full"><img src="/logo.svg" alt="Efficient Hypothesis" style="height:28px"></a>
   <div class="nav-links">
-    <a href="/login">Sign In</a>
+    {% if session.get("user") %}
+      <a href="/apps">Apps</a>
+      <a href="/logout">Sign Out</a>
+    {% else %}
+      <a href="/login">Sign In</a>
+    {% endif %}
   </div>
 </nav>

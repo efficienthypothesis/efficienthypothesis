@@ -1,3 +1,6 @@
+import os
+from urllib.parse import urlencode, urlparse
+
 from flask import Blueprint, render_template, request, redirect, url_for, session, jsonify, Response
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from config import s3, PRODUCTIVITY_BUCKET, GOOGLE_CLIENT_ID, _require_auth, user_table
@@ -5,7 +8,6 @@ from config import s3, PRODUCTIVITY_BUCKET, GOOGLE_CLIENT_ID, _require_auth, use
 pages_bp = Blueprint('pages', __name__)
 
 APP_PAGES = {
-    "home",
     "workspace",
 }
 
@@ -13,6 +15,38 @@ PUBLIC_PAGES = {
     "privacy",
     "terms",
 }
+
+PRIMARY_HOST = os.getenv("PRIMARY_HOST", "efficienthypothesis.com")
+HOME_APP_HOST = os.getenv("HOME_APP_HOST", "home.efficienthypothesis.com")
+
+
+def _request_host():
+    host = request.headers.get("X-Forwarded-Host", request.host) or ""
+    return host.split(",")[0].strip().split(":")[0].lower()
+
+
+def _external_url(host, path="/"):
+    normalized_path = path if path.startswith("/") else f"/{path}"
+    return f"https://{host}{normalized_path}"
+
+
+def _home_app_url(path="/"):
+    return _external_url(HOME_APP_HOST, path)
+
+
+def _is_safe_next_url(value):
+    if not isinstance(value, str) or not value.strip():
+        return False
+    parsed = urlparse(value)
+    if not parsed.netloc:
+        return value.startswith("/") and not value.startswith("//")
+    return parsed.scheme == "https" and parsed.netloc.lower() in {PRIMARY_HOST, HOME_APP_HOST}
+
+
+def _store_login_next():
+    next_url = request.args.get("next", "")
+    if _is_safe_next_url(next_url):
+        session["login_next"] = next_url
 
 
 @pages_bp.route('/favicon.svg')
@@ -31,6 +65,12 @@ def logo():
 
 @pages_bp.route('/')
 def home():
+    if _request_host() == HOME_APP_HOST:
+        if "user" not in session:
+            return redirect(
+                _external_url(PRIMARY_HOST, f"/login?{urlencode({'next': _home_app_url('/')})}")
+            )
+        return render_template("app.html", user=session["user"], initial_page="home")
     return render_template('index.html')
 
 
@@ -47,15 +87,24 @@ def dynamic_page(page):
 
 @pages_bp.route('/home')
 def home_app():
+    return redirect(_home_app_url("/"), code=302)
+
+
+@pages_bp.route('/apps')
+def app_menu():
     if "user" not in session:
         return redirect(url_for('pages.login_page'))
-    return render_template("app.html", user=session["user"], initial_page="home")
+    return render_template("app_menu.html", user=session["user"], home_app_url=_home_app_url("/"))
 
 
 @pages_bp.route('/login')
 def login_page():
+    _store_login_next()
     if "user" in session:
-        return redirect(url_for('pages.dynamic_page', page='workspace'))
+        next_url = session.pop("login_next", None)
+        if next_url:
+            return redirect(next_url)
+        return redirect(url_for('pages.app_menu'))
     return render_template("login.html", google_client_id=GOOGLE_CLIENT_ID)
 
 
