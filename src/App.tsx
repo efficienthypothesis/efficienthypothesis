@@ -391,7 +391,6 @@ export function App({ bootstrap }: AppProps) {
             onArchiveNode={archiveSavedBlock}
           />
         ))}
-        <section className="workspace-blank" aria-label="Blank workspace area" />
       </main>
       <div className={`save-status ${saveStatus}`}>{saveStatusText(saveStatus, loading)}</div>
       <SettingsModal
