@@ -18,10 +18,10 @@ export function InstructionsModal({ open, onClose }: InstructionsModalProps) {
 
         <div className="instructions-body">
           <section>
-            <h3>Use the three editors</h3>
+            <h3>Use the editors</h3>
             <p>
-              The left editor is for tasks, the middle editor is for websites and subscriptions,
-              and the right editor is for today&apos;s timetable.
+              The left editor is for tasks, and the middle editor is for websites and
+              subscriptions.
             </p>
             <p>Click an empty line and type normally to keep free text notes.</p>
           </section>
@@ -57,18 +57,15 @@ Requires SSO>
 
 Subscription:
 <Netflix; 15.49, USD, 1, month; Entertainment
-Family streaming plan>
-
-Timetable:
-<Gym; 6:00pm; Health>`}</pre>
+Family streaming plan>`}</pre>
           </section>
 
           <section>
             <h3>Edit and organize</h3>
             <p>Saved rows format automatically. Click a saved row to reopen its raw macro text.</p>
             <p>
-              Tags are created automatically when needed. Open Settings for Tags, Routine, and
-              Profile editors.
+              Tags are created automatically when needed. Open Settings for Tags and Profile
+              editors.
             </p>
           </section>
 

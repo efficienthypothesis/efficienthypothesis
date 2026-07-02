@@ -9,6 +9,7 @@ import {
   getTaskDatetimeRaw,
   isSavedNodeBlockActive,
   normalizeTaskAIContext,
+  removeRetiredRoutineData,
   restoreNode,
   shouldRenderTaskDatetimeRaw,
   taskHasExplicitTime
@@ -144,6 +145,70 @@ describe("node service", () => {
     );
   });
 
+  it("removes retired routine documents and stored actions from legacy workspaces", () => {
+    const workspace = createDefaultWorkspace("user_1");
+    const legacyWorkspace = {
+      ...workspace,
+      documents: {
+        ...workspace.documents,
+        tasks: {
+          ...workspace.documents.tasks,
+          blocks: [
+            ...workspace.documents.tasks.blocks,
+            { type: "saved_node", id: "blk_action", nodeType: "action", nodeId: "action_1" }
+          ]
+        },
+        timetable: {
+          ...workspace.documents.tasks,
+          key: "timetable",
+          blocks: [
+            { type: "section", id: "sec_timetable", label: "Timetable", frozen: true },
+            { type: "saved_node", id: "blk_action_2", nodeType: "action", nodeId: "action_1" }
+          ]
+        },
+        routine_monday: {
+          ...workspace.documents.tasks,
+          key: "routine_monday",
+          blocks: []
+        }
+      },
+      nodes: {
+        ...workspace.nodes,
+        actions: {
+          action_1: {
+            id: "action_1",
+            userId: "user_1",
+            name: "Legacy action",
+            note: null,
+            timeLocal: "9:00am",
+            tagId: null,
+            archive: 0,
+            createdAt: workspace.createdAt,
+            updatedAt: workspace.updatedAt,
+            deletedAt: null
+          }
+        }
+      },
+      routineAsset: { id: "routine_1" },
+      dailyTimetable: { activeLocalDate: "2026-07-01" }
+    } as unknown as typeof workspace;
+
+    const normalized = removeRetiredRoutineData(legacyWorkspace);
+
+    expect("actions" in normalized.nodes).toBe(false);
+    expect("timetable" in normalized.documents).toBe(false);
+    expect("routine_monday" in normalized.documents).toBe(false);
+    expect("routineAsset" in normalized).toBe(false);
+    expect("dailyTimetable" in normalized).toBe(false);
+    expect(
+      normalized.documents.tasks.blocks.some(
+        (block) =>
+          block.type === "saved_node" &&
+          (block as { nodeType?: string }).nodeType === "action"
+      )
+    ).toBe(false);
+  });
+
   it("stores unsupported task date text for literal display", () => {
     const parsed = parseMacro("<Meet contractor; May 5 2:00 pm; Home>", "task");
     expect(parsed.valid).toBe(true);
@@ -218,14 +283,14 @@ describe("node service", () => {
 
   it("does not duplicate existing tag rows when the same tag is referenced again", () => {
     const parsedTask = parseMacro("<Pay rent; tomorrow 9:00am; Home>", "task");
-    const parsedAction = parseMacro("<Call bank; 2:00pm; home>", "action");
+    const parsedFollowup = parseMacro("<Call bank; tomorrow 2:00pm; home>", "task");
     expect(parsedTask.valid).toBe(true);
-    expect(parsedAction.valid).toBe(true);
-    if (!parsedTask.valid || !parsedAction.valid) return;
+    expect(parsedFollowup.valid).toBe(true);
+    if (!parsedTask.valid || !parsedFollowup.valid) return;
 
     const workspace = createDefaultWorkspace("user_1");
     const first = createOrUpdateNodeFromMacro(workspace, parsedTask).state;
-    const second = createOrUpdateNodeFromMacro(first, parsedAction).state;
+    const second = createOrUpdateNodeFromMacro(first, parsedFollowup).state;
     const savedTagBlocks = second.documents.tags.blocks.filter(
       (block) => block.type === "saved_node" && block.nodeType === "tag"
     );

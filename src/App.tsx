@@ -29,7 +29,6 @@ import {
   createOrUpdateNodeFromMacro,
   nodeToMacro
 } from "./services/nodeService";
-import { applyRoutineRollover } from "./services/routineRollover";
 import { parseMacro } from "./utils/macroParser";
 import { makeRawEditDraftBlocks } from "./utils/model";
 
@@ -78,11 +77,10 @@ export function App({ bootstrap }: AppProps) {
       .then(([, loadResult]) => {
         if (cancelled) return;
         const loadedWorkspace = loadResult.state;
-        const rollover = applyRoutineRollover(loadedWorkspace);
         lastSyncedUpdatedAt.current = loadResult.shouldPersist
           ? null
           : loadedWorkspace.updatedAt || null;
-        if (rollover.changed || loadResult.shouldPersist) {
+        if (loadResult.shouldPersist) {
           savedRevision.current = localRevision.current;
           localRevision.current += 1;
           setSaveStatus("saving");
@@ -91,7 +89,7 @@ export function App({ bootstrap }: AppProps) {
         }
         saveBlockedByConflict.current = false;
         setLocked(false);
-        setWorkspace(rollover.state);
+        setWorkspace(loadedWorkspace);
         setLoading(false);
         hasLoaded.current = true;
       })
@@ -154,18 +152,6 @@ export function App({ bootstrap }: AppProps) {
     };
   }, [workspace]);
 
-  const applyRoutineRolloverIfClean = useCallback(() => {
-    if (!hasLoaded.current || loading) return false;
-    if (saveInFlight.current || localRevision.current !== savedRevision.current) return false;
-    const rollover = applyRoutineRollover(workspaceRef.current);
-    if (!rollover.changed) return false;
-    saveBlockedByConflict.current = false;
-    localRevision.current += 1;
-    setWorkspace(rollover.state);
-    setSaveStatus("saving");
-    return true;
-  }, [loading]);
-
   const refreshFromServerIfClean = useCallback(() => {
     if (!hasLoaded.current || loading || refreshInFlight.current) return;
     if (saveInFlight.current || localRevision.current !== savedRevision.current) return;
@@ -176,23 +162,13 @@ export function App({ bootstrap }: AppProps) {
         if (!serverWorkspace) return;
         const serverUpdatedAt = serverWorkspace.updatedAt || null;
         if (!isNewerTimestamp(serverUpdatedAt, lastSyncedUpdatedAt.current)) {
-          if (!applyRoutineRolloverIfClean()) {
-            setSaveStatus((current) => (current === "syncing" ? "saved" : current));
-          }
+          setSaveStatus((current) => (current === "syncing" ? "saved" : current));
           return;
         }
-        const rollover = applyRoutineRollover(serverWorkspace);
         lastSyncedUpdatedAt.current = serverUpdatedAt;
         saveBlockedByConflict.current = false;
-        if (rollover.changed) {
-          savedRevision.current = localRevision.current;
-          localRevision.current += 1;
-          setWorkspace(rollover.state);
-          setSaveStatus("saving");
-          return;
-        }
         savedRevision.current = localRevision.current;
-        setWorkspace(rollover.state);
+        setWorkspace(serverWorkspace);
         setSaveStatus("saved");
       })
       .catch(() => {
@@ -201,7 +177,7 @@ export function App({ bootstrap }: AppProps) {
       .finally(() => {
         refreshInFlight.current = false;
       });
-  }, [applyRoutineRolloverIfClean, loading]);
+  }, [loading]);
 
   useEffect(() => {
     function handleFocus() {
@@ -220,20 +196,12 @@ export function App({ bootstrap }: AppProps) {
     };
   }, [refreshFromServerIfClean]);
 
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      applyRoutineRolloverIfClean();
-    }, 60_000);
-    return () => window.clearInterval(timer);
-  }, [applyRoutineRolloverIfClean]);
-
   const user = bootstrap.user;
   const visibleDocuments = useMemo(
     () =>
       [
         ["tasks", "Tasks"],
-        ["websites_subscriptions", "Websites and Subscriptions"],
-        ["timetable", "Timetable"]
+        ["websites_subscriptions", "Websites and Subscriptions"]
       ] as const,
     []
   );
@@ -423,13 +391,13 @@ export function App({ bootstrap }: AppProps) {
             onArchiveNode={archiveSavedBlock}
           />
         ))}
+        <section className="workspace-blank" aria-label="Blank workspace area" />
       </main>
       <div className={`save-status ${saveStatus}`}>{saveStatusText(saveStatus, loading)}</div>
       <SettingsModal
         open={settingsOpen}
         state={workspace}
         onClose={() => setSettingsOpen(false)}
-        onStateChange={setLocalWorkspace}
         onDocumentChange={updateDocument}
         onFinalizeMacro={finalizeMacro}
         onBeginRawEdit={beginRawEdit}

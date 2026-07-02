@@ -7,14 +7,12 @@ import type {
   SavedNodeBlock,
   WorkspaceState
 } from "../types";
-import { getRoutineDocumentKeys, getRoutineLabels } from "../services/defaultWorkspace";
 import { EditorPanel } from "./EditorPanel";
 
 type SettingsModalProps = {
   open: boolean;
   state: WorkspaceState;
   onClose: () => void;
-  onStateChange: (state: WorkspaceState) => void;
   onDocumentChange: (key: EditorDocumentKey, document: EditorDocument) => void;
   onFinalizeMacro: (
     key: EditorDocumentKey,
@@ -27,40 +25,26 @@ type SettingsModalProps = {
   onArchiveNode: (block: SavedNodeBlock) => void;
 };
 
-type SettingsTab = "tags" | "routine" | "profile";
+type SettingsTab = "tags" | "profile";
 
 export function SettingsModal({
   open,
   state,
   onClose,
-  onStateChange,
   onDocumentChange,
   onFinalizeMacro,
   onBeginRawEdit,
   onArchiveNode
 }: SettingsModalProps) {
   const [tab, setTab] = useState<SettingsTab>("tags");
-  const [status, setStatus] = useState("");
   if (!open) return null;
-
-  function publishRoutine() {
-    onStateChange({
-      ...state,
-      routineAsset: {
-        ...state.routineAsset,
-        updatedAt: new Date().toISOString()
-      },
-      updatedAt: new Date().toISOString()
-    });
-    setStatus("Routine template timestamp updated. The next local-date rollover will use this template.");
-  }
 
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Settings">
       <div className="settings-modal">
         <div className="settings-top">
           <div className="settings-tabs">
-            {(["tags", "routine", "profile"] as SettingsTab[]).map((item) => (
+            {(["tags", "profile"] as SettingsTab[]).map((item) => (
               <button
                 key={item}
                 className={tab === item ? "active" : ""}
@@ -89,33 +73,6 @@ export function SettingsModal({
               onBeginRawEdit={(document, block) => onBeginRawEdit("tags", document, block)}
               onArchiveNode={onArchiveNode}
             />
-          ) : null}
-
-          {tab === "routine" ? (
-            <div className="routine-settings">
-              <div className="routine-toolbar">
-                <button type="button" onClick={publishRoutine}>
-                  Freeze/Publish
-                </button>
-                {status ? <span>{status}</span> : null}
-              </div>
-              <div className="routine-grid">
-                {getRoutineDocumentKeys().map((key, index) => (
-                  <EditorPanel
-                    key={key}
-                    title={getRoutineLabels()[index]}
-                    document={state.documents[key]}
-                    state={state}
-                    onDocumentChange={(document) => onDocumentChange(key, document)}
-                    onFinalizeMacro={(document, block, raw, inferred) =>
-                      onFinalizeMacro(key, document, block, raw, inferred)
-                    }
-                    onBeginRawEdit={(document, block) => onBeginRawEdit(key, document, block)}
-                    onArchiveNode={onArchiveNode}
-                  />
-                ))}
-              </div>
-            </div>
           ) : null}
 
           {tab === "profile" ? (

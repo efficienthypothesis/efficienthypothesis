@@ -42,7 +42,22 @@ export async function loadWorkspaceWithMetadata(userId: string): Promise<LoadWor
     if (payload.encryptedState) {
       const serverState = await decryptWorkspaceEnvelope(userId, payload.encryptedState);
       const normalizedState = normalizeWorkspaceForClient(serverState);
-      cacheEncryptedWorkspace(userId, payload.encryptedState);
+      let normalizedPersistFailed = false;
+      if (normalizedState !== serverState) {
+        try {
+          const saved = await saveWorkspace(normalizedState, serverState.updatedAt || null);
+          return {
+            state: { ...normalizedState, updatedAt: saved.updatedAt },
+            shouldPersist: false
+          };
+        } catch (saveError) {
+          normalizedPersistFailed = true;
+          if (import.meta.env.DEV) {
+            console.warn("Loaded normalized workspace but could not persist migration:", saveError);
+          }
+        }
+      }
+      if (!normalizedPersistFailed) cacheEncryptedWorkspace(userId, payload.encryptedState);
       clearPlaintextWorkspaceCache();
       return { state: normalizedState, shouldPersist: false };
     }

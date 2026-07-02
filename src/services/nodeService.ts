@@ -1,9 +1,9 @@
 import type {
-  ActionNode,
   AnyNode,
   AssetNode,
   BaseNode,
   EditorBlock,
+  EditorDocument,
   IdentityNode,
   LocationNode,
   NodeType,
@@ -22,6 +22,16 @@ import { makeId, nowIso } from "../utils/ids";
 
 const DEFAULT_TAG_COLOR = "#D1D5DB";
 export const TASK_AI_CONTEXT_MAX_LENGTH = 6000;
+const RETIRED_DOCUMENT_KEYS = new Set([
+  "timetable",
+  "routine_sunday",
+  "routine_monday",
+  "routine_tuesday",
+  "routine_wednesday",
+  "routine_thursday",
+  "routine_friday",
+  "routine_saturday"
+]);
 
 export function getNodeByType(
   state: WorkspaceState,
@@ -77,14 +87,6 @@ export function createOrUpdateNodeFromMacro(
       tagId
     };
     next.nodes = { ...next.nodes, websites: { ...next.nodes.websites, [nodeId]: node } };
-  } else if (parsed.nodeType === "action") {
-    const node: ActionNode = {
-      ...base,
-      note: parsed.note,
-      timeLocal: parsed.primary,
-      tagId
-    };
-    next.nodes = { ...next.nodes, actions: { ...next.nodes.actions, [nodeId]: node } };
   } else if (parsed.nodeType === "tag") {
     const normalizedName = normalizeTagName(parsed.name);
     const existingTag = findTagByNormalizedName(next, normalizedName);
@@ -180,10 +182,6 @@ export function nodeToMacro(state: WorkspaceState, nodeType: NodeType, nodeId: s
     ].join(", ");
     return `<${escapeMacroText(website.name)}; ${escapeMacroText(identities)}; ${escapeMacroText(tag)}${note}>`;
   }
-  if (nodeType === "action") {
-    const action = node as ActionNode;
-    return `<${escapeMacroText(action.name)}; ${escapeMacroText(action.timeLocal || "")}; ${escapeMacroText(tag)}${note}>`;
-  }
   if (nodeType === "tag") {
     const tagNode = node as TagNode;
     return `<${escapeMacroText(tagNode.name)}; ${escapeMacroText(tagNode.color)}${note}>`;
@@ -248,7 +246,70 @@ export function ensureTagDocumentBlocks(state: WorkspaceState): WorkspaceState {
 }
 
 export function normalizeWorkspaceForClient(state: WorkspaceState): WorkspaceState {
-  return ensureTaskAIContexts(ensureTagDocumentBlocks(state));
+  return ensureTaskAIContexts(ensureTagDocumentBlocks(removeRetiredRoutineData(state)));
+}
+
+export function removeRetiredRoutineData(state: WorkspaceState): WorkspaceState {
+  type LegacyWorkspaceState = WorkspaceState & {
+    routineAsset?: unknown;
+    dailyTimetable?: unknown;
+    nodes: WorkspaceState["nodes"] & { actions?: Record<string, unknown> };
+    documents: WorkspaceState["documents"] & Record<string, EditorDocument>;
+  };
+
+  const legacyState = state as LegacyWorkspaceState;
+  let changed =
+    Object.prototype.hasOwnProperty.call(legacyState, "routineAsset") ||
+    Object.prototype.hasOwnProperty.call(legacyState, "dailyTimetable");
+  let nextNodes: WorkspaceState["nodes"] = legacyState.nodes;
+
+  if (Object.prototype.hasOwnProperty.call(legacyState.nodes, "actions")) {
+    const { actions: _actions, ...activeNodes } = legacyState.nodes;
+    nextNodes = activeNodes as WorkspaceState["nodes"];
+    changed = true;
+  }
+
+  let nextDocuments: Record<string, EditorDocument> | null = null;
+  for (const [key, document] of Object.entries(legacyState.documents)) {
+    if (RETIRED_DOCUMENT_KEYS.has(key)) {
+      if (!nextDocuments) nextDocuments = { ...legacyState.documents };
+      delete nextDocuments[key];
+      changed = true;
+      continue;
+    }
+
+    const blocks = document.blocks.filter(
+      (block) =>
+        !(
+          block.type === "saved_node" &&
+          (block as { nodeType?: string }).nodeType === "action"
+        )
+    );
+    if (blocks.length !== document.blocks.length) {
+      if (!nextDocuments) nextDocuments = { ...legacyState.documents };
+      nextDocuments[key] = {
+        ...document,
+        blocks,
+        version: document.version + 1,
+        updatedAt: nowIso()
+      };
+      changed = true;
+    }
+  }
+
+  if (!changed) return state;
+
+  const {
+    routineAsset: _routineAsset,
+    dailyTimetable: _dailyTimetable,
+    ...activeState
+  } = legacyState;
+
+  return {
+    ...activeState,
+    nodes: nextNodes,
+    documents: (nextDocuments || legacyState.documents) as WorkspaceState["documents"]
+  };
 }
 
 export function ensureTaskAIContexts(state: WorkspaceState): WorkspaceState {
@@ -445,7 +506,6 @@ function getCollection(state: WorkspaceState, nodeType: NodeType): Record<string
   if (nodeType === "task") return state.nodes.tasks;
   if (nodeType === "subscription") return state.nodes.subscriptions;
   if (nodeType === "website") return state.nodes.websites;
-  if (nodeType === "action") return state.nodes.actions;
   if (nodeType === "tag") return state.nodes.tags;
   if (nodeType === "location") return state.nodes.locations;
   if (nodeType === "identity") return state.nodes.identities;
@@ -476,13 +536,6 @@ function setNode(state: WorkspaceState, nodeType: NodeType, node: AnyNode): Work
       ...state,
       updatedAt: now,
       nodes: { ...state.nodes, websites: { ...state.nodes.websites, [node.id]: node as WebsiteNode } }
-    };
-  }
-  if (nodeType === "action") {
-    return {
-      ...state,
-      updatedAt: now,
-      nodes: { ...state.nodes, actions: { ...state.nodes.actions, [node.id]: node as ActionNode } }
     };
   }
   if (nodeType === "tag") {

@@ -4,7 +4,6 @@ export type NodeType =
   | "task"
   | "subscription"
   | "website"
-  | "action"
   | "tag"
   | "location"
   | "identity"
@@ -13,16 +12,8 @@ export type NodeType =
 export type EditorDocumentKey =
   | "tasks"
   | "websites_subscriptions"
-  | "timetable"
   | "tags"
-  | "profile"
-  | "routine_sunday"
-  | "routine_monday"
-  | "routine_tuesday"
-  | "routine_wednesday"
-  | "routine_thursday"
-  | "routine_friday"
-  | "routine_saturday";
+  | "profile";
 
 export type EditorDocument = {
   id: string;
@@ -112,29 +103,6 @@ export type AssetNode = BaseNode & {
   tagId: string | null;
 };
 
-export type RoutineAsset = {
-  id: string;
-  userId: string;
-  timetableIds: [
-    string | null,
-    string | null,
-    string | null,
-    string | null,
-    string | null,
-    string | null,
-    string | null
-  ];
-  createdAt: string;
-  updatedAt: string;
-};
-
-export type DailyTimetableState = {
-  activeLocalDate: string | null;
-  activeRoutineDocumentKey: EditorDocumentKey | null;
-  activeTimetableDocumentId: string | null;
-  updatedAt: string;
-};
-
 export type TaskNode = BaseNode & {
   note: string | null;
   AI_context: string | null;
@@ -164,12 +132,6 @@ export type WebsiteNode = BaseNode & {
   tagId: string | null;
 };
 
-export type ActionNode = BaseNode & {
-  note: string | null;
-  timeLocal: string | null;
-  tagId: string | null;
-};
-
 export type NodeCollections = {
   tags: Record<string, TagNode>;
   locations: Record<string, LocationNode>;
@@ -178,7 +140,6 @@ export type NodeCollections = {
   tasks: Record<string, TaskNode>;
   subscriptions: Record<string, SubscriptionNode>;
   websites: Record<string, WebsiteNode>;
-  actions: Record<string, ActionNode>;
 };
 
 export type AnyNode =
@@ -188,16 +149,13 @@ export type AnyNode =
   | AssetNode
   | TaskNode
   | SubscriptionNode
-  | WebsiteNode
-  | ActionNode;
+  | WebsiteNode;
 
 export type WorkspaceState = {
   schemaVersion: 1;
   userId: string;
   documents: Record<EditorDocumentKey, EditorDocument>;
   nodes: NodeCollections;
-  routineAsset: RoutineAsset;
-  dailyTimetable?: DailyTimetableState;
   createdAt: string;
   updatedAt: string;
 };

@@ -1,5 +1,11 @@
 # AI Changelog
 
+## 2026-07-01 - Codex (GPT-5) routine removal
+
+- Codex (GPT-5): removed the timetable editor, Routine settings tab, browser-side routine rollover, and routine rollover tests.
+- Codex (GPT-5): retired `action` nodes from the active website and MCP models, with normalization that removes stored actions and legacy routine/timetable documents.
+- Codex (GPT-5): left the third workspace column blank for future functionality.
+
 ## 2026-07-01 - Codex (GPT-5) archive tab removal
 
 - Codex (GPT-5): removed the Settings Archive tab so archived items are no longer browsable or restorable from the website UI.

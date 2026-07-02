@@ -125,15 +125,10 @@ export function inferNodeTypeFromSection(label: string): NodeType {
   if (normalized === "tasks") return "task";
   if (normalized === "websites") return "website";
   if (normalized === "subscriptions") return "subscription";
-  if (normalized === "timetable") return "action";
   if (normalized === "tags") return "tag";
   if (normalized === "locations") return "location";
   if (normalized === "identities") return "identity";
   if (normalized === "assets") return "asset";
-  if (normalized.includes("sunday") || normalized.includes("monday")) return "action";
-  if (normalized.includes("tuesday") || normalized.includes("wednesday")) return "action";
-  if (normalized.includes("thursday") || normalized.includes("friday")) return "action";
-  if (normalized.includes("saturday")) return "action";
   return "task";
 }
 
@@ -253,8 +248,6 @@ export function getFieldHints(nodeType: NodeType): string[] {
       return ["name", "rate", "tag"];
     case "website":
       return ["name", "identity1, identity2", "tag"];
-    case "action":
-      return ["name", "time", "tag"];
     case "tag":
       return ["name", "color"];
     case "location":

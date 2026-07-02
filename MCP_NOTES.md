@@ -72,7 +72,6 @@ Structured data lives in normalized node collections:
 - `task`
 - `website`
 - `subscription`
-- `action`
 - `tag`
 - `location`
 - `identity`
@@ -84,32 +83,14 @@ Editor layout lives in workspace documents. GPT-created nodes are inserted as
 - `task` -> `tasks` / `Tasks`
 - `website` -> `websites_subscriptions` / `Websites`
 - `subscription` -> `websites_subscriptions` / `Subscriptions`
-- `action` -> `timetable` / `Timetable`
 - `tag` -> `tags` / `Tags`
 - `location` -> `profile` / `Locations`
 - `identity` -> `profile` / `Identities`
 - `asset` -> `profile` / `Assets`
 
-Routine weekday templates are managed with `action` nodes in these documents:
-
-- `routine_sunday`
-- `routine_monday`
-- `routine_tuesday`
-- `routine_wednesday`
-- `routine_thursday`
-- `routine_friday`
-- `routine_saturday`
-
-To create a routine template action, call `create_node` with
-`node_type: "action"` and the target `document_key`, such as
-`routine_monday`.
-
-The browser applies daily timetable rollover after decrypting the workspace. On
-the first load/focus for a new local date, active action nodes from the prior
-main `timetable` document are archived to level 1, and the current weekday
-routine document is cloned into fresh action nodes in the main `timetable`.
-The workspace `dailyTimetable` metadata records the active local date so this
-does not rerun repeatedly on the same day.
+Routine, timetable, and `action` node functionality has been retired. Current
+workspace normalization removes stored `actions`, retired routine documents,
+and retired timetable documents before the cleaned workspace is saved again.
 
 ## Mutation Rules
 
@@ -143,7 +124,6 @@ Type-specific fields:
 - `subscription`: `fields.rate` with `amount`, `currency`, `intervalCount`,
   and `intervalUnit`
 - `website`: `fields.identity_names`
-- `action`: `fields.time_local`
 - `tag`: `fields.color`
 - `location`: `fields.address`
 - `identity`: `fields.reference_name`

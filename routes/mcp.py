@@ -19,50 +19,33 @@ from routes.workspace_crypto import (
 mcp_bp = Blueprint("mcp", __name__)
 
 MCP_PROTOCOL_VERSION = "2024-11-05"
-NODE_TYPES = ["task", "website", "subscription", "action", "tag", "location", "identity", "asset"]
-TAGGABLE_NODE_TYPES = ["task", "website", "subscription", "action", "identity", "asset"]
+NODE_TYPES = ["task", "website", "subscription", "tag", "location", "identity", "asset"]
+TAGGABLE_NODE_TYPES = ["task", "website", "subscription", "identity", "asset"]
 COLLECTIONS = {
     "task": "tasks",
     "website": "websites",
     "subscription": "subscriptions",
-    "action": "actions",
     "tag": "tags",
     "location": "locations",
     "identity": "identities",
     "asset": "assets",
 }
+RETIRED_DOCUMENT_KEYS = {
+    "timetable",
+    "routine_sunday",
+    "routine_monday",
+    "routine_tuesday",
+    "routine_wednesday",
+    "routine_thursday",
+    "routine_friday",
+    "routine_saturday",
+}
 DOCUMENT_KEYS = [
     "tasks",
     "websites_subscriptions",
-    "timetable",
     "tags",
     "profile",
-    "routine_sunday",
-    "routine_monday",
-    "routine_tuesday",
-    "routine_wednesday",
-    "routine_thursday",
-    "routine_friday",
-    "routine_saturday",
 ]
-ROUTINE_DOCUMENT_KEYS = [
-    "routine_sunday",
-    "routine_monday",
-    "routine_tuesday",
-    "routine_wednesday",
-    "routine_thursday",
-    "routine_friday",
-    "routine_saturday",
-]
-ROUTINE_LABELS = {
-    "routine_sunday": "Sunday (U)",
-    "routine_monday": "Monday (M)",
-    "routine_tuesday": "Tuesday (T)",
-    "routine_wednesday": "Wednesday (W)",
-    "routine_thursday": "Thursday (R)",
-    "routine_friday": "Friday (F)",
-    "routine_saturday": "Saturday (S)",
-}
 DEFAULT_TAG_COLOR = "#D1D5DB"
 TASK_AI_CONTEXT_MAX_LENGTH = 6000
 ARCHIVE_LEVELS = [0, 1, 2]
@@ -232,8 +215,6 @@ def _node_fields_schema(description):
                 "items": {"type": "string"},
                 "description": "Website identity names alias.",
             },
-            "time_local": {**nullable_string, "description": "Action local time."},
-            "timeLocal": {**nullable_string, "description": "Action local time alias."},
             "color": {**nullable_string, "description": "Tag color as #RRGGBB."},
             "address": {**nullable_string, "description": "Location address."},
             "reference_name": {**nullable_string, "description": "Identity reference website or asset name."},
@@ -319,8 +300,7 @@ TOOLS = [
         "Create workspace node",
         (
             "Create a structured node and insert it into the matching editor section. "
-            "This cannot create or edit free-text lines. For routine templates, create an action "
-            "with document_key set to a routine weekday document."
+            "This cannot create or edit free-text lines."
         ),
         {
             "type": "object",
@@ -333,13 +313,12 @@ TOOLS = [
                     "description": "Optional tag name. Missing tags are auto-created with the default color.",
                 },
                 "document_key": _document_key_schema(
-                    "Optional target editor document. Actions may target timetable or a routine weekday."
+                    "Optional target editor document."
                 ),
                 "fields": _node_fields_schema(
                     (
                         "Type-specific fields. task: datetime, AI_context. subscription: rate. website: identity_names. "
-                        "action: time_local. tag: color. location: address. identity: reference_name. "
-                        "asset: reference_location_name."
+                        "tag: color. location: address. identity: reference_name. asset: reference_location_name."
                     )
                 ),
             },
@@ -454,29 +433,12 @@ def _normalize_workspace(state, user_id):
     nodes = state.setdefault("nodes", {})
     for collection in COLLECTIONS.values():
         nodes.setdefault(collection, {})
+    nodes.pop("actions", None)
     documents = state.setdefault("documents", {})
     defaults = _default_documents(user_id)
     for key, document in defaults.items():
         documents.setdefault(key, document)
-    state.setdefault(
-        "routineAsset",
-        {
-            "id": _make_id("routine"),
-            "userId": user_id,
-            "timetableIds": [None, None, None, None, None, None, None],
-            "createdAt": now,
-            "updatedAt": now,
-        },
-    )
-    state.setdefault(
-        "dailyTimetable",
-        {
-            "activeLocalDate": None,
-            "activeRoutineDocumentKey": None,
-            "activeTimetableDocumentId": None,
-            "updatedAt": now,
-        },
-    )
+    _remove_retired_routine_data(state)
     _ensure_task_ai_contexts(state)
     return state
 
@@ -488,22 +450,41 @@ def _create_default_workspace(user_id):
         "userId": user_id,
         "documents": _default_documents(user_id),
         "nodes": {collection: {} for collection in COLLECTIONS.values()},
-        "routineAsset": {
-            "id": _make_id("routine"),
-            "userId": user_id,
-            "timetableIds": [None, None, None, None, None, None, None],
-            "createdAt": now,
-            "updatedAt": now,
-        },
-        "dailyTimetable": {
-            "activeLocalDate": None,
-            "activeRoutineDocumentKey": None,
-            "activeTimetableDocumentId": None,
-            "updatedAt": now,
-        },
         "createdAt": now,
         "updatedAt": now,
     }
+
+
+def _remove_retired_routine_data(state):
+    state.pop("routineAsset", None)
+    state.pop("dailyTimetable", None)
+    nodes = state.setdefault("nodes", {})
+    nodes.pop("actions", None)
+
+    documents = state.setdefault("documents", {})
+    for key in list(documents.keys()):
+        if key in RETIRED_DOCUMENT_KEYS:
+            del documents[key]
+            continue
+
+        document = documents.get(key)
+        if not isinstance(document, dict):
+            continue
+        blocks = document.get("blocks")
+        if not isinstance(blocks, list):
+            continue
+        filtered_blocks = [
+            block
+            for block in blocks
+            if not (
+                isinstance(block, dict)
+                and block.get("type") == "saved_node"
+                and block.get("nodeType") == "action"
+            )
+        ]
+        if len(filtered_blocks) != len(blocks):
+            document["blocks"] = filtered_blocks
+            _touch_document(document)
 
 
 def _default_documents(user_id):
@@ -514,17 +495,12 @@ def _default_documents(user_id):
             "websites_subscriptions",
             [_section("Websites"), _empty(), _section("Subscriptions"), _empty()],
         ),
-        "timetable": _make_document(user_id, "timetable", [_section("Timetable"), _empty()]),
         "tags": _make_document(user_id, "tags", [_section("Tags"), _empty()]),
         "profile": _make_document(
             user_id,
             "profile",
             [_section("Locations"), _empty(), _section("Identities"), _empty(), _section("Assets"), _empty()],
         ),
-        **{
-            key: _make_document(user_id, key, [_section(label), _empty()])
-            for key, label in ROUTINE_LABELS.items()
-        },
     }
 
 
@@ -671,8 +647,6 @@ def _default_document_target(node_type, document_key=None):
     if document_key:
         if document_key not in DOCUMENT_KEYS:
             raise ValueError(f"Unsupported document_key: {document_key}")
-        if node_type == "action" and document_key in ["timetable", *ROUTINE_DOCUMENT_KEYS]:
-            return document_key, ROUTINE_LABELS.get(document_key, "Timetable")
         allowed = {
             "task": ("tasks", "Tasks"),
             "website": ("websites_subscriptions", "Websites"),
@@ -691,7 +665,6 @@ def _default_document_target(node_type, document_key=None):
         "task": ("tasks", "Tasks"),
         "website": ("websites_subscriptions", "Websites"),
         "subscription": ("websites_subscriptions", "Subscriptions"),
-        "action": ("timetable", "Timetable"),
         "tag": ("tags", "Tags"),
         "location": ("profile", "Locations"),
         "identity": ("profile", "Identities"),
@@ -928,8 +901,6 @@ def _node_to_raw_macro(state, node_type, node):
             *node.get("unresolvedIdentities", []),
         ]
         return f"<{_escape_macro(node.get('name'))}; {_escape_macro(', '.join(identities))}; {_escape_macro(tag)}{note}>"
-    if node_type == "action":
-        return f"<{_escape_macro(node.get('name'))}; {_escape_macro(node.get('timeLocal') or '')}; {_escape_macro(tag)}{note}>"
     if node_type == "tag":
         return f"<{_escape_macro(node.get('name'))}; {_escape_macro(node.get('color'))}{note}>"
     if node_type == "location":
@@ -1038,9 +1009,6 @@ def _build_node_from_fields(state, user_id, node_type, node_id, name, note, fiel
                 raise ValueError("fields.identity_names must be an array of strings")
             identity_ids, unresolved = _resolve_identity_names(state, identity_names)
         return {**base, "note": explicit_note, "identityIds": identity_ids, "unresolvedIdentities": unresolved, "tagId": tag_id}
-    if node_type == "action":
-        time_local = fields.get("time_local", fields.get("timeLocal", existing.get("timeLocal") if existing else None))
-        return {**base, "note": explicit_note, "timeLocal": _clean_optional_string(time_local), "tagId": tag_id}
     if node_type == "location":
         address = fields.get("address", existing.get("address") if existing else None)
         return {**base, "address": _clean_optional_string(address)}

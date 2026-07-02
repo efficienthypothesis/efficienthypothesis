@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import type { AnyNode, AssetNode, IdentityNode, NodeType, TaskNode, WorkspaceState } from "../types";
 import type { TaskDateTone } from "../utils/date";
-import { formatDateTimeLocal, formatTimeLocal, getTaskDateTone } from "../utils/date";
+import { formatDateTimeLocal, getTaskDateTone } from "../utils/date";
 import { formatSubscriptionRateDisplay } from "../utils/subscriptions";
 import {
   getNodeByType,
@@ -130,9 +130,6 @@ function getFields(state: WorkspaceState, nodeType: NodeType, node: AnyNode): [s
       ...node.unresolvedIdentities.map((name) => `${name} ?`)
     ].join(", ");
     return [node.name, identities, getTagName(state, node.tagId)];
-  }
-  if (nodeType === "action" && "timeLocal" in node) {
-    return [node.name, formatTimeLocal(node.timeLocal), getTagName(state, node.tagId)];
   }
   if (nodeType === "tag" && "color" in node) {
     return [node.name, node.color, ""];

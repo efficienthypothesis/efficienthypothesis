@@ -106,7 +106,7 @@ describe("macro parser", () => {
     expect(inferNodeTypeFromSection("Tasks")).toBe("task");
     expect(inferNodeTypeFromSection("Websites")).toBe("website");
     expect(inferNodeTypeFromSection("Subscriptions")).toBe("subscription");
-    expect(inferNodeTypeFromSection("Timetable")).toBe("action");
+    expect(inferNodeTypeFromSection("Timetable")).toBe("task");
   });
 
   it("normalizes tag names", () => {
