@@ -13,7 +13,7 @@ import {
   removeWorkspaceKey,
   readCachedEncryptedWorkspace
 } from "./encryptionService";
-import { ensureTagDocumentBlocks } from "./nodeService";
+import { normalizeWorkspaceForClient } from "./nodeService";
 
 const LOCAL_CACHE_KEY = "eh_workspace_cache_v1";
 
@@ -41,14 +41,14 @@ export async function loadWorkspaceWithMetadata(userId: string): Promise<LoadWor
     const payload = await fetchWorkspacePayload();
     if (payload.encryptedState) {
       const serverState = await decryptWorkspaceEnvelope(userId, payload.encryptedState);
-      const normalizedState = ensureTagDocumentBlocks(serverState);
+      const normalizedState = normalizeWorkspaceForClient(serverState);
       cacheEncryptedWorkspace(userId, payload.encryptedState);
       clearPlaintextWorkspaceCache();
       return { state: normalizedState, shouldPersist: false };
     }
     if (payload.state) {
       await ensureWorkspaceKey(userId);
-      const normalizedState = ensureTagDocumentBlocks(payload.state);
+      const normalizedState = normalizeWorkspaceForClient(payload.state);
       const saved = await saveWorkspace(normalizedState, normalizedState.updatedAt || null);
       return {
         state: { ...normalizedState, updatedAt: saved.updatedAt },
@@ -60,7 +60,7 @@ export async function loadWorkspaceWithMetadata(userId: string): Promise<LoadWor
   } catch (error) {
     if (error instanceof WorkspaceLockedError) throw error;
     const cached = await readCachedWorkspace(userId);
-    if (cached) return { state: ensureTagDocumentBlocks(cached), shouldPersist: false };
+    if (cached) return { state: normalizeWorkspaceForClient(cached), shouldPersist: false };
     if (import.meta.env.DEV) {
       console.warn("Using local workspace fallback:", error);
     }
@@ -81,9 +81,9 @@ export async function fetchWorkspaceFromServer(): Promise<WorkspaceState | null>
     const state = await decryptWorkspaceEnvelope(userId, payload.encryptedState);
     cacheEncryptedWorkspace(userId, payload.encryptedState);
     clearPlaintextWorkspaceCache();
-    return ensureTagDocumentBlocks(state);
+    return normalizeWorkspaceForClient(state);
   }
-  if (payload.state) return ensureTagDocumentBlocks(payload.state);
+  if (payload.state) return normalizeWorkspaceForClient(payload.state);
   return null;
 }
 
@@ -114,9 +114,9 @@ export async function saveWorkspace(
       encryptedState?: EncryptedWorkspaceEnvelope | null;
       serverUpdatedAt?: string | null;
     };
-    let serverState = payload.state ? ensureTagDocumentBlocks(payload.state) : null;
+    let serverState = payload.state ? normalizeWorkspaceForClient(payload.state) : null;
     if (!serverState && payload.encryptedState) {
-      serverState = ensureTagDocumentBlocks(
+      serverState = normalizeWorkspaceForClient(
         await decryptWorkspaceEnvelope(state.userId, payload.encryptedState)
       );
     }

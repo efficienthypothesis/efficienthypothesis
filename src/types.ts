@@ -137,6 +137,7 @@ export type DailyTimetableState = {
 
 export type TaskNode = BaseNode & {
   note: string | null;
+  AI_context: string | null;
   datetimeUtc: string | null;
   datetimeRaw?: string | null;
   datetimeHasTime?: boolean;

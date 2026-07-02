@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { createDefaultWorkspace } from "../services/defaultWorkspace";
 import {
+  TASK_AI_CONTEXT_MAX_LENGTH,
   archiveNode,
   createOrUpdateNodeFromMacro,
   ensureTagDocumentBlocks,
+  ensureTaskAIContexts,
   getTaskDatetimeRaw,
   isSavedNodeBlockActive,
+  normalizeTaskAIContext,
   restoreNode,
   shouldRenderTaskDatetimeRaw,
   taskHasExplicitTime
@@ -81,6 +84,64 @@ describe("node service", () => {
 
     expect(dateOnlyState.state.nodes.tasks[dateOnlyState.nodeId].datetimeHasTime).toBe(false);
     expect(timedState.state.nodes.tasks[timedState.nodeId].datetimeHasTime).toBe(true);
+  });
+
+  it("initializes task AI_context to null for website-created tasks", () => {
+    const parsed = parseMacro("<Apple Cash Fix; 7/1/2026; Finance>", "task");
+    expect(parsed.valid).toBe(true);
+    if (!parsed.valid) return;
+
+    const workspace = createDefaultWorkspace("user_1");
+    const { state, nodeId } = createOrUpdateNodeFromMacro(workspace, parsed);
+
+    expect(state.nodes.tasks[nodeId].AI_context).toBeNull();
+  });
+
+  it("preserves hidden task AI_context when the visible task macro is edited", () => {
+    const parsed = parseMacro("<Apple Cash Fix; 7/1/2026; Finance>", "task");
+    const edited = parseMacro("<Apple Cash Fix Followup; 7/2/2026; Finance>", "task");
+    expect(parsed.valid).toBe(true);
+    expect(edited.valid).toBe(true);
+    if (!parsed.valid || !edited.valid) return;
+
+    const workspace = createDefaultWorkspace("user_1");
+    const created = createOrUpdateNodeFromMacro(workspace, parsed);
+    const stateWithContext = {
+      ...created.state,
+      nodes: {
+        ...created.state.nodes,
+        tasks: {
+          ...created.state.nodes.tasks,
+          [created.nodeId]: {
+            ...created.state.nodes.tasks[created.nodeId],
+            AI_context: "GPT should remember the user already contacted Apple support."
+          }
+        }
+      }
+    };
+
+    const updated = createOrUpdateNodeFromMacro(stateWithContext, edited, created.nodeId);
+
+    expect(updated.state.nodes.tasks[created.nodeId]).toMatchObject({
+      name: "Apple Cash Fix Followup",
+      AI_context: "GPT should remember the user already contacted Apple support."
+    });
+  });
+
+  it("normalizes legacy and oversized task AI_context values", () => {
+    const parsed = parseMacro("<Apple Cash Fix; 7/1/2026; Finance>", "task");
+    expect(parsed.valid).toBe(true);
+    if (!parsed.valid) return;
+
+    const workspace = createDefaultWorkspace("user_1");
+    const { state, nodeId } = createOrUpdateNodeFromMacro(workspace, parsed);
+    const legacyState = JSON.parse(JSON.stringify(state)) as typeof state;
+    delete (legacyState.nodes.tasks[nodeId] as { AI_context?: string | null }).AI_context;
+
+    expect(ensureTaskAIContexts(legacyState).nodes.tasks[nodeId].AI_context).toBeNull();
+    expect(normalizeTaskAIContext(` ${"x".repeat(TASK_AI_CONTEXT_MAX_LENGTH + 10)} `)).toBe(
+      "x".repeat(TASK_AI_CONTEXT_MAX_LENGTH)
+    );
   });
 
   it("stores unsupported task date text for literal display", () => {

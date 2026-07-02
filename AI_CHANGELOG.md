@@ -1,5 +1,12 @@
 # AI Changelog
 
+## 2026-07-01 - Codex (GPT-5) task AI context
+
+- Codex (GPT-5): added hidden task `AI_context` storage with client-side normalization for legacy task nodes.
+- Codex (GPT-5): exposed task `AI_context` through MCP create/read/update/query flows with a 6,000-character write limit.
+- Codex (GPT-5): added explicit MCP field schema entries and `/mcp-v4` as a cache-busting connector URL for task `AI_context`.
+- Codex (GPT-5): preserved hidden task `AI_context` when visible website task macros are edited.
+
 ## 2026-06-26 - Codex (GPT-5) auth and new-user hardening
 
 - Codex (GPT-5): added secure session-cookie defaults, verified-email enforcement, malformed-login handling, and session rotation during Google login.

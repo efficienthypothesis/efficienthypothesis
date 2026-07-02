@@ -1,6 +1,8 @@
 # App Submission TODO
 
-- TODO: Add a public demo recording URL for the OpenAI app submission form.
-  - Show Developer Mode using Efficient Hypothesis.
-  - Include login/connection, create, read/query, update, archive, restore, and the resulting website sync.
-  - Paste the final video URL into the OpenAI dashboard `Demo Recording URL` field.
+- TODO: Fix routine or delete it
+- TODO: Add Projects + Goals Feature (very specifically for self improvement and health)
+- TODO: Separate functionality cleanly and produce intermediate layer
+- TODO: GPT app publish eventually
+- TODO: Acne + Fitness functionality
+- FUTURE TODO: Add a public demo recording URL for the OpenAI app submission form.

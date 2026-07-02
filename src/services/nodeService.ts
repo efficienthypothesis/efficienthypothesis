@@ -21,6 +21,7 @@ import { hasExplicitTime, isSupportedTaskDateInput, parseLocalDateTimeToUtc } fr
 import { makeId, nowIso } from "../utils/ids";
 
 const DEFAULT_TAG_COLOR = "#D1D5DB";
+export const TASK_AI_CONTEXT_MAX_LENGTH = 6000;
 
 export function getNodeByType(
   state: WorkspaceState,
@@ -49,6 +50,7 @@ export function createOrUpdateNodeFromMacro(
     const node: TaskNode = {
       ...base,
       note: parsed.note,
+      AI_context: getExistingTaskAIContext(existing),
       datetimeUtc: parseLocalDateTimeToUtc(parsed.primary),
       datetimeRaw: parsed.primary,
       datetimeHasTime: hasExplicitTime(parsed.primary),
@@ -245,6 +247,50 @@ export function ensureTagDocumentBlocks(state: WorkspaceState): WorkspaceState {
   );
 }
 
+export function normalizeWorkspaceForClient(state: WorkspaceState): WorkspaceState {
+  return ensureTaskAIContexts(ensureTagDocumentBlocks(state));
+}
+
+export function ensureTaskAIContexts(state: WorkspaceState): WorkspaceState {
+  let nextTasks = state.nodes.tasks;
+  let changed = false;
+
+  for (const [taskId, task] of Object.entries(state.nodes.tasks)) {
+    const taskWithOptionalContext = task as TaskNode & { AI_context?: unknown };
+    const normalizedContext = normalizeTaskAIContext(taskWithOptionalContext.AI_context);
+    if (
+      Object.prototype.hasOwnProperty.call(taskWithOptionalContext, "AI_context") &&
+      taskWithOptionalContext.AI_context === normalizedContext
+    ) {
+      continue;
+    }
+    if (!changed) nextTasks = { ...state.nodes.tasks };
+    changed = true;
+    nextTasks[taskId] = {
+      ...task,
+      AI_context: normalizedContext
+    };
+  }
+
+  if (!changed) return state;
+  return {
+    ...state,
+    nodes: {
+      ...state.nodes,
+      tasks: nextTasks
+    }
+  };
+}
+
+export function normalizeTaskAIContext(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  return trimmed.length > TASK_AI_CONTEXT_MAX_LENGTH
+    ? trimmed.slice(0, TASK_AI_CONTEXT_MAX_LENGTH)
+    : trimmed;
+}
+
 function makeBaseNode(
   userId: string,
   id: string,
@@ -263,6 +309,11 @@ function makeBaseNode(
     deletedAt: existing?.deletedAt || null,
     rawMacro
   };
+}
+
+function getExistingTaskAIContext(existing: AnyNode | null): string | null {
+  if (!existing || !("AI_context" in existing)) return null;
+  return normalizeTaskAIContext(existing.AI_context);
 }
 
 function ensureTag(

@@ -64,6 +64,7 @@ ROUTINE_LABELS = {
     "routine_saturday": "Saturday (S)",
 }
 DEFAULT_TAG_COLOR = "#D1D5DB"
+TASK_AI_CONTEXT_MAX_LENGTH = 6000
 ARCHIVE_LEVELS = [0, 1, 2]
 MISSING = object()
 
@@ -161,6 +162,88 @@ def _node_output_schema():
     }
 
 
+def _node_fields_schema(description):
+    nullable_string = {"type": ["string", "null"]}
+    return {
+        "type": "object",
+        "description": description,
+        "properties": {
+            "name": {"type": "string", "description": "Updated node name. Used by update_node."},
+            "note": {**nullable_string, "description": "Human-visible note."},
+            "tag_name": {**nullable_string, "description": "Tag name. Use null to clear."},
+            "tagName": {**nullable_string, "description": "Tag name alias. Use null to clear."},
+            "datetime": {**nullable_string, "description": "Task date/time text."},
+            "datetime_raw": {**nullable_string, "description": "Task date/time text alias."},
+            "datetimeRaw": {**nullable_string, "description": "Task date/time text alias."},
+            "AI_context": {
+                **nullable_string,
+                "description": (
+                    "AI-only task context hidden from the website UI. "
+                    f"Limited to {TASK_AI_CONTEXT_MAX_LENGTH} characters."
+                ),
+                "maxLength": TASK_AI_CONTEXT_MAX_LENGTH,
+            },
+            "ai_context": {
+                **nullable_string,
+                "description": "Alias for task AI_context.",
+                "maxLength": TASK_AI_CONTEXT_MAX_LENGTH,
+            },
+            "aiContext": {
+                **nullable_string,
+                "description": "Alias for task AI_context.",
+                "maxLength": TASK_AI_CONTEXT_MAX_LENGTH,
+            },
+            "rate": {
+                "anyOf": [
+                    {
+                        "type": "object",
+                        "properties": {
+                            "amount": {"type": "number"},
+                            "currency": {"type": "string"},
+                            "intervalCount": {"type": "integer", "minimum": 1},
+                            "intervalUnit": {
+                                "type": "string",
+                                "enum": [
+                                    "day",
+                                    "days",
+                                    "week",
+                                    "weeks",
+                                    "month",
+                                    "months",
+                                    "year",
+                                    "years",
+                                ],
+                            },
+                        },
+                        "required": ["amount", "currency", "intervalCount", "intervalUnit"],
+                        "additionalProperties": False,
+                    },
+                    {"type": "null"},
+                ],
+                "description": "Subscription rate.",
+            },
+            "identity_names": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Website identity names.",
+            },
+            "identities": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Website identity names alias.",
+            },
+            "time_local": {**nullable_string, "description": "Action local time."},
+            "timeLocal": {**nullable_string, "description": "Action local time alias."},
+            "color": {**nullable_string, "description": "Tag color as #RRGGBB."},
+            "address": {**nullable_string, "description": "Location address."},
+            "reference_name": {**nullable_string, "description": "Identity reference website or asset name."},
+            "reference_location_name": {**nullable_string, "description": "Asset reference location name."},
+            "reference": {**nullable_string, "description": "Reference name alias."},
+        },
+        "additionalProperties": False,
+    }
+
+
 TOOLS = [
     _read_only_tool(
         "query_nodes",
@@ -188,7 +271,7 @@ TOOLS = [
                 },
                 "search": {
                     "type": "string",
-                    "description": "Optional case-insensitive text search over node names, notes, tags, references, and placements.",
+                    "description": "Optional case-insensitive text search over node names, notes, task AI_context, tags, references, and placements.",
                 },
                 "limit": {
                     "type": "integer",
@@ -252,14 +335,13 @@ TOOLS = [
                 "document_key": _document_key_schema(
                     "Optional target editor document. Actions may target timetable or a routine weekday."
                 ),
-                "fields": {
-                    "type": "object",
-                    "description": (
-                        "Type-specific fields. task: datetime. subscription: rate. website: identity_names. "
+                "fields": _node_fields_schema(
+                    (
+                        "Type-specific fields. task: datetime, AI_context. subscription: rate. website: identity_names. "
                         "action: time_local. tag: color. location: address. identity: reference_name. "
                         "asset: reference_location_name."
-                    ),
-                },
+                    )
+                ),
             },
             "required": ["node_type", "name"],
             "additionalProperties": False,
@@ -278,12 +360,12 @@ TOOLS = [
             "properties": {
                 "node_type": _node_type_schema(),
                 "node_id": {"type": "string", "description": "Exact node ID."},
-                "fields": {
-                    "type": "object",
-                    "description": (
-                        "Fields to update. Common: name, note, tag_name. Type-specific fields match create_node."
-                    ),
-                },
+                "fields": _node_fields_schema(
+                    (
+                        "Fields to update. Common: name, note, tag_name. Type-specific fields match create_node. "
+                        "Task AI_context can be set to a string or null."
+                    )
+                ),
             },
             "required": ["node_type", "node_id", "fields"],
             "additionalProperties": False,
@@ -395,6 +477,7 @@ def _normalize_workspace(state, user_id):
             "updatedAt": now,
         },
     )
+    _ensure_task_ai_contexts(state)
     return state
 
 
@@ -504,6 +587,38 @@ def _clean_optional_string(value):
         raise ValueError("Expected a string or null")
     value = value.strip()
     return value or None
+
+
+def _clean_task_ai_context(value, strict=True):
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        if strict:
+            raise ValueError("fields.AI_context must be a string or null")
+        return None
+    value = value.strip()
+    if not value:
+        return None
+    if len(value) > TASK_AI_CONTEXT_MAX_LENGTH:
+        if strict:
+            raise ValueError(
+                f"fields.AI_context must be {TASK_AI_CONTEXT_MAX_LENGTH} characters or fewer"
+            )
+        return value[:TASK_AI_CONTEXT_MAX_LENGTH]
+    return value
+
+
+def _ensure_task_ai_contexts(state):
+    tasks = state.get("nodes", {}).get("tasks", {})
+    for task in tasks.values():
+        task["AI_context"] = _clean_task_ai_context(task.get("AI_context"), strict=False)
+
+
+def _task_ai_context_from_fields(fields, existing=None):
+    for key in ["AI_context", "ai_context", "aiContext"]:
+        if key in fields:
+            return _clean_task_ai_context(fields.get(key), strict=True)
+    return _clean_task_ai_context(existing.get("AI_context") if existing else None, strict=False)
 
 
 def _normalize_tag_name(name):
@@ -853,7 +968,7 @@ def _create_node(email, user_id, arguments):
     fields = dict(raw_fields)
     if "tag_name" in arguments and "tag_name" not in fields and "tagName" not in fields:
         fields["tag_name"] = arguments.get("tag_name")
-    note = arguments["note"] if "note" in arguments else MISSING
+    note = arguments["note"] if "note" in arguments else (fields["note"] if "note" in fields else MISSING)
 
     if node_type == "tag":
         normalized = _normalize_tag_name(name)
@@ -896,11 +1011,15 @@ def _build_node_from_fields(state, user_id, node_type, node_id, name, note, fiel
     if node_type == "task":
         datetime_raw = fields.get("datetime")
         if datetime_raw is None:
-            datetime_raw = fields.get("datetime_raw", existing.get("datetimeRaw") if existing else None)
+            datetime_raw = fields.get("datetime_raw")
+        if datetime_raw is None:
+            datetime_raw = fields.get("datetimeRaw", existing.get("datetimeRaw") if existing else None)
         datetime_raw = _clean_optional_string(datetime_raw)
+        ai_context = _task_ai_context_from_fields(fields, existing)
         return {
             **base,
             "note": explicit_note,
+            "AI_context": ai_context,
             "datetimeUtc": _parse_task_datetime(datetime_raw, _get_user_timezone(user_id)),
             "datetimeRaw": datetime_raw,
             "datetimeHasTime": _has_explicit_time(datetime_raw),
@@ -1136,6 +1255,7 @@ def _call_tool(name, arguments, ctx):
 @mcp_bp.route("/mcp", methods=["GET"])
 @mcp_bp.route("/mcp-v2", methods=["GET"])
 @mcp_bp.route("/mcp-v3", methods=["GET"])
+@mcp_bp.route("/mcp-v4", methods=["GET"])
 def mcp_info():
     return jsonify(
         {
@@ -1150,6 +1270,7 @@ def mcp_info():
 @mcp_bp.route("/mcp", methods=["POST"])
 @mcp_bp.route("/mcp-v2", methods=["POST"])
 @mcp_bp.route("/mcp-v3", methods=["POST"])
+@mcp_bp.route("/mcp-v4", methods=["POST"])
 def mcp_rpc():
     payload = request.get_json(silent=True) or {}
     request_id = payload.get("id")

@@ -4,7 +4,7 @@
 
 Use the new workspace-native endpoint for the Efficient Hypothesis GPT App:
 
-- MCP server URL: `https://efficienthypothesis.com/mcp-v3`
+- MCP server URL: `https://efficienthypothesis.com/mcp-v4`
 - Authentication: OAuth
 - Registration method: User-defined OAuth client
 - Authorization URL: `https://efficienthypothesis.com/oauth/authorize`
@@ -15,9 +15,9 @@ Use the new workspace-native endpoint for the Efficient Hypothesis GPT App:
 - Scope: `full_access`
 - OIDC: disabled
 
-OAuth is intentionally unchanged. The `/mcp`, `/mcp-v2`, and `/mcp-v3`
+OAuth is intentionally unchanged. The `/mcp`, `/mcp-v2`, `/mcp-v3`, and `/mcp-v4`
 routes now all serve the new workspace-native tool manifest, but ChatGPT can
-cache tool manifests by URL during development. Prefer `/mcp-v3` for the active
+cache tool manifests by URL during development. Prefer `/mcp-v4` for the active
 connector so the GPT App does not see a stale `/mcp-v2` manifest.
 
 Workspace data is encrypted at rest with a browser-held recovery key. OAuth
@@ -115,6 +115,9 @@ does not rerun repeatedly on the same day.
 
 - GPT can create, read, update, archive, and restore structured nodes.
 - GPT cannot create, edit, or delete free-text editor rows.
+- GPT can read and update task `AI_context`; this field is hidden from the
+  website UI and is intended for AI-only task context.
+- Task `AI_context` is limited to 6,000 characters.
 - `update_node`, `archive_node`, and `restore_node` require exact node IDs.
 - Tags are normalized with `trim().toLowerCase()`.
 - If a node is created or updated with a missing `tag_name`, MCP auto-creates
@@ -136,7 +139,7 @@ Common fields:
 
 Type-specific fields:
 
-- `task`: `fields.datetime`
+- `task`: `fields.datetime`, `fields.AI_context`
 - `subscription`: `fields.rate` with `amount`, `currency`, `intervalCount`,
   and `intervalUnit`
 - `website`: `fields.identity_names`
