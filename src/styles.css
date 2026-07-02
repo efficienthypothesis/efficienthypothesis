@@ -527,16 +527,6 @@ input {
   box-shadow: 0 24px 70px rgba(15, 23, 42, 0.22);
 }
 
-.account-modal {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  width: min(720px, calc(100vw - 44px));
-  max-height: min(760px, calc(100vh - 44px));
-  border: 1px solid var(--border);
-  background: var(--panel-bg);
-  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.22);
-}
-
 .instructions-modal {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
@@ -611,8 +601,7 @@ input {
   overflow: hidden;
 }
 
-.account-body {
-  min-height: 0;
+.settings-body-scroll {
   overflow: auto;
 }
 
@@ -763,8 +752,8 @@ input {
   color: var(--danger);
 }
 
-.account-body .encryption-zone,
-.account-body .danger-zone {
+.settings-body > .encryption-zone,
+.settings-body > .danger-zone {
   border-top: 0;
 }
 

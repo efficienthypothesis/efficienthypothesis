@@ -22,7 +22,7 @@ connector so the GPT App does not see a stale `/mcp-v2` manifest.
 
 Workspace data is encrypted at rest with a browser-held recovery key. OAuth
 authenticates ChatGPT, but MCP tools also require the user to grant ChatGPT
-workspace-key access from Efficient Hypothesis Account > Encryption. The grant
+workspace-key access from Efficient Hypothesis Settings > Encryption. The grant
 lasts 30 days and can be revoked by the user. Without an active grant, MCP tool
 calls return a grant-required error.
 

@@ -1,5 +1,11 @@
 # AI Changelog
 
+## 2026-07-02 - Codex (GPT-5) settings account controls
+
+- Codex (GPT-5): moved encryption and delete-account controls into Settings tabs.
+- Codex (GPT-5): removed the standalone Account modal and the Account button from the profile menu.
+- Codex (GPT-5): updated user-facing copy to point ChatGPT grants, recovery keys, and account deletion to Settings.
+
 ## 2026-07-01 - Codex (GPT-5) routine removal
 
 - Codex (GPT-5): removed the timetable editor, Routine settings tab, browser-side routine rollover, and routine rollover tests.

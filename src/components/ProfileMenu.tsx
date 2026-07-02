@@ -4,11 +4,10 @@ import type { EHUser } from "../types";
 type ProfileMenuProps = {
   user: EHUser;
   onSettings: () => void;
-  onAccount: () => void;
   onInstructions: () => void;
 };
 
-export function ProfileMenu({ user, onSettings, onAccount, onInstructions }: ProfileMenuProps) {
+export function ProfileMenu({ user, onSettings, onInstructions }: ProfileMenuProps) {
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const initials = (user.name || user.email || "EH")
@@ -59,16 +58,6 @@ export function ProfileMenu({ user, onSettings, onAccount, onInstructions }: Pro
             role="menuitem"
           >
             Settings
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setOpen(false);
-              onAccount();
-            }}
-            role="menuitem"
-          >
-            Account
           </button>
           <button
             type="button"
