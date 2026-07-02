@@ -8,7 +8,6 @@ import type {
   WorkspaceState
 } from "../types";
 import { getRoutineDocumentKeys, getRoutineLabels } from "../services/defaultWorkspace";
-import { getNodeByType, restoreNode } from "../services/nodeService";
 import { EditorPanel } from "./EditorPanel";
 
 type SettingsModalProps = {
@@ -28,7 +27,7 @@ type SettingsModalProps = {
   onArchiveNode: (block: SavedNodeBlock) => void;
 };
 
-type SettingsTab = "tags" | "routine" | "archive" | "profile";
+type SettingsTab = "tags" | "routine" | "profile";
 
 export function SettingsModal({
   open,
@@ -61,7 +60,7 @@ export function SettingsModal({
       <div className="settings-modal">
         <div className="settings-top">
           <div className="settings-tabs">
-            {(["tags", "routine", "archive", "profile"] as SettingsTab[]).map((item) => (
+            {(["tags", "routine", "profile"] as SettingsTab[]).map((item) => (
               <button
                 key={item}
                 className={tab === item ? "active" : ""}
@@ -119,10 +118,6 @@ export function SettingsModal({
             </div>
           ) : null}
 
-          {tab === "archive" ? (
-            <ArchivePanels state={state} onRestore={(nodeType, nodeId) => onStateChange(restoreNode(state, nodeType, nodeId))} />
-          ) : null}
-
           {tab === "profile" ? (
             <EditorPanel
               title="Profile"
@@ -140,73 +135,4 @@ export function SettingsModal({
       </div>
     </div>
   );
-}
-
-function ArchivePanels({
-  state,
-  onRestore
-}: {
-  state: WorkspaceState;
-  onRestore: (nodeType: NodeType, nodeId: string) => void;
-}) {
-  const levels = [1, 2] as const;
-  const nodeTypes: NodeType[] = [
-    "task",
-    "website",
-    "subscription",
-    "action",
-    "tag",
-    "location",
-    "identity",
-    "asset"
-  ];
-
-  return (
-    <div className="archive-grid">
-      {levels.map((level) => (
-        <div className="archive-panel" key={level}>
-          <div className="archive-title">Archive Level {level}</div>
-          <div className="archive-editor">
-            {nodeTypes.flatMap((nodeType) =>
-              Object.values(collectionForType(state, nodeType))
-                .filter((node) => node.archive === level && !node.deletedAt)
-                .map((node, index) => (
-                  <div className="archive-row" key={`${nodeType}:${node.id}`}>
-                    <span className="line-number">{index + 1}</span>
-                    <span className="archive-name">
-                      {nodeType}: {node.name}
-                    </span>
-                    <button type="button" onClick={() => onRestore(nodeType, node.id)}>
-                      Restore
-                    </button>
-                  </div>
-                ))
-            )}
-            {nodeTypes.every(
-              (nodeType) =>
-                Object.values(collectionForType(state, nodeType)).filter(
-                  (node) => node.archive === level && !node.deletedAt
-                ).length === 0
-            ) ? (
-              <div className="archive-row muted">
-                <span className="line-number">1</span>
-                <span>No archived nodes.</span>
-              </div>
-            ) : null}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function collectionForType(state: WorkspaceState, nodeType: NodeType) {
-  if (nodeType === "task") return state.nodes.tasks;
-  if (nodeType === "website") return state.nodes.websites;
-  if (nodeType === "subscription") return state.nodes.subscriptions;
-  if (nodeType === "action") return state.nodes.actions;
-  if (nodeType === "tag") return state.nodes.tags;
-  if (nodeType === "location") return state.nodes.locations;
-  if (nodeType === "identity") return state.nodes.identities;
-  return state.nodes.assets;
 }

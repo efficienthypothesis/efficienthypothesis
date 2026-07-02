@@ -67,8 +67,8 @@ Timetable:
             <h3>Edit and organize</h3>
             <p>Saved rows format automatically. Click a saved row to reopen its raw macro text.</p>
             <p>
-              Tags are created automatically when needed. Open Settings for Tags, Routine, Archive,
-              and Profile editors.
+              Tags are created automatically when needed. Open Settings for Tags, Routine, and
+              Profile editors.
             </p>
           </section>
 

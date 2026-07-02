@@ -577,7 +577,6 @@ input {
 .settings-tabs button,
 .modal-close,
 .routine-toolbar button,
-.archive-row button,
 .encryption-zone button {
   border: 1px solid var(--border);
   background: #f8fafc;
@@ -791,65 +790,6 @@ input {
 
 .routine-grid .editor-panel {
   min-width: 180px;
-}
-
-.archive-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  height: 100%;
-  min-height: 0;
-  overflow: hidden;
-}
-
-.archive-panel {
-  display: grid;
-  grid-template-rows: 26px minmax(0, 1fr);
-  min-width: 0;
-  min-height: 0;
-  border-right: 1px solid var(--border);
-}
-
-.archive-panel:last-child {
-  border-right: 0;
-}
-
-.archive-title {
-  height: 26px;
-  padding: 2px 8px;
-  background: var(--section-bg);
-  border-bottom: 1px solid var(--border);
-  font-family: var(--mono);
-  font-weight: 650;
-}
-
-.archive-editor {
-  min-height: 0;
-  overflow-x: hidden;
-  overflow-y: auto;
-  font-family: var(--mono);
-  font-size: 13px;
-}
-
-.archive-row {
-  display: grid;
-  grid-template-columns: 48px minmax(0, 1fr) auto;
-  gap: 8px;
-  min-height: 22px;
-  align-items: center;
-  padding-right: 8px;
-}
-
-.archive-row .line-number {
-  padding-right: 8px;
-  text-align: right;
-  background: var(--gutter-bg);
-  border-right: 1px solid var(--border);
-}
-
-.archive-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .muted {

@@ -1,5 +1,10 @@
 # AI Changelog
 
+## 2026-07-01 - Codex (GPT-5) archive tab removal
+
+- Codex (GPT-5): removed the Settings Archive tab so archived items are no longer browsable or restorable from the website UI.
+- Codex (GPT-5): left MCP archive query and restore tools intact so AI can still inspect and manage archived nodes when asked.
+
 ## 2026-07-01 - Codex (GPT-5) home subdomain and app menu
 
 - Codex (GPT-5): added a signed-in `/apps` menu for launching current and future Efficient Hypothesis app surfaces.
