@@ -1,5 +1,10 @@
 # AI Changelog
 
+## 2026-07-02 - Codex (GPT-5) app submission TODO cleanup
+
+- Codex (GPT-5): removed the completed intermediate-layer TODO after the Apps page became the app-selection layer.
+- Codex (GPT-5): updated public and Apps page copy to remove stale timetable/routine references.
+
 ## 2026-07-02 - Codex (GPT-5) settings account controls
 
 - Codex (GPT-5): moved encryption and delete-account controls into Settings tabs.
