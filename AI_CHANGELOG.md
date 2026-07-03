@@ -1,5 +1,11 @@
 # AI Changelog
 
+## 2026-07-02 - Codex (GPT-5) projects app card
+
+- Codex (GPT-5): removed the disabled Projects and Goals card from the Apps page.
+- Codex (GPT-5): converted the Health card into an enabled Projects card linked to `projects.efficienthypothesis.com`.
+- Codex (GPT-5): added Projects subdomain routing with a minimal signed-in Projects page.
+
 ## 2026-07-02 - Codex (GPT-5) GPT app publication TODO merge
 
 - Codex (GPT-5): merged the GPT app publication TODO with the required public demo recording URL item.

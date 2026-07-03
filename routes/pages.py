@@ -18,6 +18,7 @@ PUBLIC_PAGES = {
 
 PRIMARY_HOST = os.getenv("PRIMARY_HOST", "efficienthypothesis.com")
 HOME_APP_HOST = os.getenv("HOME_APP_HOST", "home.efficienthypothesis.com")
+PROJECTS_APP_HOST = os.getenv("PROJECTS_APP_HOST", "projects.efficienthypothesis.com")
 
 
 def _request_host():
@@ -34,13 +35,21 @@ def _home_app_url(path="/"):
     return _external_url(HOME_APP_HOST, path)
 
 
+def _projects_app_url(path="/"):
+    return _external_url(PROJECTS_APP_HOST, path)
+
+
 def _is_safe_next_url(value):
     if not isinstance(value, str) or not value.strip():
         return False
     parsed = urlparse(value)
     if not parsed.netloc:
         return value.startswith("/") and not value.startswith("//")
-    return parsed.scheme == "https" and parsed.netloc.lower() in {PRIMARY_HOST, HOME_APP_HOST}
+    return parsed.scheme == "https" and parsed.netloc.lower() in {
+        PRIMARY_HOST,
+        HOME_APP_HOST,
+        PROJECTS_APP_HOST,
+    }
 
 
 def _store_login_next():
@@ -71,6 +80,12 @@ def home():
                 _external_url(PRIMARY_HOST, f"/login?{urlencode({'next': _home_app_url('/')})}")
             )
         return render_template("app.html", user=session["user"], initial_page="home")
+    if _request_host() == PROJECTS_APP_HOST:
+        if "user" not in session:
+            return redirect(
+                _external_url(PRIMARY_HOST, f"/login?{urlencode({'next': _projects_app_url('/')})}")
+            )
+        return render_template("projects_app.html", user=session["user"])
     return render_template('index.html')
 
 
@@ -90,11 +105,21 @@ def home_app():
     return redirect(_home_app_url("/"), code=302)
 
 
+@pages_bp.route('/projects')
+def projects_app():
+    return redirect(_projects_app_url("/"), code=302)
+
+
 @pages_bp.route('/apps')
 def app_menu():
     if "user" not in session:
         return redirect(url_for('pages.login_page'))
-    return render_template("app_menu.html", user=session["user"], home_app_url=_home_app_url("/"))
+    return render_template(
+        "app_menu.html",
+        user=session["user"],
+        home_app_url=_home_app_url("/"),
+        projects_app_url=_projects_app_url("/"),
+    )
 
 
 @pages_bp.route('/login')

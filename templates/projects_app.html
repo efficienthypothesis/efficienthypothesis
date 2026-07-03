@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+
+{% block title %}Projects - Efficient Hypothesis{% endblock %}
+
+{% block head %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/navbar.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/footer.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app_menu.css') }}">
+{% endblock %}
+
+{% block navbar %}
+  {% include "navbar.html" %}
+{% endblock %}
+
+{% block content %}
+  <section class="app-menu" aria-label="Projects">
+    <div class="app-menu-heading">
+      <h1>Projects</h1>
+      <p>{{ user.email }}</p>
+    </div>
+  </section>
+{% endblock %}
+
+{% block footer %}
+  {% include "footer.html" %}
+{% endblock %}
