@@ -118,7 +118,6 @@ def app_menu():
         "app_menu.html",
         user=session["user"],
         home_app_url=_home_app_url("/"),
-        projects_app_url=_projects_app_url("/"),
     )
 
 
