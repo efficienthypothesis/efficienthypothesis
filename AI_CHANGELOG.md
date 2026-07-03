@@ -1,5 +1,9 @@
 # AI Changelog
 
+## 2026-07-02 - Codex (GPT-5) GPT app publication TODO merge
+
+- Codex (GPT-5): merged the GPT app publication TODO with the required public demo recording URL item.
+
 ## 2026-07-02 - Codex (GPT-5) app submission TODO cleanup
 
 - Codex (GPT-5): removed the completed intermediate-layer TODO after the Apps page became the app-selection layer.
