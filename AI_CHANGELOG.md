@@ -1,5 +1,9 @@
 # AI Changelog
 
+## 2026-07-04 - Codex (GPT-5) direct navbar controls
+
+- Codex (GPT-5): replaced the workspace profile photo dropdown with direct instructions and settings buttons.
+
 ## 2026-07-04 - Codex (GPT-5) projects calendar scaffold
 
 - Codex (GPT-5): replaced the placeholder Projects page with a seven-day calendar layout centered on today.

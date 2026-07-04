@@ -329,7 +329,6 @@ export function App({ bootstrap }: AppProps) {
     return (
       <div className="app-shell">
         <Navbar
-          user={user}
           onSettings={() => setSettingsOpen(true)}
           onInstructions={() => setInstructionsOpen(true)}
         />
@@ -377,7 +376,6 @@ export function App({ bootstrap }: AppProps) {
   return (
     <div className="app-shell">
       <Navbar
-        user={user}
         onSettings={() => setSettingsOpen(true)}
         onInstructions={() => setInstructionsOpen(true)}
       />
