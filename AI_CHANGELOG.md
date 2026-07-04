@@ -1,5 +1,9 @@
 # AI Changelog
 
+## 2026-07-04 - Codex (GPT-5) profile section tabs
+
+- Codex (GPT-5): replaced the Profile modal Goals and State tabs with blank Acne, Fitness, and Flexibility tabs.
+
 ## 2026-07-04 - Codex (GPT-5) navbar profile modal
 
 - Codex (GPT-5): replaced the template navbar Apps and Sign Out links with Profile and Instructions buttons.

@@ -105,24 +105,8 @@ body.nav-modal-open {
   padding: 16px;
 }
 
-.profile-tab-panel label {
-  display: grid;
-  gap: 8px;
-  color: #172033;
-  font-size: 0.86rem;
-  font-weight: 650;
-}
-
-.profile-tab-panel textarea {
-  width: 100%;
+.profile-tab-panel {
   min-height: 360px;
-  resize: vertical;
-  border: 1px solid #d8dee8;
-  border-radius: 6px;
-  padding: 12px;
-  background: #fbfcff;
-  color: #172033;
-  font: 0.95rem/1.5 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
 }
 
 .nav-instructions-body {
@@ -156,7 +140,7 @@ body.nav-modal-open {
     padding: 14px;
   }
 
-  .profile-tab-panel textarea {
+  .profile-tab-panel {
     min-height: 280px;
   }
 }
