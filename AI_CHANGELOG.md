@@ -1,5 +1,10 @@
 # AI Changelog
 
+## 2026-07-04 - Codex (GPT-5) projects calendar scaffold
+
+- Codex (GPT-5): replaced the placeholder Projects page with a seven-day calendar layout centered on today.
+- Codex (GPT-5): added inactive previous/next arrow controls around the Projects day columns.
+
 ## 2026-07-02 - Codex (GPT-5) projects app card
 
 - Codex (GPT-5): removed the disabled Projects and Goals card from the Apps page.

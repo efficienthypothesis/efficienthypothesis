@@ -1,3 +1,4 @@
+import datetime
 import os
 from urllib.parse import urlencode, urlparse
 
@@ -19,6 +20,7 @@ PUBLIC_PAGES = {
 PRIMARY_HOST = os.getenv("PRIMARY_HOST", "efficienthypothesis.com")
 HOME_APP_HOST = os.getenv("HOME_APP_HOST", "home.efficienthypothesis.com")
 PROJECTS_APP_HOST = os.getenv("PROJECTS_APP_HOST", "projects.efficienthypothesis.com")
+DEFAULT_PROJECTS_TIMEZONE = os.getenv("DEFAULT_PROJECTS_TIMEZONE", "America/Los_Angeles")
 
 
 def _request_host():
@@ -37,6 +39,34 @@ def _home_app_url(path="/"):
 
 def _projects_app_url(path="/"):
     return _external_url(PROJECTS_APP_HOST, path)
+
+
+def _project_timezone(user):
+    timezone_name = DEFAULT_PROJECTS_TIMEZONE
+    user_id = user.get("id") if isinstance(user, dict) else None
+    if user_id:
+        try:
+            item = user_table.get_item(Key={"user_id": user_id}).get("Item") or {}
+            timezone_name = item.get("timezone") or timezone_name
+        except Exception:
+            timezone_name = DEFAULT_PROJECTS_TIMEZONE
+    try:
+        return ZoneInfo(timezone_name)
+    except ZoneInfoNotFoundError:
+        return ZoneInfo(DEFAULT_PROJECTS_TIMEZONE)
+
+
+def _project_calendar_days(user):
+    today = datetime.datetime.now(_project_timezone(user)).date()
+    days = []
+    for offset in range(-3, 4):
+        day = today + datetime.timedelta(days=offset)
+        days.append({
+            "weekday": day.strftime("%A"),
+            "date": f"{day.day}/{day.month}",
+            "is_today": offset == 0,
+        })
+    return days
 
 
 def _is_safe_next_url(value):
@@ -85,7 +115,11 @@ def home():
             return redirect(
                 _external_url(PRIMARY_HOST, f"/login?{urlencode({'next': _projects_app_url('/')})}")
             )
-        return render_template("projects_app.html", user=session["user"])
+        return render_template(
+            "projects_app.html",
+            user=session["user"],
+            project_days=_project_calendar_days(session["user"]),
+        )
     return render_template('index.html')
 
 
