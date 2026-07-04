@@ -69,9 +69,6 @@ export function ProfileMenu({ user, onSettings, onInstructions }: ProfileMenuPro
           >
             Instructions
           </button>
-          <a href="/logout" role="menuitem">
-            Logout
-          </a>
         </div>
       ) : null}
     </div>
