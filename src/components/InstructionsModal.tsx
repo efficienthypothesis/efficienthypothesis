@@ -64,7 +64,7 @@ Family streaming plan>`}</pre>
             <h3>Edit and organize</h3>
             <p>Saved rows format automatically. Click a saved row to reopen its raw macro text.</p>
             <p>
-              Tags are created automatically when needed. Open Settings for Tags and Profile
+              Tags are created automatically when needed. Open Settings for Tags and Entity
               editors.
             </p>
           </section>

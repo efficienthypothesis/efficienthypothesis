@@ -171,7 +171,7 @@ export function SettingsModal({
 
           {tab === "profile" ? (
             <EditorPanel
-              title="Profile"
+              title="Entity"
               document={state.documents.profile}
               state={state}
               onDocumentChange={(document) => onDocumentChange("profile", document)}
@@ -258,6 +258,7 @@ export function SettingsModal({
 
 function settingsTabLabel(tab: SettingsTab): string {
   if (tab === "delete") return "Delete Account";
+  if (tab === "profile") return "Entity";
   return tab[0].toUpperCase() + tab.slice(1);
 }
 

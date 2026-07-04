@@ -2,10 +2,64 @@
   <a href="/" class="logo-full"><img src="/logo.svg" alt="Efficient Hypothesis" style="height:28px"></a>
   <div class="nav-links">
     {% if session.get("user") %}
-      <a href="/apps">Apps</a>
-      <a href="/logout">Sign Out</a>
+      <button class="nav-action" type="button" data-modal-target="profile-modal">Profile</button>
+      <button class="nav-action" type="button" data-modal-target="navbar-instructions-modal">Instructions</button>
     {% else %}
       <a href="/login">Sign In</a>
     {% endif %}
   </div>
 </nav>
+
+{% if session.get("user") %}
+  <div class="nav-modal-backdrop" id="profile-modal" hidden>
+    <div class="nav-modal" role="dialog" aria-modal="true" aria-labelledby="profile-modal-title">
+      <div class="nav-modal-top">
+        <div class="nav-modal-title" id="profile-modal-title">Profile</div>
+        <button class="nav-modal-close" type="button" data-modal-close>Close</button>
+      </div>
+      <div class="nav-modal-tabs" role="tablist" aria-label="Profile sections">
+        <button class="active" type="button" role="tab" aria-selected="true" data-profile-tab="goals">Goals</button>
+        <button type="button" role="tab" aria-selected="false" data-profile-tab="state">State</button>
+      </div>
+      <div class="nav-modal-body">
+        <section class="profile-tab-panel" data-profile-panel="goals">
+          <label>
+            Goals
+            <textarea spellcheck="true" aria-label="Goals"></textarea>
+          </label>
+        </section>
+        <section class="profile-tab-panel" data-profile-panel="state" hidden>
+          <label>
+            State
+            <textarea spellcheck="true" aria-label="State"></textarea>
+          </label>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <div class="nav-modal-backdrop" id="navbar-instructions-modal" hidden>
+    <div class="nav-modal" role="dialog" aria-modal="true" aria-labelledby="navbar-instructions-title">
+      <div class="nav-modal-top">
+        <div class="nav-modal-title" id="navbar-instructions-title">Instructions</div>
+        <button class="nav-modal-close" type="button" data-modal-close>Close</button>
+      </div>
+      <div class="nav-modal-body nav-instructions-body">
+        <section>
+          <h3>Home</h3>
+          <p>Use Home for tasks, websites, subscriptions, tags, and entity references.</p>
+        </section>
+        <section>
+          <h3>Projects</h3>
+          <p>Use Projects for project planning. The calendar is blank until project functionality is added.</p>
+        </section>
+        <section>
+          <h3>Profile</h3>
+          <p>Use this top-nav Profile modal for lightweight goals and state notes.</p>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <script src="{{ url_for('static', filename='js/navbar.js') }}" defer></script>
+{% endif %}

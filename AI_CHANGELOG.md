@@ -1,5 +1,11 @@
 # AI Changelog
 
+## 2026-07-04 - Codex (GPT-5) navbar profile modal
+
+- Codex (GPT-5): replaced the template navbar Apps and Sign Out links with Profile and Instructions buttons.
+- Codex (GPT-5): added a top-nav Profile modal with Goals and State editor tabs.
+- Codex (GPT-5): renamed the Settings Profile tab and editor title to Entity.
+
 ## 2026-07-04 - Codex (GPT-5) direct navbar controls
 
 - Codex (GPT-5): replaced the workspace profile photo dropdown with direct instructions and settings buttons.

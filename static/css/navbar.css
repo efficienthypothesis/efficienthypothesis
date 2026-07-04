@@ -6,7 +6,157 @@
 .top-navbar .nav-links {
   display: inline-flex; align-items: center; gap: 16px;
 }
-.top-navbar .nav-links a {
+.top-navbar .nav-links a,
+.top-navbar .nav-links button {
   color: #233a8b; text-decoration: none; font-size: 0.9rem; font-weight: 500;
 }
-.top-navbar .nav-links a:hover { text-decoration: underline; }
+.top-navbar .nav-links button {
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  font-family: inherit;
+}
+.top-navbar .nav-links a:hover,
+.top-navbar .nav-links button:hover {
+  text-decoration: underline;
+}
+
+body.nav-modal-open {
+  overflow: hidden;
+}
+
+.nav-modal-backdrop[hidden],
+.profile-tab-panel[hidden] {
+  display: none !important;
+}
+
+.nav-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.36);
+}
+
+.nav-modal {
+  width: min(680px, 100%);
+  max-height: min(720px, calc(100vh - 48px));
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid #d8dee8;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 22px 50px rgba(15, 23, 42, 0.24);
+}
+
+.nav-modal-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  border-bottom: 1px solid #d8dee8;
+}
+
+.nav-modal-title {
+  color: #172033;
+  font-size: 1rem;
+  font-weight: 650;
+}
+
+.nav-modal-close {
+  border: 1px solid #d8dee8;
+  background: #f8fafc;
+  color: #172033;
+  padding: 7px 10px;
+  font-family: inherit;
+  font-size: 0.86rem;
+  cursor: pointer;
+}
+
+.nav-modal-tabs {
+  display: inline-flex;
+  gap: 6px;
+  padding: 10px 16px 0;
+}
+
+.nav-modal-tabs button {
+  border: 1px solid #d8dee8;
+  background: #f8fafc;
+  color: #64748b;
+  padding: 7px 11px;
+  font-family: inherit;
+  font-size: 0.86rem;
+  cursor: pointer;
+}
+
+.nav-modal-tabs button.active {
+  border-color: #233a8b;
+  background: #233a8b;
+  color: #ffffff;
+}
+
+.nav-modal-body {
+  min-height: 0;
+  overflow: auto;
+  padding: 16px;
+}
+
+.profile-tab-panel label {
+  display: grid;
+  gap: 8px;
+  color: #172033;
+  font-size: 0.86rem;
+  font-weight: 650;
+}
+
+.profile-tab-panel textarea {
+  width: 100%;
+  min-height: 360px;
+  resize: vertical;
+  border: 1px solid #d8dee8;
+  border-radius: 6px;
+  padding: 12px;
+  background: #fbfcff;
+  color: #172033;
+  font: 0.95rem/1.5 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+}
+
+.nav-instructions-body {
+  display: grid;
+  gap: 16px;
+}
+
+.nav-instructions-body h3 {
+  margin: 0 0 5px;
+  color: #172033;
+  font-size: 0.95rem;
+}
+
+.nav-instructions-body p {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+@media (max-width: 640px) {
+  .top-navbar {
+    padding: 10px 14px;
+  }
+
+  .top-navbar .nav-links {
+    gap: 10px;
+  }
+
+  .nav-modal-backdrop {
+    padding: 14px;
+  }
+
+  .profile-tab-panel textarea {
+    min-height: 280px;
+  }
+}

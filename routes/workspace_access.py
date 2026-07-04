@@ -62,7 +62,7 @@ def require_active_chatgpt_grant(email):
     if not grant:
         raise ValueError(
             "ChatGPT workspace access is not granted or has expired. "
-            "Open Efficient Hypothesis and grant ChatGPT access from Settings > Profile."
+            "Open Efficient Hypothesis and grant ChatGPT access from Settings > Encryption."
         )
     return grant
 
