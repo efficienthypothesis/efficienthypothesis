@@ -62,7 +62,21 @@ def _create_access_token(email, client_id, scopes, user_id):
 
 
 def _verify_access_token(token):
-    """Verify HMAC signature and expiry. Returns payload dict or None."""
+    """Verify HMAC signature, expiry, and server-side revocation."""
+    payload = _decode_access_token(token)
+    if not payload:
+        return None
+    try:
+        revoked = oauth_tokens_table.get_item(Key={"token_hash": _hash_token(token)}).get("Item")
+    except Exception:
+        return None
+    if revoked and revoked.get("type") == "revoked_access_token":
+        return None
+    return payload
+
+
+def _decode_access_token(token):
+    """Verify only the signed access-token envelope for revocation handling."""
     parts = token.split(".")
     if len(parts) != 2:
         return None
@@ -79,7 +93,7 @@ def _verify_access_token(token):
         return None
     if payload.get("exp", 0) < int(time.time()):
         return None
-    return payload
+    return payload if payload.get("exp", 0) >= int(time.time()) else None
 
 
 def _hash_token(token):

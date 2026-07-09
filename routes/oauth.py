@@ -3,6 +3,7 @@ import datetime
 import secrets
 import time
 import json
+from botocore.exceptions import ClientError
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 from config import (
     s3, PRODUCTIVITY_BUCKET, oauth_tokens_table,
@@ -10,6 +11,15 @@ from config import (
 )
 
 oauth_bp = Blueprint('oauth', __name__)
+
+
+class OAuthRegistryUnavailable(Exception):
+    pass
+
+
+@oauth_bp.errorhandler(OAuthRegistryUnavailable)
+def oauth_registry_unavailable(_error):
+    return jsonify({"error": "oauth_registry_unavailable"}), 503
 
 
 def _issuer():
@@ -97,17 +107,35 @@ def _global_oauth_clients_s3_key():
 def _load_global_oauth_clients():
     try:
         obj = s3.get_object(Bucket=PRODUCTIVITY_BUCKET, Key=_global_oauth_clients_s3_key())
-        return json.loads(obj["Body"].read().decode("utf-8"))
-    except Exception:
-        return []
+        with obj["Body"] as body:
+            clients = json.loads(body.read().decode("utf-8"))
+        if not isinstance(clients, list):
+            raise OAuthRegistryUnavailable()
+        return clients
+    except ClientError as exc:
+        code = str(exc.response.get("Error", {}).get("Code", ""))
+        if code in {"NoSuchKey", "404", "NotFound"}:
+            return []
+        raise OAuthRegistryUnavailable() from exc
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise OAuthRegistryUnavailable() from exc
 
 
 def _load_oauth_clients(email):
     try:
         obj = s3.get_object(Bucket=PRODUCTIVITY_BUCKET, Key=_oauth_clients_s3_key(email))
-        return json.loads(obj["Body"].read().decode("utf-8"))
-    except Exception:
-        return []
+        with obj["Body"] as body:
+            clients = json.loads(body.read().decode("utf-8"))
+        if not isinstance(clients, list):
+            raise OAuthRegistryUnavailable()
+        return clients
+    except ClientError as exc:
+        code = str(exc.response.get("Error", {}).get("Code", ""))
+        if code in {"NoSuchKey", "404", "NotFound"}:
+            return []
+        raise OAuthRegistryUnavailable() from exc
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise OAuthRegistryUnavailable() from exc
 
 
 def _load_registered_oauth_clients(email):
@@ -395,8 +423,15 @@ def oauth_revoke():
     if not token:
         return jsonify({"error": "invalid_request"}), 400
     token_hash = _hash_token(token)
-    try:
+    from config import _decode_access_token
+
+    payload = _decode_access_token(token)
+    if payload:
+        oauth_tokens_table.put_item(Item={
+            "token_hash": token_hash,
+            "type": "revoked_access_token",
+            "expires_at_epoch": payload["exp"],
+        })
+    else:
         oauth_tokens_table.delete_item(Key={"token_hash": token_hash})
-    except Exception:
-        pass
     return jsonify({"ok": True})
