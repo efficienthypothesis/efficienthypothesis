@@ -329,6 +329,22 @@ class TaskBoardDataTests(unittest.TestCase):
         with self.assertRaisesRegex(TaskListFormatError, "outside Done"):
             parse_task_board(payload)
 
+    def test_parser_rejects_non_extended_iso_dates(self):
+        for invalid_date in ("20260709", "2026-W28-4"):
+            for location in ("board", "task"):
+                with self.subTest(date=invalid_date, location=location):
+                    payload = json.loads(json.dumps(TASK_PAYLOAD))
+                    if location == "board":
+                        payload["updatedOn"] = invalid_date
+                    else:
+                        payload["tasks"][0]["updatedOn"] = invalid_date
+
+                    with self.assertRaisesRegex(
+                        TaskListFormatError,
+                        "must use YYYY-MM-DD",
+                    ):
+                        parse_task_board(payload)
+
 
 class ClosingBody(io.BytesIO):
     def __init__(self, initial_bytes):

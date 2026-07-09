@@ -56,6 +56,7 @@ REQUIRED_TASK_FIELDS = frozenset({
     "source",
 })
 SLUG_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+DATE_PATTERN = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
 STRING_LIMITS = {
     "id": 80,
     "title": 200,
@@ -214,7 +215,7 @@ def _require_bounded_string(value, location, field, limit):
 
 
 def _parse_date(value, location):
-    if not isinstance(value, str):
+    if not isinstance(value, str) or not DATE_PATTERN.fullmatch(value):
         raise TaskListFormatError(f"{location} must use YYYY-MM-DD.")
     try:
         return datetime.date.fromisoformat(value).isoformat()
