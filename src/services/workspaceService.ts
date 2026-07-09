@@ -10,7 +10,8 @@ import {
 } from "./encryptionService";
 import { normalizeWorkspaceForClient } from "./nodeService";
 
-const LOCAL_CACHE_KEY = "eh_workspace_cache_v1";
+const LOCAL_CACHE_PREFIX = "eh_workspace_cache_v1:";
+const LEGACY_LOCAL_CACHE_KEY = "eh_workspace_cache_v1";
 
 export { WorkspaceLockedError, importWorkspaceKey };
 
@@ -144,11 +145,16 @@ export async function saveWorkspace(
 }
 
 async function readCachedWorkspace(userId: string): Promise<WorkspaceState | null> {
+  clearLegacyPlaintextWorkspaceCache();
   try {
-    const raw = localStorage.getItem(LOCAL_CACHE_KEY);
-    if (raw) return JSON.parse(raw) as WorkspaceState;
+    const raw = localStorage.getItem(localCacheKey(userId));
+    if (raw) {
+      const cached = JSON.parse(raw) as WorkspaceState;
+      if (cached.userId === userId) return cached;
+      clearPlaintextWorkspaceCache(userId);
+    }
   } catch {
-    clearPlaintextWorkspaceCache();
+    clearPlaintextWorkspaceCache(userId);
   }
   try {
     const encrypted = readCachedEncryptedWorkspace(userId);
@@ -181,16 +187,25 @@ export function clearWorkspaceCache(): void {
     const userId = getCurrentUserId();
     if (userId) {
       clearWorkspaceEncryptionArtifacts(userId);
+      clearPlaintextWorkspaceCache(userId);
     }
-    clearPlaintextWorkspaceCache();
+    clearLegacyPlaintextWorkspaceCache();
   } catch {
     // Local cache is best-effort only.
   }
 }
 
-function clearPlaintextWorkspaceCache(): void {
+function clearPlaintextWorkspaceCache(userId: string): void {
   try {
-    localStorage.removeItem(LOCAL_CACHE_KEY);
+    localStorage.removeItem(localCacheKey(userId));
+  } catch {
+    // Local cache is best-effort only.
+  }
+}
+
+function clearLegacyPlaintextWorkspaceCache(): void {
+  try {
+    localStorage.removeItem(LEGACY_LOCAL_CACHE_KEY);
   } catch {
     // Local cache is best-effort only.
   }
@@ -198,10 +213,14 @@ function clearPlaintextWorkspaceCache(): void {
 
 function cachePlaintextWorkspace(state: WorkspaceState): void {
   try {
-    localStorage.setItem(LOCAL_CACHE_KEY, JSON.stringify(state));
+    localStorage.setItem(localCacheKey(state.userId), JSON.stringify(state));
   } catch {
     // Local cache is best-effort only.
   }
+}
+
+function localCacheKey(userId: string): string {
+  return `${LOCAL_CACHE_PREFIX}${userId}`;
 }
 
 export async function deleteAccount(confirmation: string): Promise<void> {

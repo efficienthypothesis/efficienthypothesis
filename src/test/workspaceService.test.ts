@@ -134,4 +134,53 @@ describe("workspace service", () => {
     expect(result.shouldPersist).toBe(false);
     expect(result.state.userId).toBe("user_1");
   });
+
+  it("does not use another user's plaintext cache during a server failure", async () => {
+    vi.stubGlobal("localStorage", {
+      getItem: vi.fn((key: string) =>
+        key === "eh_workspace_cache_v1:user_2"
+          ? JSON.stringify(createDefaultWorkspace("user_2"))
+          : null
+      ),
+      removeItem: vi.fn(),
+      setItem: vi.fn()
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: false,
+        status: 503,
+        json: async () => ({})
+      }))
+    );
+
+    const result = await loadWorkspaceWithMetadata("user_1");
+
+    expect(result.state.userId).toBe("user_1");
+    expect(result.shouldPersist).toBe(false);
+  });
+
+  it("writes plaintext cache under the authenticated user's key", async () => {
+    const setItem = vi.fn();
+    vi.stubGlobal("localStorage", {
+      getItem: vi.fn(() => null),
+      removeItem: vi.fn(),
+      setItem
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({ updatedAt: "2026-07-09T12:00:00.000Z" })
+      }))
+    );
+
+    await saveWorkspace(createDefaultWorkspace("user_1"), null);
+
+    expect(setItem).toHaveBeenCalledWith(
+      "eh_workspace_cache_v1:user_1",
+      expect.any(String)
+    );
+  });
 });

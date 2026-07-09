@@ -149,6 +149,11 @@
 - Codex (GPT-5): updated deployment packaging to include the Lambda-compatible `cryptography` dependency.
 - Codex (GPT-5): updated Privacy, Terms, and Instructions copy to explain recovery keys, encrypted storage, and temporary ChatGPT grants.
 
+## 2026-07-09 - Codex (GPT-5) user-scoped workspace cache
+
+- Codex (GPT-5): changed plaintext browser workspace cache keys to include the authenticated user ID and reject mismatched cached payloads.
+- Codex (GPT-5): removed the legacy shared cache key and added regression coverage for cross-user fallback isolation.
+
 ## 2026-07-09 - Codex (GPT-5) fail-closed workspace reads
 
 - Codex (GPT-5): stopped uncertain S3, decoding, and JSON reads from being treated as empty workspaces or overwriting existing data.
