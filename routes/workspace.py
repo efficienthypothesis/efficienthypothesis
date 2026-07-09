@@ -1,6 +1,7 @@
 from flask import Blueprint, request, jsonify
 import datetime
 import json
+from botocore.exceptions import ClientError
 
 from config import PRODUCTIVITY_BUCKET, s3, _require_auth
 from routes.workspace_access import delete_chatgpt_grant
@@ -13,6 +14,18 @@ def _workspace_state_key(email):
     return f"{email}/workspace/state.json"
 
 
+def _read_workspace_state(key):
+    try:
+        obj = s3.get_object(Bucket=PRODUCTIVITY_BUCKET, Key=key)
+        with obj["Body"] as body:
+            return json.loads(body.read().decode("utf-8")), False
+    except ClientError as exc:
+        code = str(exc.response.get("Error", {}).get("Code", ""))
+        if code in {"NoSuchKey", "404", "NotFound"}:
+            return None, True
+        raise
+
+
 @workspace_bp.route("/api/workspace", methods=["GET"])
 def api_workspace_get():
     ctx, err = _require_auth()
@@ -21,11 +34,9 @@ def api_workspace_get():
     email = ctx["email"]
     key = _workspace_state_key(email)
     try:
-        obj = s3.get_object(Bucket=PRODUCTIVITY_BUCKET, Key=key)
-        with obj["Body"] as body:
-            raw_state = json.loads(body.read().decode("utf-8"))
-    except Exception:
-        raw_state = None
+        raw_state, _missing = _read_workspace_state(key)
+    except (ClientError, UnicodeDecodeError, json.JSONDecodeError):
+        return jsonify({"error": "workspace_unavailable"}), 503
     if is_encrypted_workspace(raw_state):
         return jsonify({
             "state": None,
@@ -54,13 +65,10 @@ def api_workspace_put():
     base_updated_at = data.get("baseUpdatedAt")
 
     key = _workspace_state_key(email)
-    existing_state = None
     try:
-        obj = s3.get_object(Bucket=PRODUCTIVITY_BUCKET, Key=key)
-        with obj["Body"] as body:
-            existing_state = json.loads(body.read().decode("utf-8"))
-    except Exception:
-        existing_state = None
+        existing_state, _missing = _read_workspace_state(key)
+    except (ClientError, UnicodeDecodeError, json.JSONDecodeError):
+        return jsonify({"error": "workspace_unavailable"}), 503
 
     existing_updated_at = encrypted_workspace_updated_at(existing_state)
     if existing_state and (not base_updated_at or base_updated_at != existing_updated_at):

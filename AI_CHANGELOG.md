@@ -149,6 +149,11 @@
 - Codex (GPT-5): updated deployment packaging to include the Lambda-compatible `cryptography` dependency.
 - Codex (GPT-5): updated Privacy, Terms, and Instructions copy to explain recovery keys, encrypted storage, and temporary ChatGPT grants.
 
+## 2026-07-09 - Codex (GPT-5) fail-closed workspace reads
+
+- Codex (GPT-5): stopped uncertain S3, decoding, and JSON reads from being treated as empty workspaces or overwriting existing data.
+- Codex (GPT-5): preserved first-time workspace creation only for confirmed missing objects and added browser and MCP regression coverage.
+
 ## 2026-06-22 - Codex (GPT-5) account deletion and support contact
 
 - Codex (GPT-5): added a browser-session-only account deletion endpoint that deletes the user's S3 data prefix, workspace data, OAuth tokens, user record, chat usage/feedback, and legacy task/action/draft/timelog rows.

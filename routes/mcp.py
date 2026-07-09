@@ -4,6 +4,7 @@ import re
 import uuid
 from copy import deepcopy
 from zoneinfo import ZoneInfo
+from botocore.exceptions import ClientError
 
 from flask import Blueprint, Response, jsonify, request
 
@@ -398,8 +399,13 @@ def _load_workspace(email, user_id):
         obj = s3.get_object(Bucket=PRODUCTIVITY_BUCKET, Key=_workspace_state_key(email))
         with obj["Body"] as body:
             state = json.loads(body.read().decode("utf-8"))
-    except Exception:
-        return _create_default_workspace(user_id or email)
+    except ClientError as exc:
+        code = str(exc.response.get("Error", {}).get("Code", ""))
+        if code in {"NoSuchKey", "404", "NotFound"}:
+            return _create_default_workspace(user_id or email)
+        raise ValueError("workspace_unavailable") from exc
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError("workspace_unavailable") from exc
     if isinstance(state, dict):
         if is_encrypted_workspace(state):
             grant = active_chatgpt_grant(email)
