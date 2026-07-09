@@ -77,6 +77,8 @@ The backend owns:
 - OAuth authorization-code and bearer-token validation for MCP.
 - S3 reads and writes for workspace state and project context files, plus private admin task-board reads.
 - S3 workspace reads are fail-closed for browser and MCP surfaces: confirmed missing objects still allow first-write bootstrap, while non-missing read failures return temporary-unavailable and do not fabricate or overwrite state.
+- Browser-side plaintext workspace cache keys are scoped to the authenticated user ID.
+- The legacy shared plaintext cache key is removed and treated as stale storage during migration.
 - DynamoDB user records and legacy cleanup tables.
 - Server-rendered pages and static asset responses for logo and favicon.
 - API validation, conflict handling, and user ownership checks.
@@ -102,6 +104,8 @@ Current S3 data includes:
 - `s3://eh-app-data/deploy/efficienthypothesis-build.zip`
 
 Current workspace writes store plaintext JSON.
+Browser-side workspace caches store plaintext state under user-scoped keys.
+The legacy shared plaintext cache key is removed and scrubbed when the authenticated user changes.
 Legacy encrypted workspace envelopes are retained only for migration compatibility.
 New encrypted workspace writes are rejected.
 

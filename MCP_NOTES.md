@@ -63,6 +63,8 @@ s3://eh-app-data/<email>/workspace/state.json
 ```
 
 For current workspaces this object is plaintext workspace JSON.
+MCP fails closed on non-missing S3 read, UTF-8 decode, or JSON parse errors.
+In those cases, the workspace is unavailable until retry and is not replaced by a synthetic default.
 If MCP encounters a legacy encrypted envelope and an old active grant is still present, it decrypts once, writes plaintext workspace JSON back to the same key, and deletes the legacy grant.
 
 Structured data lives in normalized node collections:

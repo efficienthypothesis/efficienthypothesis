@@ -167,6 +167,12 @@ After authorization, read handling follows these rules:
 
 Run `tests/test_workspace_fail_closed.py` when read-error handling or workspace conflict behavior changes.
 
+## Browser Cache Contract
+
+The workspace client cache in `localStorage` is scoped by authenticated user ID.
+Each browser user uses a cache key of the form `eh_workspace_cache_v1:<user_id>`.
+The shared legacy key `eh_workspace_cache_v1` is no longer used for reads and is cleared during migration.
+
 ## Routing Rules
 
 Documentation-only changes should not deploy unless they change published runtime content.
