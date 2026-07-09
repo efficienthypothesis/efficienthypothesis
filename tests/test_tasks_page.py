@@ -291,6 +291,7 @@ class TaskBoardDataTests(unittest.TestCase):
         decoder_errors = (
             ValueError(SENSITIVE_STORAGE_DETAIL),
             RecursionError(SENSITIVE_STORAGE_DETAIL),
+            UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte"),
         )
 
         for decoder_error in decoder_errors:

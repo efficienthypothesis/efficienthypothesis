@@ -105,7 +105,7 @@ def load_task_board(s3_client, bucket, key=ADMIN_TASKS_KEY):
 
     try:
         payload = json.loads(raw_payload.decode("utf-8"))
-    except (ValueError, RecursionError) as exc:
+    except (ValueError, RecursionError, UnicodeDecodeError) as exc:
         raise TaskListFormatError("Admin task payload must be valid UTF-8 JSON.") from exc
     return parse_task_board(payload)
 
