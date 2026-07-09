@@ -16,7 +16,11 @@ Efficient Hypothesis is a personal productivity app with browser, OAuth, and MCP
 The main workspace runs at `home.efficienthypothesis.com`.
 The projects calendar runs at `projects.efficienthypothesis.com`.
 The public marketing, login, OAuth, legal, and app-selection pages run from `efficienthypothesis.com`.
-The private admin task board runs at `efficienthypothesis.com/tasks` and is restricted by verified browser-session email.
+The private admin task board runs at `efficienthypothesis.com/tasks` and is restricted by the verified browser-session email allowlist in `routes/task_dashboard.py`, which currently contains only `neerkuchlous@gmail.com`.
+Email matching trims surrounding whitespace and ignores case while still requiring the exact allowlisted address.
+Its Apps entry is rendered only for allowlisted sessions, and direct requests from other authenticated users receive HTTP 403.
+OAuth bearer credentials do not grant access to this browser-session surface.
+Requests for `/tasks` on another app host redirect to the primary host before task data is loaded.
 
 The browser app is built with React, TypeScript, and Vite from `src/`.
 The backend is a Flask application in `app.py` and `routes/`.
@@ -71,7 +75,7 @@ The backend owns:
 
 - Google sign-in and session handling.
 - OAuth authorization-code and bearer-token validation for MCP.
-- S3 reads and writes for workspace state and project context files.
+- S3 reads and writes for workspace state and project context files, plus private admin task-board reads.
 - DynamoDB user records and legacy cleanup tables.
 - Server-rendered pages and static asset responses for logo and favicon.
 - API validation, conflict handling, and user ownership checks.
@@ -82,6 +86,8 @@ Durable runtime data lives in AWS.
 GitHub is the source of truth for code and docs.
 AWS is the source of truth for user data and deployed runtime state.
 The admin task board reads its private structured task payload from `s3://eh-app-data/admin/tasks.json` after server-side session authorization.
+The payload uses an explicit `schemaVersion` and is validated before rendering; invalid, unavailable, or oversized payloads produce a private, non-indexable HTTP 503 response without logging task content.
+`RESOURCE_MAP.md` documents the accepted payload contract.
 
 Current S3 data includes:
 
@@ -118,7 +124,7 @@ The script uses AWS profile `eh`, region `us-east-2`, bucket `eh-app-data`, key 
 GitHub Actions currently runs two jobs on pushes to `main` and pull requests:
 
 - Frontend build and Vitest tests.
-- Flask route compile and route-map smoke checks.
+- Flask route compilation, behavior tests, and route-map smoke checks.
 
 Documentation-only changes do not require AWS deployment.
 Frontend, Flask, template, static, MCP, persistence, auth, or deploy-script changes should be deployed after quick checks unless the user asks for local-only work.

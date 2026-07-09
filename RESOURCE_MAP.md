@@ -16,7 +16,7 @@ AWS is the source of truth for user data, deployment artifacts, and deployed run
 | `index.html`, `vite.config.ts`, `tsconfig*.json`, `package*.json` | Frontend build config | `npm run build`, `npm test` | Lambda bundle through `bash deploy.sh` | Vite build outputs ignored files under `static/react-app/` |
 | `templates/` | Flask-rendered pages | Flask behavior tests and route smoke check | Lambda bundle through `bash deploy.sh` | Public, login, app menu, OAuth, projects, and admin tasks pages |
 | `static/css/`, `static/js/` | Server-rendered page assets | Manual UI check when behavior changes | Lambda bundle through `bash deploy.sh` | Includes Projects Profile modal code |
-| `app.py`, `config.py`, `routes/` | Flask API and backend app | `.venv/bin/python -m py_compile app.py routes/*.py`, route smoke check | Lambda bundle through `bash deploy.sh` | Privileged AWS access stays here |
+| `app.py`, `config.py`, `routes/` | Flask API and backend app | Flask compilation, behavior tests, and route smoke check | Lambda bundle through `bash deploy.sh` | Privileged AWS access stays here |
 | `requirements-lambda.txt` | Lambda Python dependencies | Route compile and import smoke check | Lambda bundle through `bash deploy.sh` | Deployment installs these into the zip |
 | `deploy.sh` | Deployment packaging | Inspect diff, dry-run mentally, deploy smoke after use | AWS Lambda and deployment artifact | Uses AWS profile `eh` |
 | `.github/workflows/` | CI | GitHub Actions | None directly | Checks pushes and pull requests |
@@ -79,11 +79,16 @@ npm run build
 npm test
 ```
 
-Run Flask route compile and route-map smoke checks locally:
+Run Flask route compilation, behavior tests, and route-map smoke checks locally:
 
 ```bash
 AWS_EC2_METADATA_DISABLED=true FLASK_SECRET_KEY=test OAUTH_SIGNING_KEY=test \
   .venv/bin/python -m py_compile app.py routes/*.py
+```
+
+```bash
+AWS_EC2_METADATA_DISABLED=true FLASK_SECRET_KEY=test OAUTH_SIGNING_KEY=test \
+  .venv/bin/python -m unittest discover -s tests
 ```
 
 ```bash
@@ -104,6 +109,53 @@ if missing:
     raise SystemExit(f"Missing routes: {missing}")
 PY
 ```
+
+## Admin Task Board Data Contract
+
+The private task board reads the current JSON object from `s3://eh-app-data/admin/tasks.json` only after the browser session passes the email allowlist in `routes/task_dashboard.py`.
+The schema itself is safe to document, but real task content must stay out of GitHub, browser assets, command output, and logs.
+
+```json
+{
+  "schemaVersion": 1,
+  "updatedOn": "2026-07-09",
+  "tasks": [
+    {
+      "id": "example-task",
+      "section": "to_do",
+      "title": "Example task",
+      "summary": "A non-sensitive example of the task summary.",
+      "status": "planned",
+      "priority": "medium",
+      "owner": "Unassigned",
+      "updatedOn": "2026-07-09",
+      "source": "example",
+      "actionRequired": "Optional next action."
+    }
+  ]
+}
+```
+
+Payload rules:
+
+- `schemaVersion` must be `1`, `updatedOn` must be a real calendar date in `YYYY-MM-DD` form, and `tasks` must be an array.
+- The UTF-8 JSON payload cannot exceed 256 KiB or 200 tasks.
+- Every task requires `id`, `section`, `title`, `summary`, `status`, `priority`, `owner`, `updatedOn`, and `source`; `actionRequired` is optional.
+- Task IDs must be unique lowercase slugs with at most 80 characters.
+- Sections are `working_on`, `to_do`, `tell_neer`, and `done`.
+- Sections render in that fixed order, while tasks retain their payload order within each section.
+- Statuses are `in_progress`, `planned`, `blocked`, `needs_decision`, `needs_attention`, `info`, and `done`.
+- Priorities are `critical`, `high`, `medium`, `low`, and `info`.
+- Tasks in `working_on` must use `in_progress`, tasks in `done` must use `done`, and `done` cannot be used outside the `done` section.
+- `title` is limited to 200 characters, `summary` to 1,000, `owner` and `source` to 120 each, and `actionRequired` to 500.
+- Required string values and a supplied `actionRequired` value must be non-empty.
+- Each task `updatedOn` value must also be a real calendar date in `YYYY-MM-DD` form.
+
+The route is read-only.
+Before an authorized operational workflow updates the S3 object, validate the candidate payload with `routes.task_dashboard.parse_task_board`.
+Run the focused tests in `tests/test_tasks_page.py` after changing the parser or route behavior.
+Successful task pages and storage or schema failure responses set `Cache-Control: private, no-store` and `X-Robots-Tag: noindex, nofollow`.
+Storage and schema failures return HTTP 503 without task content or sensitive storage details.
 
 ## Routing Rules
 
