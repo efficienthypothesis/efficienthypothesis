@@ -157,6 +157,16 @@ Run the focused tests in `tests/test_tasks_page.py` after changing the parser or
 Successful task pages and storage or schema failure responses set `Cache-Control: private, no-store` and `X-Robots-Tag: noindex, nofollow`.
 Storage and schema failures return HTTP 503 without task content or sensitive storage details.
 
+## Workspace Read/Write Contract
+
+The browser `/api/workspace` and MCP workspace loader use the same S3-backed read path.
+After authorization, read handling follows these rules:
+
+- `NoSuchKey` and equivalent key-missing responses permit first-write bootstrap to initialize a fresh workspace.
+- Any other `ClientError`, UTF-8 decode failure, or JSON parse failure returns `workspace_unavailable` (HTTP 503 from browser API) and blocks overwrite or tool operations.
+
+Run `tests/test_workspace_fail_closed.py` when read-error handling or workspace conflict behavior changes.
+
 ## Routing Rules
 
 Documentation-only changes should not deploy unless they change published runtime content.

@@ -76,6 +76,7 @@ The backend owns:
 - Google sign-in and session handling.
 - OAuth authorization-code and bearer-token validation for MCP.
 - S3 reads and writes for workspace state and project context files, plus private admin task-board reads.
+- S3 workspace reads are fail-closed for browser and MCP surfaces: confirmed missing objects still allow first-write bootstrap, while non-missing read failures return temporary-unavailable and do not fabricate or overwrite state.
 - DynamoDB user records and legacy cleanup tables.
 - Server-rendered pages and static asset responses for logo and favicon.
 - API validation, conflict handling, and user ownership checks.
