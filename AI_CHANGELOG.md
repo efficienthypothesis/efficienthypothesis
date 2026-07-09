@@ -4,6 +4,7 @@
 
 - Codex (GPT-5): added an admin-only task dashboard at `efficienthypothesis.com/tasks` restricted to the verified browser session for `neerkuchlous@gmail.com`.
 - Codex (GPT-5): added a strict private S3 task schema at `admin/tasks.json` so admin content is not exposed through the public repository or static browser assets.
+- Codex (GPT-5): made task-board storage and schema failures return a private, non-indexable 503 without logging task content.
 - Codex (GPT-5): kept `TASK_LIST.md` as the public repository backlog and consolidated overlapping public planning items there.
 - Codex (GPT-5): added Flask authorization, parser, rendering, host-routing, and admin-link tests for the new surface.
 

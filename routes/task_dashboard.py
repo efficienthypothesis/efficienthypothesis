@@ -2,6 +2,9 @@ import datetime
 import json
 import re
 
+from botocore.exceptions import BotoCoreError, ClientError
+from urllib3.exceptions import HTTPError as URLLib3HTTPError
+
 
 ADMIN_EMAILS = frozenset({"neerkuchlous@gmail.com"})
 ADMIN_TASKS_KEY = "admin/tasks.json"
@@ -67,6 +70,14 @@ class TaskListFormatError(ValueError):
     pass
 
 
+TASK_BOARD_LOAD_ERRORS = (
+    TaskListFormatError,
+    ClientError,
+    BotoCoreError,
+    URLLib3HTTPError,
+)
+
+
 def is_admin_user(user):
     if not isinstance(user, dict):
         return False
@@ -83,14 +94,17 @@ def load_task_board(s3_client, bucket, key=ADMIN_TASKS_KEY):
         response["Body"].close()
         raise TaskListFormatError("Admin task payload is too large.")
 
-    with response["Body"] as body:
+    body = response["Body"]
+    try:
         raw_payload = body.read(MAX_TASK_PAYLOAD_BYTES + 1)
+    finally:
+        body.close()
     if len(raw_payload) > MAX_TASK_PAYLOAD_BYTES:
         raise TaskListFormatError("Admin task payload is too large.")
 
     try:
         payload = json.loads(raw_payload.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+    except (ValueError, RecursionError) as exc:
         raise TaskListFormatError("Admin task payload must be valid UTF-8 JSON.") from exc
     return parse_task_board(payload)
 

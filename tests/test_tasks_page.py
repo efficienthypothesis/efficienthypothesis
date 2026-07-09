@@ -4,6 +4,17 @@ import os
 import unittest
 from unittest.mock import patch
 
+from botocore.exceptions import (
+    ClientError,
+    EndpointConnectionError,
+    ReadTimeoutError,
+)
+from botocore.response import StreamingBody
+from urllib3.exceptions import (
+    ReadTimeoutError as URLLib3ReadTimeoutError,
+    SSLError as URLLib3SSLError,
+)
+
 
 os.environ.setdefault("AWS_EC2_METADATA_DISABLED", "true")
 os.environ.setdefault("FLASK_SECRET_KEY", "test")
@@ -15,6 +26,7 @@ from routes.task_dashboard import TaskListFormatError, load_task_board, parse_ta
 
 PRIMARY_HOST_HEADERS = {"X-Forwarded-Host": "efficienthypothesis.com"}
 PRIVATE_TASK_TEXT = b"Private admin task"
+SENSITIVE_STORAGE_DETAIL = "private-task-storage-detail"
 TASK_PAYLOAD = {
     "schemaVersion": 1,
     "updatedOn": "2026-07-09",
@@ -90,6 +102,18 @@ class TasksPageTests(unittest.TestCase):
         headers.update(kwargs.pop("headers", {}))
         return self.client.get("/tasks", headers=headers, **kwargs)
 
+    def assert_private_unavailable(self, response, logs, error_type):
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.headers["Cache-Control"], "private, no-store")
+        self.assertEqual(response.headers["X-Robots-Tag"], "noindex, nofollow")
+        self.assertIn(b"temporarily unavailable", response.data.lower())
+        self.assertNotIn(PRIVATE_TASK_TEXT, response.data)
+        self.assertNotIn(SENSITIVE_STORAGE_DETAIL.encode(), response.data)
+        joined_logs = "\n".join(logs.output)
+        self.assertIn(error_type, joined_logs)
+        self.assertNotIn(SENSITIVE_STORAGE_DETAIL, joined_logs)
+        self.assertTrue(all(record.exc_info is None for record in logs.records))
+
     def test_anonymous_user_is_redirected_without_task_content(self):
         response = self.get_tasks()
 
@@ -109,6 +133,58 @@ class TasksPageTests(unittest.TestCase):
         self.assertIn(PRIVATE_TASK_TEXT, response.data)
         self.assertEqual(response.headers["Cache-Control"], "private, no-store")
         self.assertEqual(response.headers["X-Robots-Tag"], "noindex, nofollow")
+        self.task_loader.assert_called_once()
+
+    def test_missing_task_storage_returns_private_unavailable_response(self):
+        self.set_user({"id": "admin", "email": "neerkuchlous@gmail.com"})
+        self.task_loader.side_effect = ClientError(
+            {
+                "Error": {
+                    "Code": "NoSuchKey",
+                    "Message": SENSITIVE_STORAGE_DETAIL,
+                },
+            },
+            "GetObject",
+        )
+
+        with self.assertLogs("routes.pages", level="WARNING") as logs:
+            response = self.get_tasks()
+
+        self.assert_private_unavailable(response, logs, "ClientError")
+        self.task_loader.assert_called_once()
+
+    def test_invalid_task_storage_returns_private_unavailable_response(self):
+        self.set_user({"id": "admin", "email": "neerkuchlous@gmail.com"})
+        self.task_loader.side_effect = TaskListFormatError(
+            f"Duplicate task ID {SENSITIVE_STORAGE_DETAIL!r}."
+        )
+
+        with self.assertLogs("routes.pages", level="WARNING") as logs:
+            response = self.get_tasks()
+
+        self.assert_private_unavailable(response, logs, "TaskListFormatError")
+        self.task_loader.assert_called_once()
+
+    def test_transient_task_storage_returns_private_unavailable_response(self):
+        self.set_user({"id": "admin", "email": "neerkuchlous@gmail.com"})
+        self.task_loader.side_effect = EndpointConnectionError(
+            endpoint_url=f"https://{SENSITIVE_STORAGE_DETAIL}.example"
+        )
+
+        with self.assertLogs("routes.pages", level="WARNING") as logs:
+            response = self.get_tasks()
+
+        self.assert_private_unavailable(response, logs, "EndpointConnectionError")
+        self.task_loader.assert_called_once()
+
+    def test_tls_task_storage_returns_private_unavailable_response(self):
+        self.set_user({"id": "admin", "email": "neerkuchlous@gmail.com"})
+        self.task_loader.side_effect = URLLib3SSLError(SENSITIVE_STORAGE_DETAIL)
+
+        with self.assertLogs("routes.pages", level="WARNING") as logs:
+            response = self.get_tasks()
+
+        self.assert_private_unavailable(response, logs, "SSLError")
         self.task_loader.assert_called_once()
 
     def test_admin_email_comparison_is_case_normalized(self):
@@ -201,6 +277,37 @@ class TaskBoardDataTests(unittest.TestCase):
         )
         self.assertTrue(body.was_closed)
 
+    def test_s3_loader_preserves_streaming_error_translation(self):
+        raw_stream = TimingOutRawStream()
+        body = StreamingBody(raw_stream, content_length=1)
+        s3_client = RecordingS3Client(body, content_length=1)
+
+        with self.assertRaises(ReadTimeoutError):
+            load_task_board(s3_client, "private-bucket")
+
+        self.assertTrue(raw_stream.was_closed)
+
+    def test_s3_loader_normalizes_json_decoder_failures(self):
+        decoder_errors = (
+            ValueError(SENSITIVE_STORAGE_DETAIL),
+            RecursionError(SENSITIVE_STORAGE_DETAIL),
+        )
+
+        for decoder_error in decoder_errors:
+            with self.subTest(error_type=type(decoder_error).__name__):
+                body = ClosingBody(b"{}")
+                s3_client = RecordingS3Client(body)
+                with patch(
+                    "routes.task_dashboard.json.loads",
+                    side_effect=decoder_error,
+                ):
+                    with self.assertRaisesRegex(
+                        TaskListFormatError,
+                        "must be valid UTF-8 JSON",
+                    ):
+                        load_task_board(s3_client, "private-bucket")
+                self.assertTrue(body.was_closed)
+
     def test_parser_rejects_missing_required_metadata(self):
         payload = json.loads(json.dumps(TASK_PAYLOAD))
         del payload["tasks"][0]["owner"]
@@ -234,16 +341,31 @@ class ClosingBody(io.BytesIO):
 
 
 class RecordingS3Client:
-    def __init__(self, body):
+    def __init__(self, body, content_length=None):
         self.body = body
+        self.content_length = content_length
         self.calls = []
 
     def get_object(self, **kwargs):
         self.calls.append(kwargs)
+        content_length = self.content_length
+        if content_length is None:
+            content_length = len(self.body.getvalue())
         return {
             "Body": self.body,
-            "ContentLength": len(self.body.getvalue()),
+            "ContentLength": content_length,
         }
+
+
+class TimingOutRawStream:
+    def __init__(self):
+        self.was_closed = False
+
+    def read(self, amount=None):
+        raise URLLib3ReadTimeoutError(None, None, SENSITIVE_STORAGE_DETAIL)
+
+    def close(self):
+        self.was_closed = True
 
 
 if __name__ == "__main__":

@@ -1,4 +1,5 @@
 import datetime
+import logging
 import os
 from urllib.parse import urlencode, urlparse
 
@@ -16,9 +17,10 @@ from flask import (
 )
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from config import s3, PRODUCTIVITY_BUCKET, GOOGLE_CLIENT_ID, _require_auth, user_table
-from routes.task_dashboard import is_admin_user, load_task_board
+from routes.task_dashboard import TASK_BOARD_LOAD_ERRORS, is_admin_user, load_task_board
 
 pages_bp = Blueprint('pages', __name__)
+logger = logging.getLogger(__name__)
 
 APP_PAGES = {
     "workspace",
@@ -55,6 +57,13 @@ def _primary_url(path="/"):
 
 def _projects_app_url(path="/"):
     return _external_url(PROJECTS_APP_HOST, path)
+
+
+def _private_task_response(body, status=200):
+    response = make_response(body, status)
+    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["X-Robots-Tag"] = "noindex, nofollow"
+    return response
 
 
 def _project_timezone(user):
@@ -161,14 +170,23 @@ def admin_tasks():
     if not is_admin_user(user):
         abort(403)
 
-    response = make_response(render_template(
+    try:
+        task_board = load_task_board(s3, PRODUCTIVITY_BUCKET)
+    except TASK_BOARD_LOAD_ERRORS as exc:
+        logger.warning(
+            "Admin task board unavailable (error_type=%s)",
+            type(exc).__name__,
+        )
+        return _private_task_response(
+            "Task board is temporarily unavailable.",
+            status=503,
+        )
+
+    return _private_task_response(render_template(
         "tasks.html",
         user=user,
-        task_board=load_task_board(s3, PRODUCTIVITY_BUCKET),
+        task_board=task_board,
     ))
-    response.headers["Cache-Control"] = "private, no-store"
-    response.headers["X-Robots-Tag"] = "noindex, nofollow"
-    return response
 
 
 @pages_bp.route('/home')
