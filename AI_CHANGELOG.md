@@ -1,5 +1,12 @@
 # AI Changelog
 
+## 2026-07-09 - Codex (GPT-5) private admin task board
+
+- Codex (GPT-5): added an admin-only task dashboard at `efficienthypothesis.com/tasks` restricted to the verified browser session for `neerkuchlous@gmail.com`.
+- Codex (GPT-5): added a strict private S3 task schema at `admin/tasks.json` so admin content is not exposed through the public repository or static browser assets.
+- Codex (GPT-5): kept `TASK_LIST.md` as the public repository backlog and consolidated overlapping public planning items there.
+- Codex (GPT-5): added Flask authorization, parser, rendering, host-routing, and admin-link tests for the new surface.
+
 ## 2026-07-09 - Codex (GPT-5) AI workflow reference adoption
 
 - Codex (GPT-5): inspected the current `Neer-Kuchlous/ai-workflow` reference and confirmed it is stack-agnostic rather than a Flask replacement recommendation.

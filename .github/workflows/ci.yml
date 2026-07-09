@@ -51,6 +51,9 @@ jobs:
       - name: Compile Flask routes
         run: python -m py_compile app.py routes/*.py
 
+      - name: Run Flask behavior tests
+        run: python -m unittest discover -s tests
+
       - name: Smoke app routes
         run: |
           python - <<'PY'
@@ -62,6 +65,7 @@ jobs:
               "/api/projects/global-contexts",
               "/api/projects/<project_id>/global-context",
               "/mcp-v5",
+              "/tasks",
           }
           missing = sorted(required - rules)
           if missing:

@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+
+{% block title %}Admin Tasks - Efficient Hypothesis{% endblock %}
+
+{% block head %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/navbar.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/footer.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/tasks.css') }}">
+{% endblock %}
+
+{% block bodyattrs %}class="tasks-page"{% endblock %}
+
+{% block navbar %}
+  {% include "navbar.html" %}
+{% endblock %}
+
+{% block content %}
+  <section class="tasks-board" aria-labelledby="tasks-title">
+    <header class="tasks-hero">
+      <div>
+        <div class="tasks-eyebrow">Admin workspace</div>
+        <h1 id="tasks-title">Tasks and agent notes</h1>
+        <p>Current work, planned follow-ups, and information that needs your attention.</p>
+      </div>
+      <div class="tasks-updated">
+        <span>Last updated</span>
+        <time datetime="{{ task_board.last_updated }}">{{ task_board.last_updated }}</time>
+      </div>
+    </header>
+
+    <div class="tasks-summary" aria-label="Task totals">
+      <div class="tasks-summary-card active">
+        <strong>{{ task_board.counts.working_on }}</strong>
+        <span>Working on</span>
+      </div>
+      <div class="tasks-summary-card planned">
+        <strong>{{ task_board.counts.to_do }}</strong>
+        <span>To do</span>
+      </div>
+      <div class="tasks-summary-card attention">
+        <strong>{{ task_board.counts.tell_neer }}</strong>
+        <span>Things to tell you</span>
+      </div>
+      <div class="tasks-summary-card complete">
+        <strong>{{ task_board.counts.done }}</strong>
+        <span>Recently done</span>
+      </div>
+    </div>
+
+    <div class="task-sections">
+      {% for section in task_board.sections %}
+        <section class="task-section task-section-{{ section.key }}" aria-labelledby="section-{{ section.key }}">
+          <div class="task-section-heading">
+            <div>
+              <h2 id="section-{{ section.key }}">{{ section.heading }}</h2>
+              <p>{{ section.description }}</p>
+            </div>
+            <span class="task-section-count">{{ section.count }}</span>
+          </div>
+
+          {% if section["items"] %}
+            <div class="task-grid">
+              {% for task in section["items"] %}
+                <article class="task-card priority-{{ task.priority }}{% if task.completed %} completed{% endif %}">
+                  <div class="task-card-top">
+                    <h3>{{ task.title }}</h3>
+                    <div class="task-badges" aria-label="Task classification">
+                      <span class="task-badge priority">{{ task.priority_label }}</span>
+                      <span class="task-badge status">{{ task.status_label }}</span>
+                    </div>
+                  </div>
+
+                  <p class="task-notes">{{ task.notes }}</p>
+
+                  {% if task.action_required %}
+                    <div class="task-action">
+                      <strong>Action</strong>
+                      <span>{{ task.action_required }}</span>
+                    </div>
+                  {% endif %}
+
+                  <dl class="task-meta">
+                    <div>
+                      <dt>Owner</dt>
+                      <dd>{{ task.owner }}</dd>
+                    </div>
+                    <div>
+                      <dt>Updated</dt>
+                      <dd><time datetime="{{ task.updated_on }}">{{ task.updated_on }}</time></dd>
+                    </div>
+                    <div>
+                      <dt>Source</dt>
+                      <dd><code>{{ task.source }}</code></dd>
+                    </div>
+                  </dl>
+                </article>
+              {% endfor %}
+            </div>
+          {% else %}
+            <div class="task-empty">
+              <span class="material-symbols-outlined" aria-hidden="true">check_circle</span>
+              <p>Nothing is marked as actively in progress.</p>
+            </div>
+          {% endif %}
+        </section>
+      {% endfor %}
+    </div>
+  </section>
+{% endblock %}
+
+{% block footer %}
+  {% include "footer.html" %}
+{% endblock %}

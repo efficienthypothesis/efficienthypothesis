@@ -2,9 +2,21 @@ import datetime
 import os
 from urllib.parse import urlencode, urlparse
 
-from flask import Blueprint, render_template, request, redirect, url_for, session, jsonify, Response
+from flask import (
+    Blueprint,
+    Response,
+    abort,
+    jsonify,
+    make_response,
+    redirect,
+    render_template,
+    request,
+    session,
+    url_for,
+)
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from config import s3, PRODUCTIVITY_BUCKET, GOOGLE_CLIENT_ID, _require_auth, user_table
+from routes.task_dashboard import is_admin_user, load_task_board
 
 pages_bp = Blueprint('pages', __name__)
 
@@ -35,6 +47,10 @@ def _external_url(host, path="/"):
 
 def _home_app_url(path="/"):
     return _external_url(HOME_APP_HOST, path)
+
+
+def _primary_url(path="/"):
+    return _external_url(PRIMARY_HOST, path)
 
 
 def _projects_app_url(path="/"):
@@ -134,6 +150,27 @@ def dynamic_page(page):
     return "<h1>404 - Page Not Found</h1>", 404
 
 
+@pages_bp.route('/tasks')
+def admin_tasks():
+    if _request_host() != PRIMARY_HOST:
+        return redirect(_primary_url("/tasks"), code=302)
+
+    user = session.get("user")
+    if not user:
+        return redirect(url_for('pages.login_page', next="/tasks"))
+    if not is_admin_user(user):
+        abort(403)
+
+    response = make_response(render_template(
+        "tasks.html",
+        user=user,
+        task_board=load_task_board(s3, PRODUCTIVITY_BUCKET),
+    ))
+    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["X-Robots-Tag"] = "noindex, nofollow"
+    return response
+
+
 @pages_bp.route('/home')
 def home_app():
     return redirect(_home_app_url("/"), code=302)
@@ -152,6 +189,7 @@ def app_menu():
         "app_menu.html",
         user=session["user"],
         home_app_url=_home_app_url("/"),
+        show_admin_tasks=is_admin_user(session["user"]),
     )
 
 
