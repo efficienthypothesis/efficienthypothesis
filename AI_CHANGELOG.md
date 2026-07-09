@@ -1,5 +1,23 @@
 # AI Changelog
 
+## 2026-07-09 - Codex (GPT-5) workflow and CI setup
+
+- Codex (GPT-5): added repo-level `AGENTS.md` with durable workflow, deployment, security, and project-context notes for future agent sessions.
+- Codex (GPT-5): updated `AGENT_WORKFLOW.md` with the adjacent fast-iteration policy to push useful changes and deploy runtime changes after quick checks.
+- Codex (GPT-5): added GitHub Actions CI for frontend build/tests and Flask route compile/import smoke checks.
+
+## 2026-07-09 - Codex (GPT-5) project global context files
+
+- Codex (GPT-5): added S3-backed global context files for the Acne, Fitness, and Flexibility projects under `<email>/projects/<project_id>/global-context.json`.
+- Codex (GPT-5): added Projects API routes for listing, reading, and updating project global context.
+- Codex (GPT-5): updated the top-nav Profile modal to render stored project context, empty states, and raw JSON for each project tab.
+
+## 2026-07-09 - Codex (GPT-5) plaintext workspace storage
+
+- Codex (GPT-5): changed workspace saves to write plaintext workspace JSON to S3 instead of encrypted envelopes.
+- Codex (GPT-5): retained legacy encrypted workspace reads for one-time browser migration and removed active recovery-key and ChatGPT-grant controls from the UI.
+- Codex (GPT-5): updated MCP to use `/mcp-v5`, read and write plaintext workspace state, and retire separate ChatGPT workspace-key grants.
+
 ## 2026-07-04 - Codex (GPT-5) profile section tabs
 
 - Codex (GPT-5): replaced the Profile modal Goals and State tabs with blank Acne, Fitness, and Flexibility tabs.

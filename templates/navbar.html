@@ -23,9 +23,15 @@
         <button type="button" role="tab" aria-selected="false" data-profile-tab="flexibility">Flexibility</button>
       </div>
       <div class="nav-modal-body">
-        <section class="profile-tab-panel" data-profile-panel="acne"></section>
-        <section class="profile-tab-panel" data-profile-panel="fitness" hidden></section>
-        <section class="profile-tab-panel" data-profile-panel="flexibility" hidden></section>
+        <section class="profile-tab-panel" data-profile-panel="acne" aria-live="polite">
+          <div class="project-context-status">Loading context...</div>
+        </section>
+        <section class="profile-tab-panel" data-profile-panel="fitness" aria-live="polite" hidden>
+          <div class="project-context-status">Loading context...</div>
+        </section>
+        <section class="profile-tab-panel" data-profile-panel="flexibility" aria-live="polite" hidden>
+          <div class="project-context-status">Loading context...</div>
+        </section>
       </div>
     </div>
   </div>

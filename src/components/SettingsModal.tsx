@@ -9,14 +9,7 @@ import type {
   WorkspaceState
 } from "../types";
 import { EditorPanel } from "./EditorPanel";
-import {
-  type ChatGptGrantStatus,
-  deleteAccount,
-  exportWorkspaceKey,
-  fetchChatGptGrantStatus,
-  grantChatGptAccess,
-  revokeChatGptAccess
-} from "../services/workspaceService";
+import { deleteAccount } from "../services/workspaceService";
 
 type SettingsModalProps = {
   open: boolean;
@@ -36,7 +29,7 @@ type SettingsModalProps = {
   onArchiveNode: (block: SavedNodeBlock) => void;
 };
 
-type SettingsTab = "tags" | "profile" | "encryption" | "delete";
+type SettingsTab = "tags" | "profile" | "delete";
 
 export function SettingsModal({
   open,
@@ -50,73 +43,19 @@ export function SettingsModal({
   onArchiveNode
 }: SettingsModalProps) {
   const [tab, setTab] = useState<SettingsTab>("tags");
-  const [recoveryKey, setRecoveryKey] = useState("");
-  const [recoveryStatus, setRecoveryStatus] = useState("");
-  const [grantStatus, setGrantStatus] = useState<ChatGptGrantStatus | null>(null);
-  const [grantBusy, setGrantBusy] = useState(false);
   const [deleteConfirmation, setDeleteConfirmation] = useState("");
   const [deleteStatus, setDeleteStatus] = useState("");
   const [deleteBusy, setDeleteBusy] = useState(false);
 
   useEffect(() => {
-    if (!open) return;
-    fetchChatGptGrantStatus()
-      .then(setGrantStatus)
-      .catch(() => setGrantStatus(null));
-  }, [open]);
-
-  useEffect(() => {
-    if (open && workspaceLocked && (tab === "tags" || tab === "profile")) {
-      setTab("encryption");
+    if (open && workspaceLocked && tab !== "delete") {
+      setTab("delete");
     }
   }, [open, tab, workspaceLocked]);
 
   if (!open) return null;
-  const tabs: SettingsTab[] = workspaceLocked
-    ? ["encryption", "delete"]
-    : ["tags", "profile", "encryption", "delete"];
-
-  function showRecoveryKey() {
-    const key = exportWorkspaceKey(user.id);
-    if (!key) {
-      setRecoveryStatus("This browser does not have the recovery key.");
-      return;
-    }
-    setRecoveryKey(key);
-    setRecoveryStatus("Store this key somewhere private. If it is lost, encrypted data cannot be recovered.");
-  }
-
-  function copyRecoveryKey() {
-    if (!recoveryKey) return;
-    navigator.clipboard
-      ?.writeText(recoveryKey)
-      .then(() => setRecoveryStatus("Recovery key copied. Store it somewhere private."))
-      .catch(() => setRecoveryStatus("Copy failed. Select and copy the key manually."));
-  }
-
-  function grantChatGpt() {
-    setGrantBusy(true);
-    grantChatGptAccess(user.id)
-      .then((nextStatus) => {
-        setGrantStatus(nextStatus);
-      })
-      .catch((error) => {
-        setRecoveryStatus(error instanceof Error ? error.message : "ChatGPT grant failed.");
-      })
-      .finally(() => setGrantBusy(false));
-  }
-
-  function revokeChatGpt() {
-    setGrantBusy(true);
-    revokeChatGptAccess()
-      .then((nextStatus) => {
-        setGrantStatus(nextStatus);
-      })
-      .catch((error) => {
-        setRecoveryStatus(error instanceof Error ? error.message : "ChatGPT revoke failed.");
-      })
-      .finally(() => setGrantBusy(false));
-  }
+  const tabs: SettingsTab[] = workspaceLocked ? ["delete"] : ["tags", "profile", "delete"];
+  const activeTab = workspaceLocked ? "delete" : tab;
 
   function handleDeleteAccount() {
     const expected = `DELETE ${user.email}`;
@@ -141,7 +80,7 @@ export function SettingsModal({
             {tabs.map((item) => (
               <button
                 key={item}
-                className={tab === item ? "active" : ""}
+                className={activeTab === item ? "active" : ""}
                 type="button"
                 onClick={() => setTab(item)}
               >
@@ -154,8 +93,8 @@ export function SettingsModal({
           </button>
         </div>
 
-        <div className={`settings-body ${tab === "encryption" || tab === "delete" ? "settings-body-scroll" : ""}`}>
-          {tab === "tags" ? (
+        <div className={`settings-body ${activeTab === "delete" ? "settings-body-scroll" : ""}`}>
+          {activeTab === "tags" ? (
             <EditorPanel
               title="Tags"
               document={state.documents.tags}
@@ -169,7 +108,7 @@ export function SettingsModal({
             />
           ) : null}
 
-          {tab === "profile" ? (
+          {activeTab === "profile" ? (
             <EditorPanel
               title="Entity"
               document={state.documents.profile}
@@ -183,47 +122,7 @@ export function SettingsModal({
             />
           ) : null}
 
-          {tab === "encryption" ? (
-            <section className="encryption-zone" aria-label="Workspace encryption">
-              <h3>Encryption</h3>
-              <p>
-                Workspace data is encrypted before it is saved to the server. This browser holds
-                the recovery key. If the key is lost, the encrypted workspace cannot be recovered.
-              </p>
-              <div className="settings-button-row">
-                <button type="button" onClick={showRecoveryKey}>
-                  Show recovery key
-                </button>
-                <button type="button" onClick={copyRecoveryKey} disabled={!recoveryKey}>
-                  Copy key
-                </button>
-              </div>
-              {recoveryKey ? (
-                <textarea className="recovery-key-output" readOnly value={recoveryKey} rows={3} />
-              ) : null}
-              <div className="chatgpt-grant-row">
-                <div>
-                  <strong>ChatGPT access</strong>
-                  <p>
-                    {grantStatus?.active && grantStatus.expiresAt
-                      ? `Granted until ${formatDateTime(grantStatus.expiresAt)}.`
-                      : "Not granted. GPT tools cannot read or edit encrypted workspace data."}
-                  </p>
-                </div>
-                <div className="settings-button-row">
-                  <button type="button" onClick={grantChatGpt} disabled={grantBusy}>
-                    Grant 1 month
-                  </button>
-                  <button type="button" onClick={revokeChatGpt} disabled={grantBusy || !grantStatus?.active}>
-                    Revoke
-                  </button>
-                </div>
-              </div>
-              {recoveryStatus ? <p className="encryption-status">{recoveryStatus}</p> : null}
-            </section>
-          ) : null}
-
-          {tab === "delete" ? (
+          {activeTab === "delete" ? (
             <section className="danger-zone" aria-label="Delete account">
               <h3>Delete Account</h3>
               <p>
@@ -260,16 +159,4 @@ function settingsTabLabel(tab: SettingsTab): string {
   if (tab === "delete") return "Delete Account";
   if (tab === "profile") return "Entity";
   return tab[0].toUpperCase() + tab.slice(1);
-}
-
-function formatDateTime(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString([], {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit"
-  });
 }

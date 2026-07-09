@@ -8,10 +8,9 @@ from zoneinfo import ZoneInfo
 from flask import Blueprint, Response, jsonify, request
 
 from config import PRODUCTIVITY_BUCKET, s3, user_table, _get_auth_context
-from routes.workspace_access import require_active_chatgpt_grant
+from routes.workspace_access import active_chatgpt_grant, delete_chatgpt_grant
 from routes.workspace_crypto import (
     decrypt_workspace_envelope,
-    encrypt_workspace_state,
     is_encrypted_workspace,
 )
 
@@ -395,32 +394,39 @@ def _workspace_state_key(email):
 
 
 def _load_workspace(email, user_id):
-    grant = require_active_chatgpt_grant(email)
     try:
         obj = s3.get_object(Bucket=PRODUCTIVITY_BUCKET, Key=_workspace_state_key(email))
-        state = json.loads(obj["Body"].read().decode("utf-8"))
+        with obj["Body"] as body:
+            state = json.loads(body.read().decode("utf-8"))
     except Exception:
         return _create_default_workspace(user_id or email)
     if isinstance(state, dict):
         if is_encrypted_workspace(state):
+            grant = active_chatgpt_grant(email)
+            if not grant:
+                raise ValueError(
+                    "This workspace still uses legacy encryption. "
+                    "Open Efficient Hypothesis in a browser once to migrate it before using MCP tools."
+                )
             decrypted = decrypt_workspace_envelope(state, grant["workspaceKeyB64"])
-            return _normalize_workspace(decrypted, user_id or email)
+            normalized = _normalize_workspace(decrypted, user_id or email)
+            _save_workspace(email, normalized, user_id)
+            return normalized
         return _normalize_workspace(state, user_id or email)
     return _create_default_workspace(user_id or email)
 
 
 def _save_workspace(email, state, user_id):
-    grant = require_active_chatgpt_grant(email)
     now = _now_iso()
     state["updatedAt"] = now
     state["userId"] = user_id or state.get("userId") or email
-    state_for_storage = encrypt_workspace_state(state, grant["workspaceKeyB64"], state["userId"], now)
     s3.put_object(
         Bucket=PRODUCTIVITY_BUCKET,
         Key=_workspace_state_key(email),
-        Body=json.dumps(state_for_storage, indent=2),
+        Body=json.dumps(state, indent=2),
         ContentType="application/json",
     )
+    delete_chatgpt_grant(email)
 
 
 def _normalize_workspace(state, user_id):
@@ -1224,6 +1230,7 @@ def _call_tool(name, arguments, ctx):
 @mcp_bp.route("/mcp-v2", methods=["GET"])
 @mcp_bp.route("/mcp-v3", methods=["GET"])
 @mcp_bp.route("/mcp-v4", methods=["GET"])
+@mcp_bp.route("/mcp-v5", methods=["GET"])
 def mcp_info():
     return jsonify(
         {
@@ -1239,6 +1246,7 @@ def mcp_info():
 @mcp_bp.route("/mcp-v2", methods=["POST"])
 @mcp_bp.route("/mcp-v3", methods=["POST"])
 @mcp_bp.route("/mcp-v4", methods=["POST"])
+@mcp_bp.route("/mcp-v5", methods=["POST"])
 def mcp_rpc():
     payload = request.get_json(silent=True) or {}
     request_id = payload.get("id")
@@ -1251,7 +1259,7 @@ def mcp_rpc():
             {
                 "protocolVersion": MCP_PROTOCOL_VERSION,
                 "capabilities": {"tools": {}},
-                "serverInfo": {"name": "efficient-hypothesis", "version": "0.3.0"},
+                "serverInfo": {"name": "efficient-hypothesis", "version": "0.4.0"},
             },
         )
 

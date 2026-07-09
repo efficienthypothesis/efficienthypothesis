@@ -16,7 +16,7 @@
 {% block content %}
   <article class="legal-page">
     <h1>Privacy Policy</h1>
-    <p class="updated">Last updated: June 22, 2026</p>
+    <p class="updated">Last updated: July 9, 2026</p>
 
     <p>
       Efficient Hypothesis is a personal productivity workspace. This Privacy Policy explains what
@@ -41,18 +41,15 @@
       Your ChatGPT conversations are handled by OpenAI under OpenAI's own terms and privacy policy.
     </p>
 
-    <h2>Workspace Encryption</h2>
+    <h2>Workspace Storage</h2>
     <p>
-      Workspace data is encrypted in your browser before it is stored on Efficient Hypothesis
-      servers. Your browser holds the recovery key. If you lose that key, encrypted workspace data
-      cannot be recovered by Efficient Hypothesis.
+      Workspace data is stored on Efficient Hypothesis servers so it can sync between the website
+      and authorized ChatGPT app requests.
     </p>
     <p>
-      ChatGPT cannot read or edit encrypted workspace data unless you explicitly grant ChatGPT
-      access from Efficient Hypothesis. A ChatGPT grant stores a temporary workspace key on the
-      server for 30 days so Efficient Hypothesis can process ChatGPT tool requests. During an active
-      grant, Efficient Hypothesis servers can decrypt and process workspace data needed for those
-      ChatGPT requests. You can revoke the grant from Settings &gt; Encryption.
+      Older encrypted workspaces may require a one-time browser migration with the old recovery
+      key. After migration, Efficient Hypothesis deletes the legacy local key and no longer stores
+      ChatGPT workspace-key grants.
     </p>
 
     <h2>How We Use Information</h2>
@@ -67,7 +64,7 @@
 
     <h2>Storage and Security</h2>
     <p>
-      Efficient Hypothesis stores encrypted workspace data and account metadata using AWS-hosted
+      Efficient Hypothesis stores workspace data and account metadata using AWS-hosted
       infrastructure. We use reasonable technical and organizational safeguards, but no internet
       service can guarantee absolute security.
     </p>

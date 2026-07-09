@@ -334,13 +334,13 @@ export function App({ bootstrap }: AppProps) {
         />
         <main className="locked-workspace">
           <section className="unlock-panel">
-            <h1>Workspace encrypted</h1>
+            <h1>Legacy workspace migration</h1>
             <p>
-              This browser does not have your Efficient Hypothesis recovery key. Paste your recovery
-              key to unlock the encrypted workspace on this device.
+              This workspace was saved with legacy browser encryption. Paste the old recovery key
+              once to migrate it to the current storage format.
             </p>
             <label>
-              Recovery key
+              Legacy recovery key
               <textarea
                 value={recoveryKeyInput}
                 onChange={(event) => setRecoveryKeyInput(event.target.value)}
@@ -353,7 +353,7 @@ export function App({ bootstrap }: AppProps) {
             </button>
             {unlockError ? <p className="unlock-error">{unlockError}</p> : null}
             <p className="unlock-warning">
-              If the recovery key is lost, the workspace cannot be recovered.
+              After migration, this browser deletes the old local encryption key.
             </p>
           </section>
         </main>

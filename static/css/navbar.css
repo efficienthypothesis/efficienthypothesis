@@ -109,6 +109,106 @@ body.nav-modal-open {
   min-height: 360px;
 }
 
+.project-context-view {
+  display: grid;
+  gap: 14px;
+}
+
+.project-context-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: baseline;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #d8dee8;
+}
+
+.project-context-header h3 {
+  margin: 0;
+  color: #172033;
+  font-size: 1rem;
+  line-height: 1.2;
+}
+
+.project-context-header p {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.82rem;
+  line-height: 1.3;
+  text-align: right;
+}
+
+.project-context-section {
+  display: grid;
+  gap: 6px;
+}
+
+.project-context-section h4 {
+  margin: 0;
+  color: #172033;
+  font-size: 0.9rem;
+  line-height: 1.2;
+}
+
+.project-context-section p,
+.project-context-section li,
+.project-context-status {
+  color: #475569;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.project-context-section p {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.project-context-section ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.project-context-status {
+  min-height: 160px;
+  display: grid;
+  place-items: center;
+  border: 1px dashed #cbd5e1;
+  background: #f8fafc;
+  text-align: center;
+}
+
+.project-context-status.error {
+  border-color: #f3b4b4;
+  background: #fff7f7;
+  color: #9f2f2f;
+}
+
+.project-context-raw {
+  border: 1px solid #d8dee8;
+  background: #f8fafc;
+}
+
+.project-context-raw summary {
+  padding: 9px 11px;
+  color: #233a8b;
+  font-size: 0.86rem;
+  cursor: pointer;
+}
+
+.project-context-raw pre {
+  max-height: 260px;
+  margin: 0;
+  overflow: auto;
+  padding: 10px 12px;
+  border-top: 1px solid #d8dee8;
+  color: #172033;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .nav-instructions-body {
   display: grid;
   gap: 16px;
@@ -142,5 +242,13 @@ body.nav-modal-open {
 
   .profile-tab-panel {
     min-height: 280px;
+  }
+
+  .project-context-header {
+    display: grid;
+  }
+
+  .project-context-header p {
+    text-align: left;
   }
 }

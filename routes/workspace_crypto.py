@@ -1,8 +1,5 @@
 import base64
-import datetime
 import json
-import os
-from copy import deepcopy
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
@@ -39,33 +36,6 @@ def decrypt_workspace_envelope(envelope, workspace_key_b64):
     return state
 
 
-def encrypt_workspace_state(state, workspace_key_b64, user_id=None, updated_at=None):
-    key = _decode_workspace_key(workspace_key_b64)
-    updated = updated_at or _now_iso()
-    state_for_storage = deepcopy(state)
-    state_for_storage["updatedAt"] = updated
-    if user_id:
-        state_for_storage["userId"] = user_id
-    plaintext = json.dumps(state_for_storage, separators=(",", ":")).encode("utf-8")
-    nonce = os.urandom(12)
-    ciphertext = AESGCM(key).encrypt(nonce, plaintext, AAD)
-    return {
-        "storage": "encrypted",
-        "encryptionVersion": 1,
-        "algorithm": "AES-GCM",
-        "keyScheme": "browser-held-v1",
-        "userId": state_for_storage.get("userId") or user_id or "",
-        "createdAt": state_for_storage.get("createdAt"),
-        "updatedAt": updated,
-        "nonce": base64.b64encode(nonce).decode("ascii"),
-        "ciphertext": base64.b64encode(ciphertext).decode("ascii"),
-    }
-
-
-def validate_workspace_key(workspace_key_b64):
-    _decode_workspace_key(workspace_key_b64)
-
-
 def _decode_workspace_key(workspace_key_b64):
     try:
         key = _b64decode(str(workspace_key_b64 or "").strip())
@@ -78,7 +48,3 @@ def _decode_workspace_key(workspace_key_b64):
 
 def _b64decode(value):
     return base64.b64decode(value, validate=True)
-
-
-def _now_iso():
-    return datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")

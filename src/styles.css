@@ -524,8 +524,7 @@ input {
 }
 
 .settings-tabs button,
-.modal-close,
-.encryption-zone button {
+.modal-close {
   border: 1px solid var(--border);
   background: #f8fafc;
   color: var(--text);
@@ -609,61 +608,6 @@ input {
   border-right: 0;
 }
 
-.encryption-zone {
-  padding: 12px 14px;
-  border-top: 1px solid var(--border);
-  background: #f8fafc;
-  color: var(--text);
-  font-size: 13px;
-}
-
-.encryption-zone h3 {
-  margin: 0 0 4px;
-  font-size: 15px;
-}
-
-.encryption-zone p {
-  margin: 4px 0 8px;
-  max-width: 850px;
-  line-height: 1.4;
-}
-
-.settings-button-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-}
-
-.settings-button-row button:disabled {
-  cursor: not-allowed;
-  opacity: 0.5;
-}
-
-.recovery-key-output {
-  width: min(680px, 100%);
-  margin-top: 8px;
-  resize: vertical;
-  border: 1px solid var(--border);
-  background: #ffffff;
-  color: var(--text);
-  font-family: var(--mono);
-  font-size: 12px;
-  padding: 8px;
-}
-
-.chatgpt-grant-row {
-  display: flex;
-  justify-content: space-between;
-  gap: 14px;
-  align-items: flex-start;
-  margin-top: 10px;
-}
-
-.encryption-status {
-  color: var(--muted);
-}
-
 .danger-zone {
   padding: 12px 14px;
   border-top: 1px solid var(--border);
@@ -707,7 +651,6 @@ input {
   color: var(--danger);
 }
 
-.settings-body > .encryption-zone,
 .settings-body > .danger-zone {
   border-top: 0;
 }

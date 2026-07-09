@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck and build
+        run: npm run build
+
+      - name: Run tests
+        run: npm test
+
+  flask:
+    name: Flask Routes
+    runs-on: ubuntu-latest
+    env:
+      AWS_EC2_METADATA_DISABLED: "true"
+      FLASK_SECRET_KEY: test
+      OAUTH_SIGNING_KEY: test
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install route dependencies
+        run: python -m pip install Flask apig-wsgi boto3 cryptography
+
+      - name: Compile Flask routes
+        run: python -m py_compile app.py routes/*.py
+
+      - name: Smoke app routes
+        run: |
+          python - <<'PY'
+          from app import app
+
+          rules = {rule.rule for rule in app.url_map.iter_rules()}
+          required = {
+              "/api/workspace",
+              "/api/projects/global-contexts",
+              "/api/projects/<project_id>/global-context",
+              "/mcp-v5",
+          }
+          missing = sorted(required - rules)
+          if missing:
+              raise SystemExit(f"Missing routes: {missing}")
+          PY

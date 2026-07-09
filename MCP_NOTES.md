@@ -4,7 +4,7 @@
 
 Use the new workspace-native endpoint for the Efficient Hypothesis GPT App:
 
-- MCP server URL: `https://efficienthypothesis.com/mcp-v4`
+- MCP server URL: `https://efficienthypothesis.com/mcp-v5`
 - Authentication: OAuth
 - Registration method: User-defined OAuth client
 - Authorization URL: `https://efficienthypothesis.com/oauth/authorize`
@@ -15,16 +15,15 @@ Use the new workspace-native endpoint for the Efficient Hypothesis GPT App:
 - Scope: `full_access`
 - OIDC: disabled
 
-OAuth is intentionally unchanged. The `/mcp`, `/mcp-v2`, `/mcp-v3`, and `/mcp-v4`
-routes now all serve the new workspace-native tool manifest, but ChatGPT can
-cache tool manifests by URL during development. Prefer `/mcp-v4` for the active
-connector so the GPT App does not see a stale `/mcp-v2` manifest.
+OAuth is intentionally unchanged.
+The `/mcp`, `/mcp-v2`, `/mcp-v3`, `/mcp-v4`, and `/mcp-v5` routes now all serve the workspace-native tool manifest, but ChatGPT can cache tool manifests by URL during development.
+Prefer `/mcp-v5` for the active connector so the GPT App does not see a stale manifest.
 
-Workspace data is encrypted at rest with a browser-held recovery key. OAuth
-authenticates ChatGPT, but MCP tools also require the user to grant ChatGPT
-workspace-key access from Efficient Hypothesis Settings > Encryption. The grant
-lasts 30 days and can be revoked by the user. Without an active grant, MCP tool
-calls return a grant-required error.
+Workspace data is stored as plaintext JSON in the user's S3 workspace object.
+OAuth bearer authentication is sufficient for MCP tools to read and write workspace data.
+Separate ChatGPT workspace-key grants are retired.
+Legacy encrypted workspace envelopes can still be migrated by the website when the user imports the old recovery key once.
+MCP can migrate a legacy encrypted workspace only when an old active grant still exists; otherwise the user should open Efficient Hypothesis in the browser to complete migration.
 
 ## Current Tools
 
@@ -63,9 +62,8 @@ MCP reads and writes the same S3-backed workspace state used by the React app:
 s3://eh-app-data/<email>/workspace/state.json
 ```
 
-For current workspaces this object is an encrypted envelope. During an active
-ChatGPT grant, the MCP server decrypts the envelope, applies the requested node
-operation, and writes a new encrypted envelope back to the same key.
+For current workspaces this object is plaintext workspace JSON.
+If MCP encounters a legacy encrypted envelope and an old active grant is still present, it decrypts once, writes plaintext workspace JSON back to the same key, and deletes the legacy grant.
 
 Structured data lives in normalized node collections:
 

@@ -2,12 +2,8 @@ from flask import Blueprint, request, jsonify
 import datetime
 import json
 
-from config import PRODUCTIVITY_BUCKET, s3, _is_programmatic, _require_auth
-from routes.workspace_access import (
-    chatgpt_grant_status,
-    delete_chatgpt_grant,
-    save_chatgpt_grant,
-)
+from config import PRODUCTIVITY_BUCKET, s3, _require_auth
+from routes.workspace_access import delete_chatgpt_grant
 from routes.workspace_crypto import encrypted_workspace_updated_at, is_encrypted_workspace
 
 workspace_bp = Blueprint("workspace", __name__)
@@ -26,19 +22,19 @@ def api_workspace_get():
     key = _workspace_state_key(email)
     try:
         obj = s3.get_object(Bucket=PRODUCTIVITY_BUCKET, Key=key)
-        raw_state = json.loads(obj["Body"].read().decode("utf-8"))
+        with obj["Body"] as body:
+            raw_state = json.loads(body.read().decode("utf-8"))
     except Exception:
         raw_state = None
     if is_encrypted_workspace(raw_state):
         return jsonify({
             "state": None,
             "encryptedState": raw_state,
-            "grant": chatgpt_grant_status(email),
         })
+    delete_chatgpt_grant(email)
     return jsonify({
         "state": raw_state,
         "encryptedState": None,
-        "grant": chatgpt_grant_status(email),
     })
 
 
@@ -51,17 +47,18 @@ def api_workspace_put():
     data = request.get_json(silent=True) or {}
     state = data.get("state")
     encrypted_state = data.get("encryptedState")
-    if encrypted_state is not None and not is_encrypted_workspace(encrypted_state):
-        return jsonify({"error": "encryptedState must be an encrypted workspace envelope"}), 400
-    if encrypted_state is None and not isinstance(state, dict):
-        return jsonify({"error": "state or encryptedState object is required"}), 400
+    if encrypted_state is not None:
+        return jsonify({"error": "encrypted workspace writes are no longer supported"}), 400
+    if not isinstance(state, dict):
+        return jsonify({"error": "state object is required"}), 400
     base_updated_at = data.get("baseUpdatedAt")
 
     key = _workspace_state_key(email)
     existing_state = None
     try:
         obj = s3.get_object(Bucket=PRODUCTIVITY_BUCKET, Key=key)
-        existing_state = json.loads(obj["Body"].read().decode("utf-8"))
+        with obj["Body"] as body:
+            existing_state = json.loads(body.read().decode("utf-8"))
     except Exception:
         existing_state = None
 
@@ -80,17 +77,10 @@ def api_workspace_put():
         return jsonify(payload), 409
 
     now = datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
-    if encrypted_state is not None:
-        stored_state = dict(encrypted_state)
-        if not stored_state.get("updatedAt"):
-            return jsonify({"error": "encryptedState.updatedAt is required"}), 400
-        stored_state["userId"] = ctx.get("user_id") or ""
-        updated_at = stored_state["updatedAt"]
-    else:
-        state["updatedAt"] = now
-        state["userId"] = ctx.get("user_id") or ""
-        stored_state = state
-        updated_at = now
+    state["updatedAt"] = now
+    state["userId"] = ctx.get("user_id") or ""
+    stored_state = state
+    updated_at = now
 
     s3.put_object(
         Bucket=PRODUCTIVITY_BUCKET,
@@ -98,6 +88,7 @@ def api_workspace_put():
         Body=json.dumps(stored_state, indent=2),
         ContentType="application/json",
     )
+    delete_chatgpt_grant(email)
     return jsonify({"ok": True, "updatedAt": updated_at})
 
 
@@ -106,7 +97,8 @@ def api_workspace_chatgpt_grant_get():
     ctx, err = _require_auth()
     if err:
         return err
-    return jsonify(chatgpt_grant_status(ctx["email"]))
+    delete_chatgpt_grant(ctx["email"])
+    return jsonify({"active": False, "expiresAt": None, "createdAt": None})
 
 
 @workspace_bp.route("/api/workspace/chatgpt-grant", methods=["POST"])
@@ -114,19 +106,8 @@ def api_workspace_chatgpt_grant_post():
     ctx, err = _require_auth()
     if err:
         return err
-    if _is_programmatic(ctx):
-        return jsonify({"error": "ChatGPT grant requires a browser session"}), 403
-    data = request.get_json(silent=True) or {}
-    workspace_key = data.get("workspaceKey", "")
-    try:
-        grant = save_chatgpt_grant(ctx["email"], workspace_key)
-    except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
-    return jsonify({
-        "active": True,
-        "expiresAt": grant["expiresAt"],
-        "createdAt": grant["createdAt"],
-    })
+    delete_chatgpt_grant(ctx["email"])
+    return jsonify({"active": False, "expiresAt": None, "createdAt": None})
 
 
 @workspace_bp.route("/api/workspace/chatgpt-grant", methods=["DELETE"])
@@ -134,7 +115,5 @@ def api_workspace_chatgpt_grant_delete():
     ctx, err = _require_auth()
     if err:
         return err
-    if _is_programmatic(ctx):
-        return jsonify({"error": "ChatGPT grant revoke requires a browser session"}), 403
     delete_chatgpt_grant(ctx["email"])
     return jsonify({"active": False, "expiresAt": None, "createdAt": None})

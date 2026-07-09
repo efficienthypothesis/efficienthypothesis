@@ -18,26 +18,9 @@ export type EncryptedWorkspaceEnvelope = {
 
 export class WorkspaceLockedError extends Error {
   constructor() {
-    super("This workspace is encrypted. Import the recovery key to unlock it in this browser.");
+    super("This legacy encrypted workspace needs a recovery key before it can be migrated.");
     this.name = "WorkspaceLockedError";
   }
-}
-
-export function workspaceKeyExists(userId: string): boolean {
-  return Boolean(getStoredWorkspaceKey(userId));
-}
-
-export async function ensureWorkspaceKey(userId: string): Promise<string> {
-  const existing = getStoredWorkspaceKey(userId);
-  if (existing) return existing;
-  const raw = crypto.getRandomValues(new Uint8Array(32));
-  const key = bytesToBase64(raw);
-  localStorage.setItem(keyStorageKey(userId), key);
-  return key;
-}
-
-export function exportWorkspaceKey(userId: string): string | null {
-  return getStoredWorkspaceKey(userId);
 }
 
 export function importWorkspaceKey(userId: string, key: string): void {
@@ -47,36 +30,6 @@ export function importWorkspaceKey(userId: string, key: string): void {
     throw new Error("Recovery key must decode to 32 bytes.");
   }
   localStorage.setItem(keyStorageKey(userId), normalized);
-}
-
-export function removeWorkspaceKey(userId: string): void {
-  localStorage.removeItem(keyStorageKey(userId));
-}
-
-export async function encryptWorkspaceState(
-  userId: string,
-  state: WorkspaceState
-): Promise<EncryptedWorkspaceEnvelope> {
-  const key = await ensureWorkspaceKey(userId);
-  const cryptoKey = await importAesKey(key);
-  const nonce = crypto.getRandomValues(new Uint8Array(12));
-  const plaintext = new TextEncoder().encode(JSON.stringify(state));
-  const ciphertext = await crypto.subtle.encrypt(
-    { name: "AES-GCM", iv: nonce, additionalData: new TextEncoder().encode(AAD) },
-    cryptoKey,
-    plaintext
-  );
-  return {
-    storage: "encrypted",
-    encryptionVersion: 1,
-    algorithm: "AES-GCM",
-    keyScheme: "browser-held-v1",
-    userId,
-    createdAt: state.createdAt,
-    updatedAt: state.updatedAt,
-    nonce: bytesToBase64(nonce),
-    ciphertext: bytesToBase64(new Uint8Array(ciphertext))
-  };
 }
 
 export async function decryptWorkspaceEnvelope(
@@ -98,14 +51,6 @@ export async function decryptWorkspaceEnvelope(
   return JSON.parse(new TextDecoder().decode(plaintext)) as WorkspaceState;
 }
 
-export function cacheEncryptedWorkspace(userId: string, envelope: EncryptedWorkspaceEnvelope): void {
-  try {
-    localStorage.setItem(encryptedCacheKey(userId), JSON.stringify(envelope));
-  } catch {
-    // Local cache is best-effort only.
-  }
-}
-
 export function readCachedEncryptedWorkspace(userId: string): EncryptedWorkspaceEnvelope | null {
   try {
     const raw = localStorage.getItem(encryptedCacheKey(userId));
@@ -115,8 +60,9 @@ export function readCachedEncryptedWorkspace(userId: string): EncryptedWorkspace
   }
 }
 
-export function clearEncryptedWorkspaceCache(userId: string): void {
+export function clearWorkspaceEncryptionArtifacts(userId: string): void {
   try {
+    localStorage.removeItem(keyStorageKey(userId));
     localStorage.removeItem(encryptedCacheKey(userId));
   } catch {
     // Local cache is best-effort only.
@@ -133,7 +79,6 @@ function getStoredWorkspaceKey(userId: string): string | null {
 
 async function importAesKey(key: string): Promise<CryptoKey> {
   return crypto.subtle.importKey("raw", toArrayBuffer(base64ToBytes(key)), "AES-GCM", false, [
-    "encrypt",
     "decrypt"
   ]);
 }
@@ -144,14 +89,6 @@ function keyStorageKey(userId: string): string {
 
 function encryptedCacheKey(userId: string): string {
   return `${ENCRYPTED_CACHE_PREFIX}${userId}`;
-}
-
-function bytesToBase64(bytes: Uint8Array): string {
-  let binary = "";
-  bytes.forEach((byte) => {
-    binary += String.fromCharCode(byte);
-  });
-  return btoa(binary);
 }
 
 function base64ToBytes(value: string): Uint8Array {
