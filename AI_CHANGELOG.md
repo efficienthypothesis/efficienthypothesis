@@ -1,5 +1,11 @@
 # AI Changelog
 
+## 2026-07-09 - Codex (GPT-5) AI workflow reference adoption
+
+- Codex (GPT-5): inspected the current `Neer-Kuchlous/ai-workflow` reference and confirmed it is stack-agnostic rather than a Flask replacement recommendation.
+- Codex (GPT-5): added `ARCHITECTURE.md`, `RESOURCE_MAP.md`, `TASK_LIST.md`, `review.md`, `template.md`, `ADRS/`, and `AI_RESOURCES/` with Efficient Hypothesis-specific workflow and runtime details.
+- Codex (GPT-5): recorded the decision to keep the current React/Vite plus Flask/Lambda runtime unless a future product or operational reason justifies migration.
+
 ## 2026-07-09 - Codex (GPT-5) workflow and CI setup
 
 - Codex (GPT-5): added repo-level `AGENTS.md` with durable workflow, deployment, security, and project-context notes for future agent sessions.

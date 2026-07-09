@@ -25,18 +25,21 @@ Before making code changes, an agent should:
 1. Run `git status`.
 2. Identify the current branch.
 3. Pull the latest GitHub changes if the working tree is clean.
-4. Summarize any uncommitted local changes before editing.
-5. Avoid overwriting or reverting changes made by another agent unless explicitly instructed.
+4. Read `ARCHITECTURE.md` when the change is architecture-sensitive.
+5. Read `RESOURCE_MAP.md` when the change touches AWS, deployment, persistence, auth, MCP, or source-to-runtime ownership.
+6. Summarize any uncommitted local changes before editing.
+7. Avoid overwriting or reverting changes made by another agent unless explicitly instructed.
 
 After making code changes, an agent should:
 
 1. Review `git diff`.
 2. Update `AI_CHANGELOG.md` for meaningful LLM-authored changes.
-3. Run quick practical checks before pushing and deploying when the change affects code, configuration, infrastructure, AWS data, or runtime behavior.
-4. Commit the corresponding code changes to Git with a clear message.
-5. Push the commit to GitHub.
-6. Deploy or apply the matching AWS change when the change affects deployed app behavior, infrastructure, AWS data, or AWS configuration.
-7. Provide a short explanation of:
+3. Use the A1, A2, and A3 gates in `review.md` for meaningful changes.
+4. Run quick practical checks before pushing and deploying when the change affects code, configuration, infrastructure, AWS data, or runtime behavior.
+5. Commit the corresponding code changes to Git with a clear message.
+6. Push the commit to GitHub.
+7. Deploy or apply the matching AWS change when the change affects deployed app behavior, infrastructure, AWS data, or AWS configuration.
+8. Provide a short explanation of:
    - files changed
    - behavior changed
    - quick tests/checks run, or why checks were intentionally skipped
@@ -50,3 +53,6 @@ Exploratory local edits do not need to be committed if they are discarded before
 
 Use the repository `.venv` for Flask app imports and local route smoke tests.
 System Python may not have Flask installed because Homebrew marks it as externally managed.
+
+The AI workflow reference improves repository process and documentation.
+It does not require changing the Efficient Hypothesis runtime stack.

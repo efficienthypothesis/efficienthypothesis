@@ -4,6 +4,13 @@
 
 GitHub is the source of truth for Efficient Hypothesis.
 AWS is a deployment target, not the canonical copy of the code.
+AWS is also the source of truth for user data and deployed runtime state.
+
+Read `ARCHITECTURE.md` before architecture-sensitive changes.
+Read `RESOURCE_MAP.md` before touching AWS, deployment, persistence, auth, MCP, or source-to-runtime ownership.
+Read `review.md` before finalizing meaningful changes.
+Use `TASK_LIST.md` for durable follow-ups and active work.
+Use `ADRS/` to understand major decisions, including why the current React/Vite plus Flask/Lambda runtime is intentionally retained.
 
 Before editing, run `git status` and identify the current branch.
 If the working tree is clean, pull the latest GitHub changes before starting.
@@ -24,6 +31,7 @@ If quick checks are skipped, say so plainly and explain why.
 For runtime changes, use `npm run build`, targeted `npm test`, `python3 -m py_compile`, route smoke checks, or another fast check that covers the changed surface.
 Use the existing `.venv` for Flask app imports and local route smoke tests.
 System Python may not have Flask installed because Homebrew marks it as externally managed.
+Use `review.md` for the A1, A2, and A3 gates after meaningful changes.
 
 Update `AI_CHANGELOG.md` for meaningful AI-authored product, workflow, MCP, persistence, or deployment changes.
 Do not manually modify `CHANGELOG.md` files.
@@ -38,3 +46,5 @@ Keep direct AWS edits temporary and copy any durable code or configuration chang
 
 Projects currently means the Acne, Fitness, and Flexibility surfaces on `projects.efficienthypothesis.com`.
 Project global context files live in S3 under `<email>/projects/<project_id>/global-context.json`.
+The AI workflow reference is stack-agnostic.
+Do not migrate away from the current React/Vite plus Flask/Lambda runtime unless there is a clear product or operational reason.
