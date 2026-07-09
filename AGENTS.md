@@ -33,7 +33,6 @@ Use the existing `.venv` for Flask app imports and local route smoke tests.
 System Python may not have Flask installed because Homebrew marks it as externally managed.
 Use `review.md` for the A1, A2, and A3 gates after meaningful changes.
 
-Update `AI_CHANGELOG.md` for meaningful AI-authored product, workflow, MCP, persistence, or deployment changes.
 Do not manually modify `CHANGELOG.md` files.
 
 ## Deployment
