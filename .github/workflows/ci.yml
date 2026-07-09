@@ -46,7 +46,7 @@ jobs:
           python-version: "3.13"
 
       - name: Install route dependencies
-        run: python -m pip install Flask apig-wsgi boto3 cryptography google-auth
+        run: python -m pip install Flask apig-wsgi boto3 cryptography google-auth requests
 
       - name: Compile Flask routes
         run: python -m py_compile app.py routes/*.py
