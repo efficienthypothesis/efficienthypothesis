@@ -3,7 +3,7 @@ import datetime
 import secrets
 import time
 import json
-from botocore.exceptions import ClientError
+from botocore.exceptions import BotoCoreError, ClientError
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 from config import (
     s3, PRODUCTIVITY_BUCKET, oauth_tokens_table,
@@ -117,6 +117,8 @@ def _load_global_oauth_clients():
         if code in {"NoSuchKey", "404", "NotFound"}:
             return []
         raise OAuthRegistryUnavailable() from exc
+    except BotoCoreError as exc:
+        raise OAuthRegistryUnavailable() from exc
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise OAuthRegistryUnavailable() from exc
 
@@ -133,6 +135,8 @@ def _load_oauth_clients(email):
         code = str(exc.response.get("Error", {}).get("Code", ""))
         if code in {"NoSuchKey", "404", "NotFound"}:
             return []
+        raise OAuthRegistryUnavailable() from exc
+    except BotoCoreError as exc:
         raise OAuthRegistryUnavailable() from exc
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise OAuthRegistryUnavailable() from exc

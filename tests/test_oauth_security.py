@@ -2,7 +2,7 @@ import os
 import unittest
 from unittest.mock import Mock, patch
 
-from botocore.exceptions import ClientError
+from botocore.exceptions import ClientError, EndpointConnectionError
 
 os.environ.setdefault("AWS_EC2_METADATA_DISABLED", "true")
 os.environ.setdefault("FLASK_SECRET_KEY", "test")
@@ -46,6 +46,14 @@ class OAuthSecurityTests(unittest.TestCase):
 
     def test_oauth_registry_read_failure_is_not_treated_as_empty(self):
         with patch("routes.oauth.s3.get_object", side_effect=s3_error("InternalError")):
+            with self.assertRaises(OAuthRegistryUnavailable):
+                _load_oauth_clients("user@example.com")
+
+    def test_oauth_registry_transport_failure_is_unavailable(self):
+        with patch(
+            "routes.oauth.s3.get_object",
+            side_effect=EndpointConnectionError(endpoint_url="https://s3.amazonaws.com"),
+        ):
             with self.assertRaises(OAuthRegistryUnavailable):
                 _load_oauth_clients("user@example.com")
 

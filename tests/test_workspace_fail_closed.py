@@ -3,7 +3,7 @@ import os
 import unittest
 from unittest.mock import patch
 
-from botocore.exceptions import ClientError
+from botocore.exceptions import ClientError, EndpointConnectionError
 
 os.environ.setdefault("AWS_EC2_METADATA_DISABLED", "true")
 os.environ.setdefault("FLASK_SECRET_KEY", "test")
@@ -29,6 +29,17 @@ class WorkspaceFailClosedTests(unittest.TestCase):
     def test_workspace_get_returns_unavailable_on_uncertain_read(self):
         self.set_user()
         with patch("routes.workspace.s3.get_object", side_effect=s3_error("InternalError")):
+            response = self.client.get("/api/workspace")
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.get_json(), {"error": "workspace_unavailable"})
+
+    def test_workspace_get_returns_unavailable_on_transport_read(self):
+        self.set_user()
+        with patch(
+            "routes.workspace.s3.get_object",
+            side_effect=EndpointConnectionError(endpoint_url="https://s3.amazonaws.com"),
+        ):
             response = self.client.get("/api/workspace")
 
         self.assertEqual(response.status_code, 503)
@@ -62,6 +73,14 @@ class WorkspaceFailClosedTests(unittest.TestCase):
 
     def test_mcp_workspace_load_does_not_fabricate_on_uncertain_read(self):
         with patch("routes.mcp.s3.get_object", side_effect=s3_error("AccessDenied")):
+            with self.assertRaisesRegex(ValueError, "^workspace_unavailable$"):
+                _load_workspace("user@example.com", "user-1")
+
+    def test_mcp_workspace_load_does_not_fabricate_on_transport_failure(self):
+        with patch(
+            "routes.mcp.s3.get_object",
+            side_effect=EndpointConnectionError(endpoint_url="https://s3.amazonaws.com"),
+        ):
             with self.assertRaisesRegex(ValueError, "^workspace_unavailable$"):
                 _load_workspace("user@example.com", "user-1")
 

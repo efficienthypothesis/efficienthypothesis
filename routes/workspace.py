@@ -1,7 +1,7 @@
 from flask import Blueprint, request, jsonify
 import datetime
 import json
-from botocore.exceptions import ClientError
+from botocore.exceptions import BotoCoreError, ClientError
 
 from config import PRODUCTIVITY_BUCKET, s3, _require_auth
 from routes.workspace_access import delete_chatgpt_grant
@@ -24,6 +24,8 @@ def _read_workspace_state(key):
         if code in {"NoSuchKey", "404", "NotFound"}:
             return None, True
         raise
+    except BotoCoreError as exc:
+        raise exc
 
 
 @workspace_bp.route("/api/workspace", methods=["GET"])
@@ -35,7 +37,7 @@ def api_workspace_get():
     key = _workspace_state_key(email)
     try:
         raw_state, _missing = _read_workspace_state(key)
-    except (ClientError, UnicodeDecodeError, json.JSONDecodeError):
+    except (ClientError, BotoCoreError, UnicodeDecodeError, json.JSONDecodeError):
         return jsonify({"error": "workspace_unavailable"}), 503
     if is_encrypted_workspace(raw_state):
         return jsonify({
@@ -67,7 +69,7 @@ def api_workspace_put():
     key = _workspace_state_key(email)
     try:
         existing_state, _missing = _read_workspace_state(key)
-    except (ClientError, UnicodeDecodeError, json.JSONDecodeError):
+    except (ClientError, BotoCoreError, UnicodeDecodeError, json.JSONDecodeError):
         return jsonify({"error": "workspace_unavailable"}), 503
 
     existing_updated_at = encrypted_workspace_updated_at(existing_state)

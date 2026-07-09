@@ -4,7 +4,7 @@ import re
 import uuid
 from copy import deepcopy
 from zoneinfo import ZoneInfo
-from botocore.exceptions import ClientError
+from botocore.exceptions import BotoCoreError, ClientError
 
 from flask import Blueprint, Response, jsonify, request
 
@@ -403,6 +403,8 @@ def _load_workspace(email, user_id):
         code = str(exc.response.get("Error", {}).get("Code", ""))
         if code in {"NoSuchKey", "404", "NotFound"}:
             return _create_default_workspace(user_id or email)
+        raise ValueError("workspace_unavailable") from exc
+    except BotoCoreError as exc:
         raise ValueError("workspace_unavailable") from exc
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ValueError("workspace_unavailable") from exc
