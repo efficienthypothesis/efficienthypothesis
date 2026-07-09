@@ -18,6 +18,13 @@ Use the new workspace-native endpoint for the Efficient Hypothesis GPT App:
 OAuth is intentionally unchanged.
 The `/mcp`, `/mcp-v2`, `/mcp-v3`, `/mcp-v4`, and `/mcp-v5` routes now all serve the workspace-native tool manifest, but ChatGPT can cache tool manifests by URL during development.
 Prefer `/mcp-v5` for the active connector so the GPT App does not see a stale manifest.
+OAuth client registry reads and access-token verification are hardened:
+
+- OAuth clients are loaded from `oauth/clients.json` and `<email>/oauth/clients.json`.
+- A missing registry object is treated as an empty registry.
+- Invalid registry payloads, UTF-8 decoding failures, transport failures, or non-missing S3 failures now return an error instead of treating the registry as empty.
+- Access token verification is fail-closed on server-side revocations stored in `OAuthTokens` with `type: revoked_access_token` and expiry-based markers.
+- `/oauth/revoke` records expiring revocation markers so revoked access tokens fail verification until expiry.
 
 Workspace data is stored as plaintext JSON in the user's S3 workspace object.
 OAuth bearer authentication is sufficient for MCP tools to read and write workspace data.

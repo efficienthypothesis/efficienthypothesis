@@ -75,6 +75,8 @@ The backend owns:
 
 - Google sign-in and session handling.
 - OAuth authorization-code and bearer-token validation for MCP.
+- OAuth client-registry reads from S3 for MCP and ChatGPT client metadata.
+- Access-token verification checks server-side revocation markers before permitting MCP operations.
 - S3 reads and writes for workspace state and project context files, plus private admin task-board reads.
 - S3 workspace reads are fail-closed for browser and MCP surfaces: confirmed missing objects still allow first-write bootstrap, while non-missing read failures return temporary-unavailable and do not fabricate or overwrite state.
 - Browser-side plaintext workspace cache keys are scoped to the authenticated user ID.
