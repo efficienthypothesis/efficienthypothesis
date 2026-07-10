@@ -36,6 +36,9 @@
                   <summary>View JSON</summary>
                   <pre>{{ project.raw_json }}</pre>
                 </details>
+                {% for recommendation in project.recommendations %}
+                  <a class="projects-recommendation" href="{{ recommendation.href }}" target="_blank" rel="noopener">{{ recommendation.summary }}</a>
+                {% endfor %}
               </article>
             {% endfor %}
           </div>

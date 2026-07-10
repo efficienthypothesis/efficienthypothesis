@@ -19,6 +19,9 @@ from routes.projects import (
     _normalize_daily_context,
     _read_daily_context,
     _write_daily_context,
+    _normalize_recommendations,
+    _read_recommendations,
+    _write_recommendations,
 )
 
 
@@ -274,6 +277,20 @@ TOOLS = [
             "additionalProperties": False,
         },
         {"type": "object", "properties": {"dailyContext": {"type": "object"}}, "required": ["dailyContext"], "additionalProperties": False},
+    ),
+    _read_only_tool(
+        "get_project_recommendations",
+        "Get project recommendations",
+        "Read AI recommendation summaries for one project and calendar date.",
+        {"type": "object", "properties": {"project_id": {"type": "string", "enum": list(PROJECT_BY_ID)}, "date": {"type": "string"}}, "required": ["project_id", "date"], "additionalProperties": False},
+        {"type": "object", "properties": {"recommendations": {"type": "object"}}, "required": ["recommendations"], "additionalProperties": False},
+    ),
+    _write_tool(
+        "upsert_project_recommendations",
+        "Store project recommendations",
+        "Store AI recommendation summaries for one project and calendar date. The server creates user-scoped links for each recommendation.",
+        {"type": "object", "properties": {"project_id": {"type": "string", "enum": list(PROJECT_BY_ID)}, "date": {"type": "string"}, "recommendations": {"type": "array", "items": {"type": "object", "properties": {"id": {"type": "string"}, "summary": {"type": "string"}}, "required": ["id", "summary"], "additionalProperties": False}}}, "required": ["project_id", "date", "recommendations"], "additionalProperties": False},
+        {"type": "object", "properties": {"recommendations": {"type": "object"}}, "required": ["recommendations"], "additionalProperties": False},
     ),
     _read_only_tool(
         "query_nodes",
@@ -1275,6 +1292,25 @@ def _upsert_daily_context_result(email, user_id, arguments):
     }
 
 
+def _get_recommendations_result(email, user_id, arguments):
+    project_id = _require_nonempty(arguments.get("project_id"), "project_id")
+    date = _require_nonempty(arguments.get("date"), "date")
+    if project_id not in PROJECT_BY_ID:
+        raise ValueError("unknown project")
+    recommendations = _read_recommendations(email, project_id, user_id, date)
+    return {"structuredContent": {"recommendations": recommendations}, "content": [{"type": "text", "text": f"Loaded recommendations for {project_id} on {date}."}]}
+
+
+def _upsert_recommendations_result(email, user_id, arguments):
+    project_id = _require_nonempty(arguments.get("project_id"), "project_id")
+    date = _require_nonempty(arguments.get("date"), "date")
+    if project_id not in PROJECT_BY_ID:
+        raise ValueError("unknown project")
+    recommendations = _normalize_recommendations({"recommendations": arguments.get("recommendations")}, project_id, user_id, date)
+    _write_recommendations(email, project_id, recommendations)
+    return {"structuredContent": {"recommendations": recommendations}, "content": [{"type": "text", "text": f"Updated recommendations for {project_id} on {date}."}]}
+
+
 def _mutation_result(action, node, created):
     return {
         "structuredContent": {"ok": True, "node": node, "created": bool(created)},
@@ -1299,6 +1335,10 @@ def _call_tool(name, arguments, ctx):
         return _get_daily_context_result(email, user_id, arguments)
     if name == "upsert_daily_context":
         return _upsert_daily_context_result(email, user_id, arguments)
+    if name == "get_project_recommendations":
+        return _get_recommendations_result(email, user_id, arguments)
+    if name == "upsert_project_recommendations":
+        return _upsert_recommendations_result(email, user_id, arguments)
     if name == "query_nodes":
         return _query_nodes(email, user_id, arguments)
     if name == "get_node":

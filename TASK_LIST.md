@@ -12,11 +12,6 @@ Private operational tasks and agent notices live in the S3-backed admin task boa
   Status: in progress.
   Notes: The page is implemented at `/tasks` with server-side session authorization and private S3-backed content.
 
-- [ ] Design recommendation block storage and rendering.
-  Owner: unassigned.
-  Status: planned.
-  Notes: Blocks should render on the weekly Projects calendar after the AI has enough global and daily context.
-
 - [ ] Publish the GPT app and produce the required public demo recording.
   Owner: Neer.
   Status: planned.
@@ -40,6 +35,7 @@ Private operational tasks and agent notices live in the S3-backed admin task boa
 ## Done
 
 - [x] Add private daily project context files, GPT tools, and weekly calendar entry counts with raw JSON views.
+- [x] Add project-and-date recommendation storage, GPT tools, and backend-owned calendar links.
 
 - [x] Add S3-backed project global context files for Acne, Fitness, and Flexibility.
 - [x] Disable active workspace encryption writes and keep legacy encrypted reads only for migration compatibility.

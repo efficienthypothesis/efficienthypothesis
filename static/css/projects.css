@@ -124,6 +124,19 @@ body.projects-page main {
   overflow-wrap: anywhere;
 }
 
+.projects-recommendation {
+  display: block;
+  margin-top: 7px;
+  color: #233a8b;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  text-decoration: none;
+}
+
+.projects-recommendation:hover {
+  text-decoration: underline;
+}
+
 .projects-nav-arrow {
   display: grid;
   place-items: center;

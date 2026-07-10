@@ -58,6 +58,17 @@ class DailyContextTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 400)
 
+    def test_recommendations_receive_backend_owned_links(self):
+        with patch("routes.projects.s3.put_object"):
+            response = self.client.put(
+                "/api/projects/fitness/recommendations/2026-07-10",
+                json={"recommendations": [{"id": "rec-1", "summary": "Prioritize recovery."}]},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        item = response.get_json()["recommendations"]["recommendations"][0]
+        self.assertEqual(item["href"], "/api/projects/fitness/recommendations/2026-07-10/rec-1")
+
 
 if __name__ == "__main__":
     unittest.main()

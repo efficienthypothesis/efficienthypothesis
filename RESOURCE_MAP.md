@@ -176,6 +176,13 @@ The Projects calendar shows each day's entry count and a raw JSON disclosure for
 GPT accesses the same data through the authenticated MCP tools `get_daily_context` and `upsert_daily_context`.
 Daily context reads and writes are scoped to the authenticated user and validated by project and date.
 
+## Recommendation Contract
+
+Project recommendations are stored privately at `<email>/projects/<project_id>/recommendations/<YYYY-MM-DD>.json`.
+Each recommendation stores an `id`, a concise `summary`, timestamps, and a backend-generated user-scoped `href`.
+GPT writes recommendations through `upsert_project_recommendations` and reads them through `get_project_recommendations`.
+The weekly Projects calendar renders summaries as links to authenticated recommendation resources.
+
 ## Browser Cache Contract
 
 The workspace client cache in `localStorage` is scoped by authenticated user ID.
