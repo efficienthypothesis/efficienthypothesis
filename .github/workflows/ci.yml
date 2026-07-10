@@ -65,9 +65,10 @@ jobs:
               "/api/projects/global-contexts",
               "/api/projects/<project_id>/global-context",
               "/mcp-v5",
-              "/tasks",
           }
           missing = sorted(required - rules)
           if missing:
               raise SystemExit(f"Missing routes: {missing}")
+          if "/tasks" in rules:
+              raise SystemExit("/tasks route still exists")
           PY
