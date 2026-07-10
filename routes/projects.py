@@ -1055,22 +1055,7 @@ def _recommendation_key_date(key, project_id):
     return None
 
 
-def _recommendation_key_has_items(key, project_id, user_id, date):
-    try:
-        obj = s3.get_object(Bucket=PRODUCTIVITY_BUCKET, Key=key)
-        with obj["Body"] as body:
-            raw = json.loads(body.read().decode("utf-8"))
-        return bool(_normalize_recommendations(raw, project_id, user_id, date.isoformat()).get("recommendations"))
-    except ClientError as exc:
-        code = str(exc.response.get("Error", {}).get("Code", ""))
-        if code in {"NoSuchKey", "404", "NotFound"}:
-            return False
-        raise
-    except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
-        return False
-
-
-def _recommendation_activity_dates(email, project_id, user_id):
+def _recommendation_activity_dates(email, project_id):
     prefix = f"{email}/projects/{project_id}/recommendations/"
     paginator = s3.get_paginator("list_objects_v2")
     dates = set()
@@ -1078,7 +1063,7 @@ def _recommendation_activity_dates(email, project_id, user_id):
         for item in page.get("Contents", []):
             key = item.get("Key", "")
             date = _recommendation_key_date(key, project_id)
-            if date and _recommendation_key_has_items(key, project_id, user_id, date):
+            if date:
                 dates.add(date)
     return dates
 
@@ -1091,7 +1076,7 @@ def _project_activity_dates_for_user(email, user_id):
                 date = _safe_iso_date(item.get("date"))
                 if date:
                     dates.add(date)
-        dates.update(_recommendation_activity_dates(email, project["id"], user_id))
+        dates.update(_recommendation_activity_dates(email, project["id"]))
     return sorted(dates)
 
 
