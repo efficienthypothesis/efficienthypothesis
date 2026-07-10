@@ -135,20 +135,66 @@ class DailyContextTests(unittest.TestCase):
         with patch("routes.projects.s3.put_object"):
             response = self.client.put(
                 "/api/projects/fitness/recommendations/2026-07-10",
-                json={"recommendations": [{"id": "rec-1", "kind": "Workout", "title": "Recovery workout", "summary": "Prioritize recovery.", "body": "Walk for 20 minutes."}]},
+                json={"recommendations": [{
+                    "id": "rec-1",
+                    "kind": "routine",
+                    "title": "Evening routine",
+                    "summary": "Use a gentle evening routine.",
+                    "steps": [
+                        {"item": "benzoyl peroxide", "command": "put on full face"},
+                        {"item": "wait", "command": "10 min"},
+                        {"item": "retin A", "command": "only spots with acne"},
+                    ],
+                }]},
             )
 
         self.assertEqual(response.status_code, 200)
         item = response.get_json()["recommendations"]["recommendations"][0]
-        self.assertEqual(item["kind"], "Workout")
-        self.assertEqual(item["title"], "Recovery workout")
+        self.assertEqual(item["kind"], "routine")
+        self.assertEqual(item["title"], "Evening routine")
         self.assertEqual(item["href"], "/projects/fitness/recommendations/2026-07-10/rec-1")
+
+    def test_recommendations_reject_workout_while_disabled(self):
+        response = self.client.put(
+            "/api/projects/fitness/recommendations/2026-07-10",
+            json={"recommendations": [{
+                "id": "rec-1",
+                "kind": "workout",
+                "title": "Workout",
+                "summary": "Do a workout.",
+                "steps": [{"item": "run", "command": "20 minutes"}],
+            }]},
+        )
+
+        self.assertEqual(response.status_code, 400)
+
+    def test_routine_recommendations_require_steps(self):
+        response = self.client.put(
+            "/api/projects/acne/recommendations/2026-07-10",
+            json={"recommendations": [{
+                "id": "rec-1",
+                "kind": "routine",
+                "title": "Morning routine",
+                "summary": "Use a gentle routine.",
+            }]},
+        )
+
+        self.assertEqual(response.status_code, 400)
 
     def test_recommendations_are_written_as_manifest_and_files(self):
         with patch("routes.projects.s3.put_object") as put_object:
             response = self.client.put(
                 "/api/projects/acne/recommendations/2026-07-10",
-                json={"recommendations": [{"id": "rec-1", "kind": "Routine", "title": "Morning routine", "summary": "Use a gentle routine.", "body": "Cleanse and moisturize."}]},
+                json={"recommendations": [{
+                    "id": "rec-1",
+                    "kind": "routine",
+                    "title": "Morning routine",
+                    "summary": "Use a gentle routine.",
+                    "steps": [
+                        {"item": "cleanser", "command": "wash face"},
+                        {"item": "moisturizer", "command": "apply thin layer", "clarification": "avoid eye area"},
+                    ],
+                }]},
             )
 
         self.assertEqual(response.status_code, 200)
@@ -167,9 +213,9 @@ class DailyContextTests(unittest.TestCase):
             "href": "/projects/fitness/recommendations/2026-07-10",
             "recommendations": [{
                 "id": "rec-1",
-                "kind": "Workout",
-                "title": "Recovery workout",
-                "summary": "Prioritize recovery.",
+                "kind": "routine",
+                "title": "Evening routine",
+                "summary": "Use a gentle evening routine.",
                 "href": "/projects/fitness/recommendations/2026-07-10/rec-1",
                 "contentType": "application/json",
             }],
@@ -181,10 +227,13 @@ class DailyContextTests(unittest.TestCase):
             "id": "rec-1",
             "projectId": "fitness",
             "date": "2026-07-10",
-            "kind": "Workout",
-            "title": "Recovery workout",
-            "summary": "Prioritize recovery.",
-            "body": "Walk for 20 minutes.",
+            "kind": "routine",
+            "title": "Evening routine",
+            "summary": "Use a gentle evening routine.",
+            "steps": [
+                {"item": "benzoyl peroxide", "command": "put on full face"},
+                {"item": "wait", "command": "10 min"},
+            ],
             "createdAt": "2026-07-10T00:00:00Z",
             "updatedAt": "2026-07-10T00:00:00Z",
         }
@@ -198,7 +247,7 @@ class DailyContextTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.get_json()
         self.assertEqual(payload["recommendation"]["href"], "/projects/fitness/recommendations/2026-07-10/rec-1")
-        self.assertEqual(payload["file"]["body"], "Walk for 20 minutes.")
+        self.assertEqual(payload["file"]["steps"][0]["item"], "benzoyl peroxide")
 
     def test_recommendation_pages_render_manifest_and_file(self):
         manifest = {
@@ -209,9 +258,9 @@ class DailyContextTests(unittest.TestCase):
             "href": "/projects/fitness/recommendations/2026-07-10",
             "recommendations": [{
                 "id": "rec-1",
-                "kind": "Workout",
-                "title": "Recovery workout",
-                "summary": "Prioritize recovery.",
+                "kind": "routine",
+                "title": "Evening routine",
+                "summary": "Use a gentle evening routine.",
                 "href": "/projects/fitness/recommendations/2026-07-10/rec-1",
                 "contentType": "application/json",
             }],
@@ -223,10 +272,13 @@ class DailyContextTests(unittest.TestCase):
             "id": "rec-1",
             "projectId": "fitness",
             "date": "2026-07-10",
-            "kind": "Workout",
-            "title": "Recovery workout",
-            "summary": "Prioritize recovery.",
-            "body": "Walk for 20 minutes.",
+            "kind": "routine",
+            "title": "Evening routine",
+            "summary": "Use a gentle evening routine.",
+            "steps": [
+                {"item": "benzoyl peroxide", "command": "put on full face"},
+                {"item": "wait", "command": "10 min"},
+            ],
             "createdAt": "2026-07-10T00:00:00Z",
             "updatedAt": "2026-07-10T00:00:00Z",
         }
@@ -240,9 +292,9 @@ class DailyContextTests(unittest.TestCase):
             detail_response = self.client.get("/projects/fitness/recommendations/2026-07-10/rec-1")
 
         self.assertEqual(list_response.status_code, 200)
-        self.assertIn(b"Recovery workout", list_response.data)
+        self.assertIn(b"Evening routine", list_response.data)
         self.assertEqual(detail_response.status_code, 200)
-        self.assertIn(b"Walk for 20 minutes.", detail_response.data)
+        self.assertIn(b"benzoyl peroxide", detail_response.data)
 
 
 if __name__ == "__main__":

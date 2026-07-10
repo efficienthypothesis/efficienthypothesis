@@ -281,12 +281,35 @@ body.projects-page main {
   line-height: 1.5;
 }
 
-.recommendation-content {
+.recommendation-steps {
   margin-top: 20px;
+  padding-left: 24px;
+}
+
+.recommendation-steps li {
+  margin-bottom: 14px;
   color: #172033;
   font-size: 1rem;
   line-height: 1.65;
-  white-space: pre-wrap;
+}
+
+.recommendation-step-item,
+.recommendation-step-command,
+.recommendation-step-clarification {
+  display: block;
+}
+
+.recommendation-step-item {
+  font-weight: 750;
+}
+
+.recommendation-step-command {
+  color: #334155;
+}
+
+.recommendation-step-clarification {
+  color: #64748b;
+  font-size: 0.9rem;
 }
 
 .recommendations-json {

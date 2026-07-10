@@ -26,8 +26,8 @@ DAILY_CONTEXT_MAX_ENTRIES = 100
 DAILY_CONTEXT_MAX_IMAGE_BYTES = 5 * 1024 * 1024
 RECOMMENDATION_VERSION = 1
 RECOMMENDATION_MAX_ITEMS = 50
-RECOMMENDATION_BODY_MAX_CHARS = 50000
-RECOMMENDATION_KINDS = {"Routine", "Workout"}
+RECOMMENDATION_MAX_STEPS = 100
+RECOMMENDATION_KINDS = {"routine"}
 DAILY_DATE_PATTERN = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
 
 
@@ -290,28 +290,68 @@ def _default_recommendations(project_id, user_id, date):
 
 
 def _default_recommendation_kind(project_id):
-    return "Routine" if project_id == "acne" else "Workout"
+    return "routine"
 
 
-def _normalize_recommendation_kind(value, project_id):
-    if isinstance(value, str) and value.strip() in RECOMMENDATION_KINDS:
-        return value.strip()
+def _normalize_recommendation_kind(value, project_id, strict=False):
+    if isinstance(value, str):
+        kind = value.strip()
+        if kind in RECOMMENDATION_KINDS:
+            return kind
+        if not strict and kind == "Routine":
+            return "routine"
+    if strict:
+        raise ValueError("recommendation kind must be routine")
     return _default_recommendation_kind(project_id)
 
 
-def _normalize_recommendation_file(value, project_id, date, recommendation_id, default):
+def _normalize_routine_steps(value, fallback_text=None, strict=False):
+    if not isinstance(value, list):
+        if strict:
+            raise ValueError("routine steps must be an array")
+        if isinstance(fallback_text, str) and fallback_text.strip():
+            return [{"item": "recommendation", "command": fallback_text.strip()}]
+        return []
+    if not value or len(value) > RECOMMENDATION_MAX_STEPS:
+        raise ValueError("routine steps must include 1 to 100 items")
+    steps = []
+    for index, step in enumerate(value):
+        if isinstance(step, (list, tuple)) and len(step) == 2:
+            item, command = step
+            clarification = None
+        elif isinstance(step, dict):
+            item = step.get("item")
+            command = step.get("command")
+            clarification = step.get("clarification")
+        else:
+            raise ValueError(f"steps[{index}] must be an object")
+        if not isinstance(item, str) or not item.strip() or len(item) > 160:
+            raise ValueError(f"steps[{index}].item is invalid")
+        if not isinstance(command, str) or not command.strip() or len(command) > 500:
+            raise ValueError(f"steps[{index}].command is invalid")
+        normalized_step = {
+            "item": item.strip(),
+            "command": command.strip(),
+        }
+        if isinstance(clarification, str) and clarification.strip():
+            if len(clarification) > 500:
+                raise ValueError(f"steps[{index}].clarification is invalid")
+            normalized_step["clarification"] = clarification.strip()
+        steps.append(normalized_step)
+    return steps
+
+
+def _normalize_recommendation_file(value, project_id, date, recommendation_id, default, strict=False):
     if not isinstance(value, dict):
         value = {}
-    kind = _normalize_recommendation_kind(value.get("kind", default.get("kind")), project_id)
+    kind = _normalize_recommendation_kind(value.get("kind", default.get("kind")), project_id, strict=strict)
     title = value.get("title", default.get("title"))
     summary = value.get("summary", default.get("summary"))
-    body = value.get("body", value.get("content", default.get("body", summary)))
     if not isinstance(title, str) or not title.strip() or len(title) > 200:
         title = summary if isinstance(summary, str) else recommendation_id
     if not isinstance(summary, str) or not summary.strip() or len(summary) > 2000:
         raise ValueError("recommendation summary is invalid")
-    if not isinstance(body, str) or not body.strip() or len(body) > RECOMMENDATION_BODY_MAX_CHARS:
-        raise ValueError("recommendation body is invalid")
+    steps = _normalize_routine_steps(value.get("steps", value.get("routine")), value.get("body", value.get("content", default.get("body", summary))), strict=strict)
     now = _now_iso()
     return {
         "schemaVersion": RECOMMENDATION_VERSION,
@@ -321,13 +361,13 @@ def _normalize_recommendation_file(value, project_id, date, recommendation_id, d
         "kind": kind,
         "title": title.strip(),
         "summary": summary.strip(),
-        "body": body.strip(),
+        "steps": steps,
         "createdAt": value.get("createdAt") or default.get("createdAt") or now,
         "updatedAt": value.get("updatedAt") or default.get("updatedAt") or now,
     }
 
 
-def _normalize_recommendations(value, project_id, user_id, date):
+def _normalize_recommendations(value, project_id, user_id, date, strict=False):
     date = _validate_daily_date(date)
     default = _default_recommendations(project_id, user_id, date)
     if not isinstance(value, dict):
@@ -348,7 +388,7 @@ def _normalize_recommendations(value, project_id, user_id, date):
             raise ValueError(f"recommendations[{index}].summary is invalid")
         item_id = item_id.strip()
         seen.add(item_id)
-        kind = _normalize_recommendation_kind(item.get("kind"), project_id)
+        kind = _normalize_recommendation_kind(item.get("kind"), project_id, strict=strict)
         title = item.get("title") if isinstance(item.get("title"), str) and item["title"].strip() else summary
         normalized_item = {
             "id": item_id,
@@ -360,11 +400,9 @@ def _normalize_recommendations(value, project_id, user_id, date):
             "createdAt": item.get("createdAt") or default["createdAt"],
             "updatedAt": item.get("updatedAt") or default["updatedAt"],
         }
-        body = item.get("body", item.get("content"))
-        if isinstance(body, str) and body.strip():
-            if len(body) > RECOMMENDATION_BODY_MAX_CHARS:
-                raise ValueError(f"recommendations[{index}].body is invalid")
-            normalized_item["body"] = body.strip()
+        if strict or "steps" in item or "routine" in item or "body" in item or "content" in item:
+            file_document = _normalize_recommendation_file(item, project_id, date, item_id, normalized_item, strict=strict)
+            normalized_item["steps"] = file_document["steps"]
         items.append(normalized_item)
     return {**default, "href": f"/projects/{project_id}/recommendations/{date}", "recommendations": items, "createdAt": value.get("createdAt") or default["createdAt"], "updatedAt": value.get("updatedAt") or default["updatedAt"]}
 
@@ -425,7 +463,7 @@ def _write_recommendations(email, project_id, recommendations):
     files = []
     manifest_items = []
     for item in recommendations["recommendations"]:
-        file_document = _normalize_recommendation_file(item, project_id, recommendations["date"], item["id"], item)
+        file_document = _normalize_recommendation_file(item, project_id, recommendations["date"], item["id"], item, strict=True)
         files.append(file_document)
         manifest_items.append({
             "id": file_document["id"],
@@ -589,7 +627,7 @@ def api_project_recommendations(project_id, date):
         if request.method == "GET":
             return jsonify({"recommendations": _read_recommendations(email, project_id, user_id, date)})
         data = request.get_json(silent=True) or {}
-        recommendations = _normalize_recommendations({"recommendations": data.get("recommendations", [])}, project_id, user_id, date)
+        recommendations = _normalize_recommendations({"recommendations": data.get("recommendations", [])}, project_id, user_id, date, strict=True)
         recommendations["updatedAt"] = _now_iso()
         recommendations = _write_recommendations(email, project_id, recommendations)
         return jsonify({"ok": True, "recommendations": recommendations})

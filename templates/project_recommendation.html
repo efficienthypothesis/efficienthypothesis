@@ -26,7 +26,17 @@
 
     <section class="recommendation-body">
       <p class="recommendation-summary">{{ file.summary }}</p>
-      <div class="recommendation-content">{{ file.body }}</div>
+      <ol class="recommendation-steps">
+        {% for step in file.steps %}
+          <li>
+            <span class="recommendation-step-item">{{ step.item }}</span>
+            <span class="recommendation-step-command">{{ step.command }}</span>
+            {% if step.clarification %}
+              <span class="recommendation-step-clarification">{{ step.clarification }}</span>
+            {% endif %}
+          </li>
+        {% endfor %}
+      </ol>
     </section>
 
     <details class="recommendations-json">

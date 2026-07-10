@@ -296,8 +296,8 @@ TOOLS = [
     _write_tool(
         "upsert_project_recommendations",
         "Store project recommendations",
-        "Store dated project recommendation files. Kind must be Routine or Workout. The server creates user-scoped page links for each recommendation.",
-        {"type": "object", "properties": {"project_id": {"type": "string", "enum": list(PROJECT_BY_ID)}, "date": {"type": "string"}, "recommendations": {"type": "array", "items": {"type": "object", "properties": {"id": {"type": "string"}, "kind": {"type": "string", "enum": ["Routine", "Workout"]}, "title": {"type": "string"}, "summary": {"type": "string"}, "body": {"type": "string"}}, "required": ["id", "kind", "title", "summary", "body"], "additionalProperties": False}}}, "required": ["project_id", "date", "recommendations"], "additionalProperties": False},
+        "Store dated routine recommendation files. Workout is temporarily disabled. Each routine must be a sequence of item/command steps.",
+        {"type": "object", "properties": {"project_id": {"type": "string", "enum": list(PROJECT_BY_ID)}, "date": {"type": "string"}, "recommendations": {"type": "array", "items": {"type": "object", "properties": {"id": {"type": "string"}, "kind": {"type": "string", "enum": ["routine"]}, "title": {"type": "string"}, "summary": {"type": "string"}, "steps": {"type": "array", "items": {"type": "object", "properties": {"item": {"type": "string"}, "command": {"type": "string"}, "clarification": {"type": "string"}}, "required": ["item", "command"], "additionalProperties": False}}}, "required": ["id", "kind", "title", "summary", "steps"], "additionalProperties": False}}}, "required": ["project_id", "date", "recommendations"], "additionalProperties": False},
         {"type": "object", "properties": {"recommendations": {"type": "object"}}, "required": ["recommendations"], "additionalProperties": False},
     ),
     _read_only_tool(
@@ -1322,7 +1322,7 @@ def _upsert_recommendations_result(email, user_id, arguments):
     date = _require_nonempty(arguments.get("date"), "date")
     if project_id not in PROJECT_BY_ID:
         raise ValueError("unknown project")
-    recommendations = _normalize_recommendations({"recommendations": arguments.get("recommendations")}, project_id, user_id, date)
+    recommendations = _normalize_recommendations({"recommendations": arguments.get("recommendations")}, project_id, user_id, date, strict=True)
     recommendations = _write_recommendations(email, project_id, recommendations)
     return {"structuredContent": {"recommendations": recommendations}, "content": [{"type": "text", "text": f"Updated recommendations for {project_id} on {date}."}]}
 
