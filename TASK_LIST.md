@@ -17,11 +17,6 @@ Private operational tasks and agent notices live in the S3-backed admin task boa
   Status: planned.
   Notes: The OpenAI app submission requires a public demo recording URL.
 
-- [ ] Confirm the remaining Projects and Goals scope before app submission.
-  Owner: Neer.
-  Status: needs decision.
-  Notes: Clarify the remaining Acne and Fitness functionality after the existing Projects scaffold and context work.
-
 - [ ] Decide whether to add infrastructure-as-code for durable AWS resources.
   Owner: unassigned.
   Status: open question.
