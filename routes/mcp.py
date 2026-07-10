@@ -15,12 +15,15 @@ from routes.workspace_crypto import (
     is_encrypted_workspace,
 )
 from routes.projects import (
+    DAILY_CONTEXT_MAX_ENTRIES,
     PROJECT_BY_ID,
+    RECOMMENDATION_MAX_ITEMS,
     _normalize_daily_context,
     _read_daily_context,
     _write_daily_context,
     _store_daily_context_image,
     _normalize_recommendations,
+    _read_recommendation_file,
     _read_recommendations,
     _write_recommendations,
     _query_daily_context_metadata,
@@ -339,6 +342,86 @@ TOOLS = [
         "Store one research item in S3 and its discovery metadata in DynamoDB.",
         {"type": "object", "properties": {"project_id": {"type": "string", "enum": list(PROJECT_BY_ID)}, "research_item": {"type": "object"}}, "required": ["project_id", "research_item"], "additionalProperties": False},
         {"type": "object", "properties": {"researchItem": {"type": "object"}}, "required": ["researchItem"], "additionalProperties": False},
+    ),
+    _write_tool(
+        "bulk_upsert_project_history",
+        "Bulk import project history",
+        "Import several project dates at once. write_mode is required: merge updates by ID and appends images, replace overwrites each submitted daily context or recommendation date.",
+        {
+            "type": "object",
+            "properties": {
+                "write_mode": {"type": "string", "enum": ["merge", "replace"]},
+                "daily_contexts": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "project_id": {"type": "string", "enum": list(PROJECT_BY_ID)},
+                            "date": {"type": "string"},
+                            "entries": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "id": {"type": "string"},
+                                        "time": {"type": ["string", "null"]},
+                                        "summary": {"type": "string"},
+                                    },
+                                    "required": ["id", "summary"],
+                                    "additionalProperties": False,
+                                },
+                            },
+                        },
+                        "required": ["project_id", "date", "entries"],
+                        "additionalProperties": False,
+                    },
+                },
+                "image_contexts": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "project_id": {"type": "string", "enum": list(PROJECT_BY_ID)},
+                            "date": {"type": "string"},
+                            "image_data": {"type": "string"},
+                            "summary": {"type": "string"},
+                            "time": {"type": "string"},
+                            "filename": {"type": "string"},
+                        },
+                        "required": ["project_id", "date", "image_data", "summary"],
+                        "additionalProperties": False,
+                    },
+                },
+                "research_items": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "project_id": {"type": "string", "enum": list(PROJECT_BY_ID)},
+                            "research_item": {"type": "object"},
+                        },
+                        "required": ["project_id", "research_item"],
+                        "additionalProperties": False,
+                    },
+                },
+                "recommendation_sets": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "project_id": {"type": "string", "enum": list(PROJECT_BY_ID)},
+                            "date": {"type": "string"},
+                            "recommendations": {"type": "array", "items": {"type": "object"}},
+                        },
+                        "required": ["project_id", "date", "recommendations"],
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            "required": ["write_mode"],
+            "additionalProperties": False,
+        },
+        {"type": "object", "properties": {"result": {"type": "object"}}, "required": ["result"], "additionalProperties": False},
     ),
     _read_only_tool(
         "query_nodes",
@@ -1409,6 +1492,141 @@ def _upsert_research_item_result(email, user_id, arguments):
     return {"structuredContent": {"researchItem": item}, "content": [{"type": "text", "text": f"Stored research item {item['id']}."}]}
 
 
+def _require_project_id(value):
+    project_id = _require_nonempty(value, "project_id")
+    if project_id not in PROJECT_BY_ID:
+        raise ValueError("unknown project")
+    return project_id
+
+
+def _optional_array(arguments, field):
+    value = arguments.get(field, [])
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise ValueError(f"{field} must be an array")
+    return value
+
+
+def _bulk_error_message(exc):
+    if isinstance(exc, ValueError):
+        return str(exc)
+    if isinstance(exc, (ClientError, BotoCoreError, RuntimeError)):
+        return "storage_unavailable"
+    return "unexpected_error"
+
+
+def _merge_by_id(existing, incoming, max_items, label):
+    merged = []
+    positions = {}
+    for item in existing:
+        item_id = item.get("id")
+        if not isinstance(item_id, str) or not item_id.strip():
+            continue
+        positions[item_id] = len(merged)
+        merged.append(item)
+    for item in incoming:
+        item_id = item.get("id")
+        if item_id in positions:
+            merged[positions[item_id]] = item
+        else:
+            positions[item_id] = len(merged)
+            merged.append(item)
+    if len(merged) > max_items:
+        raise ValueError(f"{label} has too many items after merge")
+    return merged
+
+
+def _bulk_upsert_daily_context(email, user_id, write_mode, item):
+    project_id = _require_project_id(item.get("project_id"))
+    date = _require_nonempty(item.get("date"), "date")
+    incoming = _normalize_daily_context({"entries": item.get("entries")}, project_id, user_id, date)
+    if write_mode == "merge":
+        existing = _read_daily_context(email, project_id, user_id, date)
+        incoming["entries"] = _merge_by_id(existing.get("entries", []), incoming["entries"], DAILY_CONTEXT_MAX_ENTRIES, "daily context")
+        incoming["createdAt"] = existing.get("createdAt") or incoming["createdAt"]
+    _write_daily_context(email, project_id, incoming)
+    return {"projectId": project_id, "date": incoming["date"], "entryCount": len(incoming["entries"]), "writeMode": write_mode}
+
+
+def _recommendation_full_items(email, project_id, user_id, date, recommendations):
+    full_items = []
+    for item in recommendations.get("recommendations", []):
+        _, file_document = _read_recommendation_file(email, project_id, user_id, date, item["id"])
+        if file_document:
+            full_items.append(file_document)
+    return full_items
+
+
+def _bulk_upsert_recommendations(email, user_id, write_mode, item):
+    project_id = _require_project_id(item.get("project_id"))
+    date = _require_nonempty(item.get("date"), "date")
+    incoming = _normalize_recommendations({"recommendations": item.get("recommendations")}, project_id, user_id, date, strict=True)
+    if write_mode == "merge":
+        existing = _read_recommendations(email, project_id, user_id, date)
+        existing_items = _recommendation_full_items(email, project_id, user_id, date, existing)
+        incoming["recommendations"] = _merge_by_id(existing_items, incoming["recommendations"], RECOMMENDATION_MAX_ITEMS, "recommendations")
+        incoming["createdAt"] = existing.get("createdAt") or incoming["createdAt"]
+        incoming = _normalize_recommendations(incoming, project_id, user_id, date, strict=True)
+    recommendations = _write_recommendations(email, project_id, incoming)
+    return {"projectId": project_id, "date": recommendations["date"], "recommendationCount": len(recommendations["recommendations"]), "writeMode": write_mode}
+
+
+def _bulk_upsert_project_history_result(email, user_id, arguments):
+    write_mode = arguments.get("write_mode")
+    if write_mode not in {"merge", "replace"}:
+        raise ValueError("write_mode must be merge or replace")
+    result = {
+        "writeMode": write_mode,
+        "dailyContexts": [],
+        "images": [],
+        "researchItems": [],
+        "recommendationSets": [],
+        "errors": [],
+    }
+
+    for index, item in enumerate(_optional_array(arguments, "daily_contexts")):
+        try:
+            result["dailyContexts"].append(_bulk_upsert_daily_context(email, user_id, write_mode, item))
+        except Exception as exc:
+            result["errors"].append({"section": "daily_contexts", "index": index, "error": _bulk_error_message(exc)})
+
+    for index, item in enumerate(_optional_array(arguments, "image_contexts")):
+        try:
+            project_id = _require_project_id(item.get("project_id"))
+            entry = _store_daily_context_image(email, project_id, user_id, item.get("date"), item.get("image_data"), item.get("summary"), item.get("time"), item.get("filename"))
+            result["images"].append({"projectId": project_id, "date": item.get("date"), "entryId": entry["id"]})
+        except Exception as exc:
+            result["errors"].append({"section": "image_contexts", "index": index, "error": _bulk_error_message(exc)})
+
+    for index, item in enumerate(_optional_array(arguments, "research_items")):
+        try:
+            project_id = _require_project_id(item.get("project_id"))
+            research_item = _write_research_item(email, project_id, user_id, item.get("research_item"))
+            result["researchItems"].append({"projectId": project_id, "researchId": research_item["id"], "status": research_item["status"]})
+        except Exception as exc:
+            result["errors"].append({"section": "research_items", "index": index, "error": _bulk_error_message(exc)})
+
+    for index, item in enumerate(_optional_array(arguments, "recommendation_sets")):
+        try:
+            result["recommendationSets"].append(_bulk_upsert_recommendations(email, user_id, write_mode, item))
+        except Exception as exc:
+            result["errors"].append({"section": "recommendation_sets", "index": index, "error": _bulk_error_message(exc)})
+
+    counts = {
+        "dailyContexts": len(result["dailyContexts"]),
+        "images": len(result["images"]),
+        "researchItems": len(result["researchItems"]),
+        "recommendationSets": len(result["recommendationSets"]),
+        "errors": len(result["errors"]),
+    }
+    result["counts"] = counts
+    return {
+        "structuredContent": {"result": result},
+        "content": [{"type": "text", "text": f"Bulk project history import completed with {counts['errors']} errors."}],
+    }
+
+
 def _mutation_result(action, node, created):
     return {
         "structuredContent": {"ok": True, "node": node, "created": bool(created)},
@@ -1449,6 +1667,8 @@ def _call_tool(name, arguments, ctx):
         return _get_research_item_result(email, user_id, arguments)
     if name == "upsert_project_research_item":
         return _upsert_research_item_result(email, user_id, arguments)
+    if name == "bulk_upsert_project_history":
+        return _bulk_upsert_project_history_result(email, user_id, arguments)
     if name == "query_nodes":
         return _query_nodes(email, user_id, arguments)
     if name == "get_node":

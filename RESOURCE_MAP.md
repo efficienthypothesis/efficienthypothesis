@@ -185,6 +185,7 @@ The Projects calendar shows each day's entry count, image count, and a raw JSON 
 GPT accesses text context through the authenticated MCP tools `get_daily_context` and `upsert_daily_context`.
 GPT uploads image context through the authenticated MCP tool `add_daily_context_image`.
 GPT can discover available dated context through the authenticated MCP tool `list_daily_context_metadata`.
+GPT can bulk import daily text context through `bulk_upsert_project_history` with explicit `merge` or `replace` write mode.
 Daily context reads and writes are scoped to the authenticated user and validated by project and date.
 
 ## Project Research Contract
@@ -198,6 +199,7 @@ Qualified statements must include both `statement` and `qualification`.
 Research item statuses are `active`, `superseded`, and `rejected`.
 GPT should call `list_project_research` first, then `get_project_research_item` only for relevant full details.
 GPT writes research through `upsert_project_research_item`.
+GPT can bulk import research through `bulk_upsert_project_history`.
 
 ## Recommendation Contract
 
@@ -209,6 +211,7 @@ The only currently enabled recommendation kind is `routine`; `workout` is tempor
 Routine `steps` are ordered objects with `item`, `command`, and optional `clarification`.
 GPT writes recommendations through `upsert_project_recommendations` and reads them through `get_project_recommendations`.
 GPT should use `get_recommendation_context` before generating recommendations because it returns active research metadata and up to 31 days of prior recommendations.
+GPT can bulk import dated recommendation sets through `bulk_upsert_project_history` with explicit `merge` or `replace` write mode.
 The weekly Projects calendar always renders each project/date recommendation state as a link to the authenticated recommendation page.
 Legacy single-object recommendation files at `<email>/projects/<project_id>/recommendations/<YYYY-MM-DD>.json` are read as a fallback only.
 
