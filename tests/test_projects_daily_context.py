@@ -135,6 +135,40 @@ class DailyContextTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 400)
 
+    def test_research_metadata_route_groups_entries_by_project(self):
+        def query_research(_email, _user_id, project_id, include_inactive=False):
+            if project_id == "acne":
+                return [{
+                    "researchId": "research-1",
+                    "topic": "benzoyl peroxide irritation",
+                    "status": "active",
+                    "tags": ["benzoyl peroxide"],
+                    "relatedTopics": ["irritation"],
+                    "sourceTitle": "Acne guideline",
+                    "sourceUrl": "https://example.com/acne",
+                    "takeawaysPreview": ["Use cautiously."],
+                }]
+            return []
+
+        with patch("routes.projects._query_research_metadata", side_effect=query_research):
+            response = self.client.get("/api/projects/research-metadata")
+
+        self.assertEqual(response.status_code, 200)
+        projects = response.get_json()["projects"]
+        self.assertEqual([project["id"] for project in projects], ["acne", "fitness", "flexibility"])
+        self.assertEqual(projects[0]["researchMetadata"][0]["researchId"], "research-1")
+        self.assertEqual(projects[1]["researchMetadata"], [])
+
+    def test_projects_nav_includes_research_modal(self):
+        with self.client.session_transaction(base_url="https://projects.efficienthypothesis.com") as session:
+            session["user"] = {"id": "user-1", "email": "user@example.com"}
+        with patch("routes.pages._project_calendar_days_for_user", return_value=[]):
+            response = self.client.get("/", headers={"Host": "projects.efficienthypothesis.com"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'data-modal-target="research-modal"', response.data)
+        self.assertIn(b'id="research-modal"', response.data)
+
     def test_recommendations_receive_backend_owned_links(self):
         with patch("routes.projects.s3.put_object"):
             response = self.client.put(

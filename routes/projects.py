@@ -800,6 +800,28 @@ def api_project_global_contexts():
     return jsonify({"projects": projects})
 
 
+@projects_bp.route("/api/projects/research-metadata", methods=["GET"])
+def api_project_research_metadata():
+    ctx, err = _require_auth()
+    if err:
+        return err
+
+    email = ctx["email"]
+    user_id = ctx.get("user_id") or email
+    include_inactive = request.args.get("include_inactive") == "true"
+    try:
+        projects = []
+        for project in PROJECTS:
+            projects.append({
+                "id": project["id"],
+                "name": project["name"],
+                "researchMetadata": _query_research_metadata(email, user_id, project["id"], include_inactive=include_inactive),
+            })
+        return jsonify({"projects": projects})
+    except (ClientError, BotoCoreError, RuntimeError):
+        return jsonify({"error": "research_metadata_unavailable"}), 503
+
+
 @projects_bp.route("/api/projects/<project_id>/global-context", methods=["GET", "PUT"])
 def api_project_global_context(project_id):
     ctx, err = _require_auth()

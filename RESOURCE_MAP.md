@@ -192,6 +192,7 @@ Daily context reads and writes are scoped to the authenticated user and validate
 Project research item details are stored privately at `<email>/projects/<project_id>/research/items/<research_id>.json`.
 Project research metadata is indexed in DynamoDB table `ProjectResearchMetadata` by `userProject` and `researchId`.
 Research metadata includes `topic`, `status`, `tags`, `relatedTopics`, source metadata, evidence strengths, takeaway previews, timestamps, and the backing S3 key.
+The Projects top-nav Research modal reads grouped research metadata through `/api/projects/research-metadata` and can show raw metadata JSON per entry.
 Research item files contain `id`, `userId`, `projectId`, `topic`, `status`, `source`, `qualifiedStatements`, `takeaways`, `recommendationImplications`, `tags`, `relatedTopics`, `createdAt`, and `updatedAt`.
 Qualified statements must include both `statement` and `qualification`.
 Research item statuses are `active`, `superseded`, and `rejected`.

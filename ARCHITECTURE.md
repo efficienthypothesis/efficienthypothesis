@@ -52,7 +52,8 @@ It calls Flask routes under `/api/*` and uses browser sessions for authenticated
 
 The projects surface currently uses Flask-rendered HTML plus static JavaScript and CSS.
 The top-nav Profile modal reads project global contexts from `/api/projects/global-contexts`.
-It does not yet include an editing UI for those context files.
+The top-nav Research modal reads project research metadata from `/api/projects/research-metadata`.
+It does not yet include an editing UI for those context or research files.
 
 Browser code is untrusted.
 It must not receive AWS credentials, OAuth client secrets, signing keys, database credentials, private keys, recovery keys, or plaintext server-side secrets.
