@@ -98,6 +98,10 @@ DynamoDB stores research discovery metadata, including topic, tags, related topi
 S3 stores the full qualified statements, source details, takeaways, and recommendation implications.
 GPT should list research metadata first, then read the full S3-backed research item only when the metadata is relevant.
 
+The Acne project global context includes code-owned assessment field definitions for Baumann skin type, Fitzpatrick phototype, genetic scarring tendency, and anatomical pore size and distribution.
+The backend preserves these field definitions during browser and MCP updates.
+Only each field's `value`, `reason`, and `updatedAt` are mutable.
+
 Project recommendations are stored as dated manifests and linked files in S3.
 Recommendation generation context includes active research metadata plus the target date and previous 30 days of recommendations for the same project.
 

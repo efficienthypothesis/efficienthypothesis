@@ -173,6 +173,72 @@ body.nav-modal-open {
   padding-left: 18px;
 }
 
+.project-assessment-section {
+  display: grid;
+  gap: 10px;
+}
+
+.project-assessment-section > h4 {
+  margin: 0;
+  color: #172033;
+  font-size: 0.9rem;
+  line-height: 1.2;
+}
+
+.project-assessment-group {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid #d8dee8;
+  background: #ffffff;
+}
+
+.project-assessment-group h5 {
+  margin: 0;
+  color: #172033;
+  font-size: 0.88rem;
+  line-height: 1.25;
+}
+
+.project-assessment-description {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
+.project-assessment-row {
+  display: grid;
+  grid-template-columns: minmax(0, 150px) minmax(0, 90px) minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  padding-top: 8px;
+  border-top: 1px solid #edf1f6;
+}
+
+.project-assessment-label {
+  color: #172033;
+  font-size: 0.8rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.project-assessment-value {
+  border: 1px solid #d8dee8;
+  border-radius: 999px;
+  padding: 3px 8px;
+  color: #475569;
+  font-size: 0.76rem;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.project-assessment-reason {
+  color: #64748b;
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
 .project-research-view {
   display: grid;
   gap: 14px;
@@ -366,6 +432,15 @@ body.nav-modal-open {
   }
 
   .project-context-header p {
+    text-align: left;
+  }
+
+  .project-assessment-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .project-assessment-value {
+    width: fit-content;
     text-align: left;
   }
 }

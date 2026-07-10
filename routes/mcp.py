@@ -17,6 +17,9 @@ from routes.workspace_crypto import (
 from routes.projects import (
     DAILY_CONTEXT_MAX_ENTRIES,
     PROJECT_BY_ID,
+    _normalize_global_context,
+    _read_project_global_context,
+    _write_project_global_context,
     RECOMMENDATION_MAX_ITEMS,
     _normalize_daily_context,
     _read_daily_context,
@@ -244,6 +247,20 @@ def _node_fields_schema(description):
 
 
 TOOLS = [
+    _read_only_tool(
+        "get_project_global_context",
+        "Get project global context",
+        "Read one user's project-level global context file, including locked Acne assessment fields when present.",
+        {"type": "object", "properties": {"project_id": {"type": "string", "enum": list(PROJECT_BY_ID)}}, "required": ["project_id"], "additionalProperties": False},
+        {"type": "object", "properties": {"globalContext": {"type": "object"}}, "required": ["globalContext"], "additionalProperties": False},
+    ),
+    _write_tool(
+        "upsert_project_global_context",
+        "Update project global context",
+        "Update a project-level global context file. Code-owned assessment field definitions cannot be deleted or redefined; only their values and reasons are mutable.",
+        {"type": "object", "properties": {"project_id": {"type": "string", "enum": list(PROJECT_BY_ID)}, "global_context": {"type": "object"}}, "required": ["project_id", "global_context"], "additionalProperties": False},
+        {"type": "object", "properties": {"globalContext": {"type": "object"}}, "required": ["globalContext"], "additionalProperties": False},
+    ),
     _read_only_tool(
         "get_daily_context",
         "Get project daily context",
@@ -1408,6 +1425,28 @@ def _get_daily_context_result(email, user_id, arguments):
     }
 
 
+def _get_global_context_result(email, user_id, arguments):
+    project_id = _require_project_id(arguments.get("project_id"))
+    context = _read_project_global_context(email, project_id, user_id)
+    return {
+        "structuredContent": {"globalContext": context},
+        "content": [{"type": "text", "text": f"Loaded {project_id} global context."}],
+    }
+
+
+def _upsert_global_context_result(email, user_id, arguments):
+    project_id = _require_project_id(arguments.get("project_id"))
+    existing = _read_project_global_context(email, project_id, user_id)
+    context = _normalize_global_context(arguments.get("global_context"), project_id, user_id, existing=existing)
+    context["createdAt"] = existing.get("createdAt") or context["createdAt"]
+    context["updatedAt"] = _now_iso()
+    _write_project_global_context(email, project_id, context)
+    return {
+        "structuredContent": {"globalContext": context},
+        "content": [{"type": "text", "text": f"Updated {project_id} global context."}],
+    }
+
+
 def _upsert_daily_context_result(email, user_id, arguments):
     project_id = _require_nonempty(arguments.get("project_id"), "project_id")
     date = _require_nonempty(arguments.get("date"), "date")
@@ -1647,6 +1686,10 @@ def _call_tool(name, arguments, ctx):
     email = ctx["email"]
     user_id = ctx.get("user_id") or email
 
+    if name == "get_project_global_context":
+        return _get_global_context_result(email, user_id, arguments)
+    if name == "upsert_project_global_context":
+        return _upsert_global_context_result(email, user_id, arguments)
     if name == "get_daily_context":
         return _get_daily_context_result(email, user_id, arguments)
     if name == "upsert_daily_context":

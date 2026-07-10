@@ -173,6 +173,12 @@ Run `tests/test_workspace_fail_closed.py` when read-error handling or workspace 
 
 ## Daily Project Context Contract
 
+Project global context is stored privately at `<email>/projects/<project_id>/global-context.json`.
+GPT reads and writes project global context through the authenticated MCP tools `get_project_global_context` and `upsert_project_global_context`.
+The Acne global context includes locked `assessmentFields` for Baumann skin type, Fitzpatrick phototype, genetic scarring tendency, and anatomical pore size and distribution.
+The backend restores those Acne field definitions if omitted or malformed.
+Only field `value`, `reason`, and `updatedAt` values are mutable.
+
 Daily project context is stored privately at `<email>/projects/<project_id>/daily-context/<YYYY-MM-DD>.json`.
 Daily project context metadata is indexed in DynamoDB table `ProjectDailyContextMetadata` by `userProject` and `date`.
 Each document contains `schemaVersion`, `userId`, `projectId`, `date`, `entries`, `createdAt`, and `updatedAt`.

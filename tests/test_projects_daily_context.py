@@ -13,7 +13,7 @@ os.environ.setdefault("FLASK_SECRET_KEY", "test")
 os.environ.setdefault("OAUTH_SIGNING_KEY", "test")
 
 from app import app
-from routes.projects import _normalize_daily_context, _project_calendar_days_for_user, _read_recommendation_context, _store_daily_context_image, _write_research_item
+from routes.projects import _default_global_context, _normalize_daily_context, _normalize_global_context, _project_calendar_days_for_user, _read_recommendation_context, _store_daily_context_image, _write_research_item
 
 
 def s3_error(code):
@@ -39,6 +39,50 @@ class DailyContextTests(unittest.TestCase):
         self.assertEqual(context["date"], "2026-07-10")
         self.assertEqual(context["entries"][0]["summary"], "Did the thing.")
         self.assertEqual(context["entries"][0]["time"], "08:30")
+
+    def test_acne_global_context_includes_locked_assessment_fields(self):
+        context = _default_global_context("acne", "user-1")
+
+        self.assertEqual([group["id"] for group in context["assessmentFields"]], [
+            "baumann_skin_type",
+            "fitzpatrick_phototype",
+            "genetic_scarring_tendency",
+            "anatomical_pore_size_distribution",
+        ])
+        baumann = context["assessmentFields"][0]
+        self.assertEqual([field["id"] for field in baumann["fields"]], ["o_vs_d", "s_vs_r", "p_vs_n", "w_vs_t"])
+        self.assertTrue(all(field["value"] == "unknown" for group in context["assessmentFields"] for field in group["fields"]))
+
+    def test_acne_assessment_fields_preserve_existing_values_and_drop_unknown_fields(self):
+        existing = _default_global_context("acne", "user-1")
+        existing["assessmentFields"][0]["fields"][0]["value"] = "O"
+        existing["assessmentFields"][0]["fields"][0]["reason"] = "Consistent midday shine."
+        incoming = {
+            "summary": "Updated summary.",
+            "assessmentFields": [{
+                "id": "baumann_skin_type",
+                "label": "Malicious replacement",
+                "fields": [
+                    {"id": "s_vs_r", "label": "Changed", "value": "S", "reason": "Stinging with actives."},
+                    {"id": "delete_me", "value": "x", "reason": "x"},
+                ],
+            }],
+        }
+
+        context = _normalize_global_context(incoming, "acne", "user-1", existing=existing)
+
+        baumann = context["assessmentFields"][0]
+        self.assertEqual(baumann["label"], "Baumann Skin Type")
+        self.assertEqual([field["id"] for field in baumann["fields"]], ["o_vs_d", "s_vs_r", "p_vs_n", "w_vs_t"])
+        self.assertEqual(baumann["fields"][0]["value"], "O")
+        self.assertEqual(baumann["fields"][0]["reason"], "Consistent midday shine.")
+        self.assertEqual(baumann["fields"][1]["value"], "S")
+        self.assertEqual(baumann["fields"][1]["reason"], "Stinging with actives.")
+
+    def test_non_acne_global_context_does_not_receive_acne_fields(self):
+        context = _default_global_context("fitness", "user-1")
+
+        self.assertNotIn("assessmentFields", context)
 
     def test_daily_context_get_missing_object_returns_empty_document(self):
         with patch("routes.projects.s3.get_object", side_effect=s3_error("NoSuchKey")):

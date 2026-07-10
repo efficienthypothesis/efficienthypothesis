@@ -35,6 +35,45 @@ RESEARCH_MAX_STATEMENTS = 50
 RESEARCH_MAX_TAKEAWAYS = 50
 RESEARCH_MAX_IMPLICATIONS = 50
 DAILY_DATE_PATTERN = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
+ACNE_ASSESSMENT_FIELDS = [
+    {
+        "id": "baumann_skin_type",
+        "label": "Baumann Skin Type",
+        "description": "Four-axis skin-type assessment used to reason about acne routines and tolerance.",
+        "fields": [
+            {"id": "o_vs_d", "label": "O vs D", "prompt": "Oiliness vs dryness", "options": ["unknown", "O", "D"]},
+            {"id": "s_vs_r", "label": "S vs R", "prompt": "Sensitive vs resistant", "options": ["unknown", "S", "R"]},
+            {"id": "p_vs_n", "label": "P vs N", "prompt": "Pigmented vs non-pigmented", "options": ["unknown", "P", "N"]},
+            {"id": "w_vs_t", "label": "W vs T", "prompt": "Wrinkle-prone vs tight", "options": ["unknown", "W", "T"]},
+        ],
+    },
+    {
+        "id": "fitzpatrick_phototype",
+        "label": "Fitzpatrick Skin Phototype",
+        "description": "Melanin synthesis capacity and sun-response category.",
+        "fields": [
+            {"id": "phototype", "label": "Phototype", "prompt": "Type I, II, III, IV, V, or VI", "options": ["unknown", "I", "II", "III", "IV", "V", "VI"]},
+        ],
+    },
+    {
+        "id": "genetic_scarring_tendency",
+        "label": "Genetic Scarring Tendency",
+        "description": "Scarring patterns that should influence acne intervention aggressiveness.",
+        "fields": [
+            {"id": "atrophic_pitted_scarring", "label": "Atrophic / Pitted Scarring", "prompt": "Likelihood or history of atrophic or pitted acne scarring", "options": ["unknown", "low", "moderate", "high"]},
+            {"id": "hypertrophic_keloidal_scarring", "label": "Hypertrophic / Keloidal Scarring", "prompt": "Likelihood or history of hypertrophic or keloidal scarring", "options": ["unknown", "low", "moderate", "high"]},
+        ],
+    },
+    {
+        "id": "anatomical_pore_size_distribution",
+        "label": "Anatomical Pore Size & Distribution",
+        "description": "Pore morphology and distribution pattern relevant to acne phenotype.",
+        "fields": [
+            {"id": "size", "label": "Size", "prompt": "Large or small", "options": ["unknown", "large", "small"]},
+            {"id": "distribution", "label": "Distribution", "prompt": "Where enlarged or acne-relevant pores are concentrated", "options": ["unknown", "T zone", "expanded mid face", "U zone / lower face", "butterfly / malar pattern", "peripheral / hairline", "global"]},
+        ],
+    },
+]
 
 
 def _now_iso():
@@ -76,7 +115,7 @@ def _user_project_key(user_id, project_id):
 def _default_global_context(project_id, user_id):
     project = PROJECT_BY_ID[project_id]
     now = _now_iso()
-    return {
+    context = {
         "schemaVersion": GLOBAL_CONTEXT_VERSION,
         "projectId": project_id,
         "projectName": project["name"],
@@ -89,6 +128,58 @@ def _default_global_context(project_id, user_id):
         "createdAt": now,
         "updatedAt": now,
     }
+    if project_id == "acne":
+        context["assessmentFields"] = _default_acne_assessment_fields()
+    return context
+
+
+def _default_acne_assessment_fields():
+    groups = deepcopy(ACNE_ASSESSMENT_FIELDS)
+    for group in groups:
+        for field in group["fields"]:
+            field["value"] = "unknown"
+            field["reason"] = ""
+            field["updatedAt"] = None
+    return groups
+
+
+def _assessment_source_lookup(value):
+    lookup = {}
+    if not isinstance(value, list):
+        return lookup
+    for group in value:
+        if not isinstance(group, dict) or not isinstance(group.get("id"), str):
+            continue
+        fields = {}
+        for field in group.get("fields", []):
+            if isinstance(field, dict) and isinstance(field.get("id"), str):
+                fields[field["id"]] = field
+        lookup[group["id"]] = fields
+    return lookup
+
+
+def _apply_assessment_field_values(groups, source):
+    lookup = _assessment_source_lookup(source)
+    for group in groups:
+        source_fields = lookup.get(group["id"], {})
+        for field in group["fields"]:
+            source_field = source_fields.get(field["id"], {})
+            value = source_field.get("value")
+            reason = source_field.get("reason")
+            updated_at = source_field.get("updatedAt")
+            if isinstance(value, str) and value.strip() and len(value) <= 200:
+                field["value"] = value.strip()
+            if isinstance(reason, str) and len(reason) <= 2000:
+                field["reason"] = reason.strip()
+            if isinstance(updated_at, str) and updated_at.strip() and len(updated_at) <= 80:
+                field["updatedAt"] = updated_at.strip()
+
+
+def _normalize_acne_assessment_fields(incoming, existing=None):
+    groups = _default_acne_assessment_fields()
+    _apply_assessment_field_values(groups, existing)
+    _apply_assessment_field_values(groups, incoming)
+    return groups
 
 
 def _normalize_string_list(value):
@@ -101,10 +192,10 @@ def _normalize_string_list(value):
     return normalized
 
 
-def _normalize_global_context(value, project_id, user_id):
+def _normalize_global_context(value, project_id, user_id, existing=None):
     default_context = _default_global_context(project_id, user_id)
     if not isinstance(value, dict):
-        return default_context
+        value = {}
 
     context = deepcopy(default_context)
     context["createdAt"] = value.get("createdAt") or context["createdAt"]
@@ -114,6 +205,8 @@ def _normalize_global_context(value, project_id, user_id):
     context["preferences"] = _normalize_string_list(value.get("preferences"))
     context["constraints"] = _normalize_string_list(value.get("constraints"))
     context["openQuestions"] = _normalize_string_list(value.get("openQuestions"))
+    if project_id == "acne":
+        context["assessmentFields"] = _normalize_acne_assessment_fields(value.get("assessmentFields"), (existing or {}).get("assessmentFields"))
     return context
 
 
@@ -140,6 +233,7 @@ def _write_project_global_context(email, project_id, context):
         Key=_project_global_context_key(email, project_id),
         Body=json.dumps(context, indent=2),
         ContentType="application/json",
+        ServerSideEncryption="AES256",
     )
 
 
@@ -838,8 +932,8 @@ def api_project_global_context(project_id):
         })
 
     data = request.get_json(silent=True) or {}
-    context = _normalize_global_context(data.get("globalContext", data), project_id, user_id)
     existing = _read_project_global_context(email, project_id, user_id)
+    context = _normalize_global_context(data.get("globalContext", data), project_id, user_id, existing=existing)
     context["createdAt"] = existing.get("createdAt") or context["createdAt"]
     context["updatedAt"] = _now_iso()
     _write_project_global_context(email, project_id, context)

@@ -240,6 +240,7 @@
       appendListSection(root, "Preferences", context.preferences);
       appendListSection(root, "Constraints", context.constraints);
       appendListSection(root, "Open Questions", context.openQuestions);
+      appendAssessmentFields(root, context.assessmentFields);
     }
 
     const details = document.createElement("details");
@@ -284,8 +285,52 @@
     root.append(section);
   }
 
+  function appendAssessmentFields(root, groups) {
+    if (!Array.isArray(groups) || groups.length === 0) return;
+    const section = document.createElement("section");
+    section.className = "project-assessment-section";
+    const heading = document.createElement("h4");
+    heading.textContent = "Assessment Fields";
+    section.append(heading);
+
+    groups.forEach((group) => {
+      if (!group || !Array.isArray(group.fields)) return;
+      const groupElement = document.createElement("article");
+      groupElement.className = "project-assessment-group";
+      const groupTitle = document.createElement("h5");
+      groupTitle.textContent = group.label || group.id || "Assessment group";
+      groupElement.append(groupTitle);
+      if (group.description) {
+        const description = document.createElement("p");
+        description.className = "project-assessment-description";
+        description.textContent = group.description;
+        groupElement.append(description);
+      }
+
+      group.fields.forEach((field) => {
+        const row = document.createElement("div");
+        row.className = "project-assessment-row";
+        const label = document.createElement("div");
+        label.className = "project-assessment-label";
+        label.textContent = field.label || field.id || "Field";
+        const value = document.createElement("div");
+        value.className = "project-assessment-value";
+        value.textContent = field.value || "unknown";
+        const reason = document.createElement("div");
+        reason.className = "project-assessment-reason";
+        reason.textContent = field.reason || "No reason stored yet.";
+        row.append(label, value, reason);
+        groupElement.append(row);
+      });
+      section.append(groupElement);
+    });
+
+    root.append(section);
+  }
+
   function hasContextContent(context) {
     if (context.summary && String(context.summary).trim()) return true;
+    if (Array.isArray(context.assessmentFields) && context.assessmentFields.length) return true;
     return ["facts", "preferences", "constraints", "openQuestions"].some(
       (key) => Array.isArray(context[key]) && context[key].some((value) => String(value || "").trim())
     );

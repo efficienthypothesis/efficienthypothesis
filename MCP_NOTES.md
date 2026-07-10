@@ -39,6 +39,7 @@ Read tools:
 - `query_nodes`
 - `get_node`
 - `get_daily_context`
+- `get_project_global_context`
 - `get_project_recommendations`
 - `get_recommendation_context`
 - `list_daily_context_metadata`
@@ -52,6 +53,7 @@ Write tools:
 - `archive_node`
 - `restore_node`
 - `upsert_daily_context`
+- `upsert_project_global_context`
 - `add_daily_context_image`
 - `upsert_project_recommendations`
 - `upsert_project_research_item`
@@ -128,6 +130,9 @@ and retired timetable documents before the cleaned workspace is saved again.
   its `tagId`; the response includes `tagArchive` so clients can see that the
   referenced tag is archived.
 - GPT can write project daily context, daily context images, research items, and dated routine recommendation sets.
+- GPT can read and update project global context through `get_project_global_context` and `upsert_project_global_context`.
+- The Acne global context contains code-owned assessment field definitions.
+- MCP can update each Acne assessment field's `value`, `reason`, and `updatedAt`, but omitted or malformed writes cannot delete or redefine the fields.
 - `bulk_upsert_project_history` requires `write_mode` set to `merge` or `replace`.
 - In `merge` mode, bulk daily context and recommendation sets update matching IDs and append new IDs.
 - In `replace` mode, each submitted project/date daily context or recommendation set replaces that date's existing set.
@@ -137,6 +142,8 @@ and retired timetable documents before the cleaned workspace is saved again.
 ## Project MCP Data
 
 Project daily context is dated by project and calendar date.
+Project global context is project-scoped and stores durable profile information for each project.
+Acne global context includes locked assessment fields for Baumann skin type, Fitzpatrick phototype, genetic scarring tendency, and anatomical pore size and distribution.
 Text entries are written through `upsert_daily_context` or `bulk_upsert_project_history`.
 Images are written through `add_daily_context_image` or the bulk tool's `image_contexts` array.
 Image payloads must be base64 PNG, JPEG, or WebP and are limited to 5 MiB decoded.
