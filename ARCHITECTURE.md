@@ -41,6 +41,7 @@ This repo keeps the current React/Vite plus Flask/Lambda architecture until ther
 | OAuth and MCP | ChatGPT connector authorization and workspace tool calls | `routes/oauth.py`, `routes/mcp.py`, `MCP_NOTES.md` | OAuth routes and `/mcp-v5` |
 | Workspace persistence | S3-backed workspace state and conflict handling | `routes/workspace.py`, `src/services/workspaceService.ts` | `s3://eh-app-data/<email>/workspace/state.json` |
 | Project context persistence | S3-backed project global context files | `routes/projects.py`, `static/js/navbar.js`, `static/css/projects.css` | `s3://eh-app-data/<email>/projects/<project_id>/global-context.json` |
+| Project inventory persistence | DynamoDB-backed owned products, completed treatments, and related assets | `routes/projects.py`, `routes/mcp.py` | DynamoDB table `ProjectInventoryItems` |
 | Deployment and CI | Build, package, Lambda update, and GitHub checks | `deploy.sh`, `.github/workflows/ci.yml`, `requirements-lambda.txt` | GitHub Actions and AWS Lambda |
 
 ## Frontend Boundary
@@ -98,6 +99,12 @@ DynamoDB stores research discovery metadata, including topic, tags, related topi
 S3 stores the full qualified statements, source details, takeaways, and recommendation implications.
 GPT should list research metadata first, then read the full S3-backed research item only when the metadata is relevant.
 
+Project inventory is stored in DynamoDB table `ProjectInventoryItems`.
+Each item is scoped by user and project and can represent a product, medication, supplement, device, treatment, surgery, procedure, or other owned or completed asset.
+Inventory status values are `available`, `completed`, `unavailable`, and `archived`.
+Inventory means the user has the item or completed the treatment; it does not imply the item is actively used.
+Recommendation context includes non-archived project inventory so GPT can account for what the user already owns or has completed before generating a new recommendation.
+
 New Acne project global context files include editable starter assessment fields for Baumann skin type, Fitzpatrick phototype, genetic scarring tendency, and anatomical pore size and distribution.
 They also include AI guidance asking GPT to learn those values from the user because they improve recommendation accuracy.
 These fields are starter context rather than locked schema, so GPT can overwrite or delete them when it replaces the global context file.
@@ -133,6 +140,7 @@ New encrypted workspace writes are rejected.
 
 DynamoDB currently owns user records in `Users`.
 Legacy tables such as `Tasks`, `Actions`, `Drafts`, `TimeLogs`, and `OAuthTokens` remain referenced for OAuth and account deletion cleanup.
+Project tables include `ProjectDailyContextMetadata`, `ProjectResearchMetadata`, and `ProjectInventoryItems`.
 
 ## Infrastructure Boundary
 

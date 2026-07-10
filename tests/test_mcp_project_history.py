@@ -6,7 +6,7 @@ os.environ.setdefault("AWS_EC2_METADATA_DISABLED", "true")
 os.environ.setdefault("FLASK_SECRET_KEY", "test")
 os.environ.setdefault("OAUTH_SIGNING_KEY", "test")
 
-from routes.mcp import TOOLS, _bulk_upsert_project_history_result, _get_global_context_result, _upsert_daily_context_result, _upsert_global_context_result
+from routes.mcp import TOOLS, _bulk_upsert_project_history_result, _get_global_context_result, _list_inventory_result, _upsert_daily_context_result, _upsert_global_context_result, _upsert_inventory_item_result
 from routes.projects import _default_global_context
 
 
@@ -23,6 +23,26 @@ class MCPProjectHistoryTests(unittest.TestCase):
 
         self.assertIn("get_project_global_context", tool_names)
         self.assertIn("upsert_project_global_context", tool_names)
+        self.assertIn("list_project_inventory", tool_names)
+        self.assertIn("upsert_project_inventory_item", tool_names)
+
+    def test_inventory_tools_call_project_helpers(self):
+        inventory_item = {"id": "inventory-1", "name": "Cleanser", "kind": "product", "status": "available"}
+
+        with patch("routes.mcp._write_inventory_item", return_value=inventory_item) as write_item:
+            upsert_response = _upsert_inventory_item_result("user@example.com", "user-1", {
+                "project_id": "acne",
+                "inventory_item": inventory_item,
+            })
+
+        write_item.assert_called_once_with("user@example.com", "acne", "user-1", inventory_item)
+        self.assertEqual(upsert_response["structuredContent"]["inventoryItem"]["id"], "inventory-1")
+
+        with patch("routes.mcp._query_project_inventory", return_value=[inventory_item]) as query_inventory:
+            list_response = _list_inventory_result("user@example.com", "user-1", {"project_id": "acne"})
+
+        query_inventory.assert_called_once_with("user@example.com", "user-1", "acne", False)
+        self.assertEqual(list_response["structuredContent"]["items"], [inventory_item])
 
     def test_global_context_update_can_overwrite_editable_acne_fields(self):
         existing = _default_global_context("acne", "user-1")

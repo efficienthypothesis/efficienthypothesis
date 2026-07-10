@@ -13,7 +13,7 @@ os.environ.setdefault("FLASK_SECRET_KEY", "test")
 os.environ.setdefault("OAUTH_SIGNING_KEY", "test")
 
 from app import app
-from routes.projects import _default_global_context, _normalize_daily_context, _normalize_global_context, _project_calendar_days_for_user, _read_recommendation_context, _store_daily_context_image, _write_research_item
+from routes.projects import _default_global_context, _normalize_daily_context, _normalize_global_context, _project_calendar_days_for_user, _query_project_inventory, _read_recommendation_context, _store_daily_context_image, _write_inventory_item, _write_research_item
 
 
 def s3_error(code):
@@ -433,6 +433,59 @@ class DailyContextTests(unittest.TestCase):
         self.assertEqual(metadata["researchId"], "research-1")
         self.assertEqual(metadata["tags"], ["benzoyl peroxide"])
 
+    def test_inventory_item_writes_project_scoped_dynamodb_row(self):
+        inventory = {
+            "id": "inventory-1",
+            "kind": "product",
+            "status": "available",
+            "name": "Benzoyl peroxide wash",
+            "brand": "Example Brand",
+            "quantity": "1 bottle",
+            "tags": ["benzoyl peroxide"],
+        }
+
+        with patch("routes.projects.project_inventory_table.get_item", return_value={}), patch("routes.projects.project_inventory_table.put_item") as put_item:
+            item = _write_inventory_item("user@example.com", "acne", "user-1", inventory)
+
+        self.assertEqual(item["id"], "inventory-1")
+        self.assertEqual(item["kind"], "product")
+        self.assertEqual(item["status"], "available")
+        row = put_item.call_args.kwargs["Item"]
+        self.assertEqual(row["userProject"], "user-1#acne")
+        self.assertEqual(row["inventoryItemId"], "inventory-1")
+        self.assertEqual(row["email"], "user@example.com")
+
+    def test_inventory_query_excludes_archived_by_default(self):
+        table_items = [
+            {
+                "userProject": "user-1#acne",
+                "inventoryItemId": "inventory-1",
+                "id": "inventory-1",
+                "userId": "user-1",
+                "projectId": "acne",
+                "kind": "product",
+                "status": "available",
+                "name": "Cleanser",
+                "updatedAt": "2026-07-10T00:00:00Z",
+            },
+            {
+                "userProject": "user-1#acne",
+                "inventoryItemId": "inventory-2",
+                "id": "inventory-2",
+                "userId": "user-1",
+                "projectId": "acne",
+                "kind": "treatment",
+                "status": "archived",
+                "name": "Old treatment",
+                "updatedAt": "2026-07-10T00:00:00Z",
+            },
+        ]
+
+        with patch("routes.projects.project_inventory_table.query", return_value={"Items": table_items}):
+            items = _query_project_inventory("user@example.com", "user-1", "acne")
+
+        self.assertEqual([item["id"] for item in items], ["inventory-1"])
+
     def test_recommendation_context_includes_research_and_prior_recommendations(self):
         metadata_rows = [{
             "researchId": "research-1",
@@ -450,10 +503,18 @@ class DailyContextTests(unittest.TestCase):
                 }
             return {"href": f"/projects/{project_id}/recommendations/{date}", "recommendations": []}
 
-        with patch("routes.projects._query_research_metadata", return_value=metadata_rows), patch("routes.projects._read_recommendations", side_effect=read_recommendations):
+        inventory_rows = [{
+            "id": "inventory-1",
+            "kind": "product",
+            "status": "available",
+            "name": "Benzoyl peroxide wash",
+        }]
+
+        with patch("routes.projects._query_research_metadata", return_value=metadata_rows), patch("routes.projects._query_project_inventory", return_value=inventory_rows), patch("routes.projects._read_recommendations", side_effect=read_recommendations):
             context = _read_recommendation_context("user@example.com", "acne", "user-1", "2026-07-10")
 
         self.assertEqual(context["activeResearch"], metadata_rows)
+        self.assertEqual(context["inventory"], inventory_rows)
         self.assertEqual(context["recentRecommendations"][0]["date"], "2026-07-09")
 
 

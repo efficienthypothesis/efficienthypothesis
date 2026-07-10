@@ -8,6 +8,7 @@ from config import (
     dynamodb,
     oauth_tokens_table,
     project_daily_context_metadata_table,
+    project_inventory_table,
     project_research_metadata_table,
     s3,
     tasks_table,
@@ -53,6 +54,7 @@ def api_account_delete():
         ),
         "project_daily_context_metadata": _delete_project_metadata(project_daily_context_metadata_table, email, user_id, "date"),
         "project_research_metadata": _delete_project_metadata(project_research_metadata_table, email, user_id, "researchId"),
+        "project_inventory": _delete_project_metadata(project_inventory_table, email, user_id, "inventoryItemId"),
         "users": _delete_user_records(email, user_id),
     }
     session.clear()

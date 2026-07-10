@@ -104,3 +104,18 @@ Resources:
       KeySchema:
         - {AttributeName: userProject, KeyType: HASH}
         - {AttributeName: researchId, KeyType: RANGE}
+  ProjectInventoryItemsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: ProjectInventoryItems
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - {AttributeName: userProject, AttributeType: S}
+        - {AttributeName: inventoryItemId, AttributeType: S}
+      KeySchema:
+        - {AttributeName: userProject, KeyType: HASH}
+        - {AttributeName: inventoryItemId, KeyType: RANGE}
+      SSESpecification:
+        SSEEnabled: true

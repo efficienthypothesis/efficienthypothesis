@@ -48,7 +48,7 @@ AWS is the source of truth for user data, deployment artifacts, and deployed run
 | production | `eh` | `us-east-2` | S3 object `admin/tasks.json` | Private admin task-board content | Authorized task-board updates | Read only after server-side admin session authorization |
 | production | `eh` | `us-east-2` | DynamoDB table `Users` | User records | Existing AWS state | Stores user metadata such as timezone |
 | production | `eh` | `us-east-2` | DynamoDB tables `Tasks`, `Actions`, `Drafts`, `TimeLogs`, `OAuthTokens` | Legacy cleanup and OAuth support | Existing AWS state | Retained for account deletion and token behavior |
-| production | `eh` | `us-east-2` | DynamoDB tables `ProjectDailyContextMetadata`, `ProjectResearchMetadata` | Project discovery metadata | CloudFormation and app code | Indexes S3-backed daily context and research documents |
+| production | `eh` | `us-east-2` | DynamoDB tables `ProjectDailyContextMetadata`, `ProjectResearchMetadata`, `ProjectInventoryItems` | Project discovery metadata and inventory | CloudFormation and app code | Indexes S3-backed daily context, research documents, and owned or completed inventory |
 | production | `eh` | public DNS | `efficienthypothesis.com` | Public, auth, OAuth, app menu | Existing AWS edge/routing state | Primary public host |
 | production | `eh` | public DNS | `home.efficienthypothesis.com` | Main workspace app | Existing AWS edge/routing state | Requires session auth |
 | production | `eh` | public DNS | `projects.efficienthypothesis.com` | Projects calendar app | Existing AWS edge/routing state | Requires session auth |
@@ -210,6 +210,18 @@ GPT should call `list_project_research` first, then `get_project_research_item` 
 GPT writes research through `upsert_project_research_item`.
 GPT can bulk import research through `bulk_upsert_project_history`.
 
+## Project Inventory Contract
+
+Project inventory items are stored in DynamoDB table `ProjectInventoryItems`.
+The table key is `userProject` plus `inventoryItemId`, where `userProject` is `<user_id>#<project_id>`.
+Inventory items can represent products, medications, supplements, devices, treatments, surgeries, procedures, or other owned or completed assets.
+Supported statuses are `available`, `completed`, `unavailable`, and `archived`.
+`available` means owned or on-hand.
+`completed` means the treatment, surgery, or procedure has happened.
+Neither status means the user is actively using the item.
+GPT reads inventory through `list_project_inventory` and writes inventory through `upsert_project_inventory_item`.
+Archived items are omitted from default inventory lists and recommendation context unless explicitly requested.
+
 ## Recommendation Contract
 
 Project recommendation manifests are stored privately at `<email>/projects/<project_id>/recommendations/<YYYY-MM-DD>/manifest.json`.
@@ -219,7 +231,7 @@ Each recommendation file stores `id`, `projectId`, `date`, `kind`, `title`, `sum
 The only currently enabled recommendation kind is `routine`; `workout` is temporarily disabled.
 Routine `steps` are ordered objects with `item`, `command`, and optional `clarification`.
 GPT writes recommendations through `upsert_project_recommendations` and reads them through `get_project_recommendations`.
-GPT should use `get_recommendation_context` before generating recommendations because it returns active research metadata and up to 31 days of prior recommendations.
+GPT should use `get_recommendation_context` before generating recommendations because it returns active research metadata, non-archived project inventory, and up to 31 days of prior recommendations.
 GPT can bulk import dated recommendation sets through `bulk_upsert_project_history` with explicit `merge` or `replace` write mode.
 The weekly Projects calendar always renders each project/date recommendation state as a link to the authenticated recommendation page.
 Legacy single-object recommendation files at `<email>/projects/<project_id>/recommendations/<YYYY-MM-DD>.json` are read as a fallback only.

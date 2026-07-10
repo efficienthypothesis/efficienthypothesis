@@ -11,7 +11,7 @@ from boto3.dynamodb.conditions import Key
 from flask import Blueprint, jsonify, redirect, render_template, request, send_file, session, url_for
 from botocore.exceptions import BotoCoreError, ClientError
 
-from config import PRODUCTIVITY_BUCKET, project_daily_context_metadata_table, project_research_metadata_table, s3, _require_auth
+from config import PRODUCTIVITY_BUCKET, project_daily_context_metadata_table, project_inventory_table, project_research_metadata_table, s3, _require_auth
 
 projects_bp = Blueprint("projects", __name__)
 
@@ -36,6 +36,10 @@ RESEARCH_MAX_ITEMS = 200
 RESEARCH_MAX_STATEMENTS = 50
 RESEARCH_MAX_TAKEAWAYS = 50
 RESEARCH_MAX_IMPLICATIONS = 50
+INVENTORY_VERSION = 1
+INVENTORY_MAX_ITEMS = 200
+INVENTORY_KINDS = {"product", "medication", "supplement", "device", "treatment", "surgery", "procedure", "other"}
+INVENTORY_STATUSES = {"available", "completed", "unavailable", "archived"}
 DAILY_DATE_PATTERN = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
 ACNE_ASSESSMENT_FIELDS = [
     {
@@ -763,6 +767,102 @@ def _normalize_limited_string_list(value, field, limit):
     return [item[:500] for item in items]
 
 
+def _normalize_optional_string(value, limit=500):
+    if isinstance(value, str) and value.strip():
+        return value.strip()[:limit]
+    return ""
+
+
+def _normalize_inventory_item(value, project_id, user_id, existing=None):
+    if not isinstance(value, dict):
+        raise ValueError("inventory item must be an object")
+    now = _now_iso()
+    item_id = value.get("id") or value.get("inventoryItemId") or f"inventory-{uuid.uuid4().hex}"
+    if not isinstance(item_id, str) or not item_id.strip() or len(item_id) > 100:
+        raise ValueError("inventory item id is invalid")
+    name = value.get("name")
+    if not isinstance(name, str) or not name.strip() or len(name) > 300:
+        raise ValueError("name is invalid")
+    kind = value.get("kind", "product")
+    if kind not in INVENTORY_KINDS:
+        raise ValueError("kind is invalid")
+    status = value.get("status", "available")
+    if status not in INVENTORY_STATUSES:
+        raise ValueError("status is invalid")
+    return {
+        "schemaVersion": INVENTORY_VERSION,
+        "userProject": _user_project_key(user_id, project_id),
+        "inventoryItemId": item_id.strip(),
+        "id": item_id.strip(),
+        "userId": user_id,
+        "projectId": project_id,
+        "kind": kind,
+        "status": status,
+        "name": name.strip(),
+        "value": _normalize_optional_string(value.get("value"), 1000),
+        "brand": _normalize_optional_string(value.get("brand"), 200),
+        "form": _normalize_optional_string(value.get("form"), 200),
+        "strength": _normalize_optional_string(value.get("strength"), 200),
+        "quantity": _normalize_optional_string(value.get("quantity"), 200),
+        "acquiredAt": _normalize_optional_string(value.get("acquiredAt"), 80),
+        "completedAt": _normalize_optional_string(value.get("completedAt"), 80),
+        "expiresAt": _normalize_optional_string(value.get("expiresAt"), 80),
+        "notes": _normalize_optional_string(value.get("notes"), 2000),
+        "tags": _normalize_limited_string_list(value.get("tags"), "tags", 30),
+        "relatedTopics": _normalize_limited_string_list(value.get("relatedTopics"), "relatedTopics", 30),
+        "createdAt": value.get("createdAt") or (existing or {}).get("createdAt") or now,
+        "updatedAt": value.get("updatedAt") or (existing or {}).get("updatedAt") or now,
+    }
+
+
+def _inventory_public_item(item):
+    return {key: value for key, value in item.items() if key != "userProject"}
+
+
+def _write_inventory_item(email, project_id, user_id, value):
+    item_id = (value.get("id") or value.get("inventoryItemId")) if isinstance(value, dict) else None
+    existing = None
+    if isinstance(item_id, str) and item_id.strip():
+        existing = _read_inventory_item(email, project_id, user_id, item_id.strip(), missing_ok=True)
+    item = _normalize_inventory_item(value, project_id, user_id, existing)
+    item["email"] = email
+    item["updatedAt"] = _now_iso()
+    project_inventory_table.put_item(Item=item)
+    return _inventory_public_item(item)
+
+
+def _read_inventory_item(email, project_id, user_id, item_id, missing_ok=False):
+    response = project_inventory_table.get_item(Key={
+        "userProject": _user_project_key(user_id or email, project_id),
+        "inventoryItemId": item_id,
+    })
+    item = response.get("Item")
+    if not item:
+        if missing_ok:
+            return None
+        raise ValueError("inventory item not found")
+    return _inventory_public_item(_normalize_inventory_item(item, project_id, user_id, item))
+
+
+def _query_project_inventory(email, user_id, project_id, include_archived=False):
+    user_project = _user_project_key(user_id or email, project_id)
+    items = []
+    last_key = None
+    while True:
+        kwargs = {"KeyConditionExpression": Key("userProject").eq(user_project)}
+        if last_key:
+            kwargs["ExclusiveStartKey"] = last_key
+        resp = project_inventory_table.query(**kwargs)
+        items.extend(resp.get("Items", []))
+        last_key = resp.get("LastEvaluatedKey")
+        if not last_key or len(items) >= INVENTORY_MAX_ITEMS:
+            break
+    if not include_archived:
+        items = [item for item in items if item.get("status") != "archived"]
+    normalized = [_inventory_public_item(_normalize_inventory_item(item, project_id, user_id, item)) for item in items]
+    return sorted(normalized, key=lambda item: item.get("updatedAt", ""), reverse=True)[:INVENTORY_MAX_ITEMS]
+
+
 def _normalize_research_item(value, project_id, user_id, existing=None):
     if not isinstance(value, dict):
         raise ValueError("research item must be an object")
@@ -889,6 +989,7 @@ def _recent_recommendation_dates(date, days=31):
 def _read_recommendation_context(email, project_id, user_id, date):
     target_date = _validate_daily_date(date)
     active_research = _query_research_metadata(email, user_id, project_id)
+    inventory = _query_project_inventory(email, user_id, project_id)
     recent = []
     for candidate_date in _recent_recommendation_dates(target_date):
         recommendations = _read_recommendations(email, project_id, user_id, candidate_date)
@@ -902,6 +1003,7 @@ def _read_recommendation_context(email, project_id, user_id, date):
         "projectId": project_id,
         "date": target_date,
         "activeResearch": active_research,
+        "inventory": inventory,
         "recentRecommendations": recent,
     }
 

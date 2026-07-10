@@ -34,6 +34,8 @@ from routes.projects import (
     _read_recommendation_context,
     _read_research_item,
     _write_research_item,
+    _query_project_inventory,
+    _write_inventory_item,
 )
 
 
@@ -363,6 +365,20 @@ TOOLS = [
         "Store one research item in S3 and its discovery metadata in DynamoDB.",
         {"type": "object", "properties": {"project_id": {"type": "string", "enum": list(PROJECT_BY_ID)}, "research_item": {"type": "object"}}, "required": ["project_id", "research_item"], "additionalProperties": False},
         {"type": "object", "properties": {"researchItem": {"type": "object"}}, "required": ["researchItem"], "additionalProperties": False},
+    ),
+    _read_only_tool(
+        "list_project_inventory",
+        "List project inventory",
+        "List products, medications, devices, treatments, surgeries, procedures, supplements, and other owned or completed items for one project. Inventory means the user has it or completed it; it does not mean active use.",
+        {"type": "object", "properties": {"project_id": {"type": "string", "enum": list(PROJECT_BY_ID)}, "include_archived": {"type": "boolean"}}, "required": ["project_id"], "additionalProperties": False},
+        {"type": "object", "properties": {"items": {"type": "array", "items": {"type": "object"}}}, "required": ["items"], "additionalProperties": False},
+    ),
+    _write_tool(
+        "upsert_project_inventory_item",
+        "Store project inventory item",
+        "Store one project inventory item in DynamoDB. Use status available for owned/on-hand items, completed for completed treatments or surgeries, unavailable for no longer owned, and archived to hide from default recommendation context.",
+        {"type": "object", "properties": {"project_id": {"type": "string", "enum": list(PROJECT_BY_ID)}, "inventory_item": {"type": "object"}}, "required": ["project_id", "inventory_item"], "additionalProperties": False},
+        {"type": "object", "properties": {"inventoryItem": {"type": "object"}}, "required": ["inventoryItem"], "additionalProperties": False},
     ),
     _write_tool(
         "bulk_upsert_project_history",
@@ -1538,6 +1554,18 @@ def _upsert_research_item_result(email, user_id, arguments):
     return {"structuredContent": {"researchItem": item}, "content": [{"type": "text", "text": f"Stored research item {item['id']}."}]}
 
 
+def _list_inventory_result(email, user_id, arguments):
+    project_id = _require_project_id(arguments.get("project_id"))
+    items = _query_project_inventory(email, user_id, project_id, bool(arguments.get("include_archived")))
+    return {"structuredContent": {"items": items}, "content": [{"type": "text", "text": f"Loaded {len(items)} inventory items for {project_id}."}]}
+
+
+def _upsert_inventory_item_result(email, user_id, arguments):
+    project_id = _require_project_id(arguments.get("project_id"))
+    item = _write_inventory_item(email, project_id, user_id, arguments.get("inventory_item"))
+    return {"structuredContent": {"inventoryItem": item}, "content": [{"type": "text", "text": f"Stored inventory item {item['id']}."}]}
+
+
 def _require_project_id(value):
     project_id = _require_nonempty(value, "project_id")
     if project_id not in PROJECT_BY_ID:
@@ -1717,6 +1745,10 @@ def _call_tool(name, arguments, ctx):
         return _get_research_item_result(email, user_id, arguments)
     if name == "upsert_project_research_item":
         return _upsert_research_item_result(email, user_id, arguments)
+    if name == "list_project_inventory":
+        return _list_inventory_result(email, user_id, arguments)
+    if name == "upsert_project_inventory_item":
+        return _upsert_inventory_item_result(email, user_id, arguments)
     if name == "bulk_upsert_project_history":
         return _bulk_upsert_project_history_result(email, user_id, arguments)
     if name == "query_nodes":

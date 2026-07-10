@@ -45,6 +45,7 @@ Read tools:
 - `list_daily_context_metadata`
 - `list_project_research`
 - `get_project_research_item`
+- `list_project_inventory`
 
 Write tools:
 
@@ -57,6 +58,7 @@ Write tools:
 - `add_daily_context_image`
 - `upsert_project_recommendations`
 - `upsert_project_research_item`
+- `upsert_project_inventory_item`
 - `bulk_upsert_project_history`
 
 The old DynamoDB/S3 item tools are intentionally retired from MCP:
@@ -156,10 +158,17 @@ Research uses metadata for discovery and S3-backed details for full content.
 GPT should call `list_project_research` before `get_project_research_item`.
 Research writes use `upsert_project_research_item` or the bulk tool's `research_items` array.
 
+Inventory is project-scoped and stored in DynamoDB.
+Inventory items can represent products, medications, supplements, devices, treatments, surgeries, procedures, or other owned or completed assets.
+Use status `available` for owned or on-hand items and `completed` for completed treatments, surgeries, or procedures.
+Inventory does not imply active use.
+GPT should use `list_project_inventory` to see what the user has or has completed and `upsert_project_inventory_item` to store updates.
+Archived inventory is hidden from default lists and recommendation context.
+
 Recommendations are dated by project and calendar date.
 The only enabled recommendation kind is currently `routine`.
 Routine recommendations must include ordered `steps`, each with `item`, `command`, and optional `clarification`.
-GPT should call `get_recommendation_context` before generating a new recommendation because it returns active research metadata and up to 31 days of prior recommendations.
+GPT should call `get_recommendation_context` before generating a new recommendation because it returns active research metadata, non-archived project inventory, and up to 31 days of prior recommendations.
 
 ## Field Guidance
 
