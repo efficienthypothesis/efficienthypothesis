@@ -19,6 +19,8 @@ PROJECT_BY_ID = {project["id"]: project for project in PROJECTS}
 GLOBAL_CONTEXT_VERSION = 1
 DAILY_CONTEXT_VERSION = 1
 DAILY_CONTEXT_MAX_ENTRIES = 100
+RECOMMENDATION_VERSION = 1
+RECOMMENDATION_MAX_ITEMS = 50
 DAILY_DATE_PATTERN = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
 
 
@@ -32,6 +34,10 @@ def _project_global_context_key(email, project_id):
 
 def _project_daily_context_key(email, project_id, date):
     return f"{email}/projects/{project_id}/daily-context/{date}.json"
+
+
+def _project_recommendations_key(email, project_id, date):
+    return f"{email}/projects/{project_id}/recommendations/{date}.json"
 
 
 def _default_global_context(project_id, user_id):
@@ -182,6 +188,74 @@ def _write_daily_context(email, project_id, context):
     )
 
 
+def _default_recommendations(project_id, user_id, date):
+    now = _now_iso()
+    return {
+        "schemaVersion": RECOMMENDATION_VERSION,
+        "userId": user_id,
+        "projectId": project_id,
+        "date": date,
+        "recommendations": [],
+        "createdAt": now,
+        "updatedAt": now,
+    }
+
+
+def _normalize_recommendations(value, project_id, user_id, date):
+    date = _validate_daily_date(date)
+    default = _default_recommendations(project_id, user_id, date)
+    if not isinstance(value, dict):
+        return default
+    raw_items = value.get("recommendations")
+    if not isinstance(raw_items, list) or len(raw_items) > RECOMMENDATION_MAX_ITEMS:
+        raise ValueError("recommendations must be an array with at most 50 items")
+    items = []
+    seen = set()
+    for index, item in enumerate(raw_items):
+        if not isinstance(item, dict):
+            raise ValueError(f"recommendations[{index}] must be an object")
+        item_id = item.get("id")
+        summary = item.get("summary")
+        if not isinstance(item_id, str) or not item_id.strip() or len(item_id) > 80 or item_id in seen:
+            raise ValueError(f"recommendations[{index}].id is invalid or duplicated")
+        if not isinstance(summary, str) or not summary.strip() or len(summary) > 2000:
+            raise ValueError(f"recommendations[{index}].summary is invalid")
+        seen.add(item_id)
+        items.append({
+            "id": item_id.strip(),
+            "summary": summary.strip(),
+            "href": f"/api/projects/{project_id}/recommendations/{date}/{item_id.strip()}",
+            "createdAt": item.get("createdAt") or default["createdAt"],
+            "updatedAt": item.get("updatedAt") or default["updatedAt"],
+        })
+    return {**default, "recommendations": items, "createdAt": value.get("createdAt") or default["createdAt"], "updatedAt": value.get("updatedAt") or default["updatedAt"]}
+
+
+def _read_recommendations(email, project_id, user_id, date):
+    date = _validate_daily_date(date)
+    try:
+        obj = s3.get_object(Bucket=PRODUCTIVITY_BUCKET, Key=_project_recommendations_key(email, project_id, date))
+        with obj["Body"] as body:
+            raw = json.loads(body.read().decode("utf-8"))
+        return _normalize_recommendations(raw, project_id, user_id, date)
+    except ClientError as exc:
+        code = str(exc.response.get("Error", {}).get("Code", ""))
+        if code in {"NoSuchKey", "404", "NotFound"}:
+            return _default_recommendations(project_id, user_id, date)
+        raise
+    except (BotoCoreError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise RuntimeError("recommendations unavailable") from exc
+
+
+def _write_recommendations(email, project_id, recommendations):
+    s3.put_object(
+        Bucket=PRODUCTIVITY_BUCKET,
+        Key=_project_recommendations_key(email, project_id, recommendations["date"]),
+        Body=json.dumps(recommendations, indent=2),
+        ContentType="application/json",
+    )
+
+
 def _project_calendar_days_for_user(email, user_id, timezone):
     today = datetime.datetime.now(timezone).date()
     days = []
@@ -191,11 +265,13 @@ def _project_calendar_days_for_user(email, user_id, timezone):
         projects = []
         for project in PROJECTS:
             context = _read_daily_context(email, project["id"], user_id, date)
+            recommendations = _read_recommendations(email, project["id"], user_id, date)
             projects.append({
                 "id": project["id"],
                 "name": project["name"],
                 "entry_count": len(context["entries"]),
                 "raw_json": json.dumps(context, indent=2),
+                "recommendations": recommendations["recommendations"],
             })
         days.append({
             "weekday": day.strftime("%A"),
@@ -272,3 +348,47 @@ def api_project_daily_context(project_id, date):
         return jsonify({"error": str(exc)}), 400
     except (ClientError, BotoCoreError, RuntimeError):
         return jsonify({"error": "daily_context_unavailable"}), 503
+
+
+@projects_bp.route("/api/projects/<project_id>/recommendations/<date>", methods=["GET", "PUT"])
+def api_project_recommendations(project_id, date):
+    ctx, err = _require_auth()
+    if err:
+        return err
+    if project_id not in PROJECT_BY_ID:
+        return jsonify({"error": "unknown project"}), 404
+    try:
+        email = ctx["email"]
+        user_id = ctx.get("user_id") or email
+        if request.method == "GET":
+            return jsonify({"recommendations": _read_recommendations(email, project_id, user_id, date)})
+        data = request.get_json(silent=True) or {}
+        recommendations = _normalize_recommendations({"recommendations": data.get("recommendations", [])}, project_id, user_id, date)
+        recommendations["updatedAt"] = _now_iso()
+        _write_recommendations(email, project_id, recommendations)
+        return jsonify({"ok": True, "recommendations": recommendations})
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except (ClientError, BotoCoreError, RuntimeError):
+        return jsonify({"error": "recommendations_unavailable"}), 503
+
+
+@projects_bp.route("/api/projects/<project_id>/recommendations/<date>/<recommendation_id>", methods=["GET"])
+def api_project_recommendation(project_id, date, recommendation_id):
+    ctx, err = _require_auth()
+    if err:
+        return err
+    if project_id not in PROJECT_BY_ID:
+        return jsonify({"error": "unknown project"}), 404
+    try:
+        email = ctx["email"]
+        user_id = ctx.get("user_id") or email
+        recommendations = _read_recommendations(email, project_id, user_id, date)
+        item = next((item for item in recommendations["recommendations"] if item["id"] == recommendation_id), None)
+        if not item:
+            return jsonify({"error": "recommendation not found"}), 404
+        return jsonify({"recommendation": item})
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except (ClientError, BotoCoreError, RuntimeError):
+        return jsonify({"error": "recommendations_unavailable"}), 503
