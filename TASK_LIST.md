@@ -12,11 +12,6 @@ Private operational tasks and agent notices live in the S3-backed admin task boa
   Status: in progress.
   Notes: The page is implemented at `/tasks` with server-side session authorization and private S3-backed content.
 
-- [ ] Add project global context editing controls.
-  Owner: unassigned.
-  Status: planned.
-  Notes: Storage and display exist for Acne, Fitness, and Flexibility, but the Profile modal does not yet let the user edit fields.
-
 - [ ] Design daily context files for projects.
   Owner: unassigned.
   Status: planned.
