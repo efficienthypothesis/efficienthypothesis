@@ -13,7 +13,7 @@ os.environ.setdefault("FLASK_SECRET_KEY", "test")
 os.environ.setdefault("OAUTH_SIGNING_KEY", "test")
 
 from app import app
-from routes.projects import _default_global_context, _normalize_daily_context, _normalize_global_context, _project_calendar_days_for_user, _project_calendar_for_user, _query_project_inventory, _read_recommendation_context, _store_daily_context_image, _write_inventory_item, _write_research_item
+from routes.projects import _PROJECT_ACTIVITY_DATES_CACHE, _default_global_context, _normalize_daily_context, _normalize_global_context, _project_calendar_days_for_user, _project_calendar_for_user, _query_project_inventory, _read_recommendation_context, _store_daily_context_image, _write_inventory_item, _write_research_item
 
 
 def s3_error(code):
@@ -23,6 +23,7 @@ def s3_error(code):
 class DailyContextTests(unittest.TestCase):
     def setUp(self):
         app.config.update(TESTING=True)
+        _PROJECT_ACTIVITY_DATES_CACHE.clear()
         self.client = app.test_client()
         with self.client.session_transaction() as session:
             session["user"] = {"id": "user-1", "email": "user@example.com"}
@@ -260,6 +261,33 @@ class DailyContextTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()["calendar"]["navigation"]["previous_start"], "2026-06-28")
         calendar_for_user.assert_called_once()
+
+    def test_project_calendar_day_api_returns_single_day_and_navigation(self):
+        with self.client.session_transaction(base_url="https://projects.efficienthypothesis.com") as session:
+            session["user"] = {"id": "user-1", "email": "user@example.com"}
+        with (
+            patch("routes.pages._project_calendar_day_for_user", return_value={
+                "weekday": "Friday",
+                "date": "10/7",
+                "iso_date": "2026-07-10",
+                "projects": [],
+            }) as calendar_day_for_user,
+            patch("routes.pages._project_calendar_navigation_for_user", return_value={
+                "previous_start": "2026-07-03",
+                "next_start": None,
+                "current_start": "2026-07-04",
+            }) as calendar_navigation_for_user,
+        ):
+            response = self.client.get(
+                "/api/projects/calendar-day?date=2026-07-10&window_start=2026-07-04",
+                headers={"Host": "projects.efficienthypothesis.com"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["day"]["iso_date"], "2026-07-10")
+        self.assertEqual(response.get_json()["navigation"]["current_start"], "2026-07-04")
+        calendar_day_for_user.assert_called_once()
+        calendar_navigation_for_user.assert_called_once()
 
     def test_daily_context_rejects_invalid_date(self):
         response = self.client.get("/api/projects/acne/daily-context/20260710")

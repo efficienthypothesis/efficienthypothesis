@@ -14,7 +14,7 @@ from flask import (
 )
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from config import s3, PRODUCTIVITY_BUCKET, GOOGLE_CLIENT_ID, _require_auth, user_table
-from routes.projects import _project_calendar_for_user
+from routes.projects import _project_calendar_day_for_user, _project_calendar_for_user, _project_calendar_navigation_for_user
 
 pages_bp = Blueprint('pages', __name__)
 
@@ -179,6 +179,25 @@ def api_projects_calendar():
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
     return jsonify({"calendar": calendar})
+
+
+@pages_bp.route('/api/projects/calendar-day')
+def api_projects_calendar_day():
+    ctx, err = _require_auth()
+    if err:
+        return err
+    timezone = _project_timezone(session.get("user") or {"id": ctx.get("user_id"), "email": ctx["email"]})
+    user_id = ctx.get("user_id") or ctx["email"]
+    try:
+        date = request.args.get("date")
+        window_start = request.args.get("window_start")
+        if not date or not window_start:
+            raise ValueError("date and window_start are required")
+        day = _project_calendar_day_for_user(ctx["email"], user_id, timezone, date)
+        navigation = _project_calendar_navigation_for_user(ctx["email"], user_id, timezone, window_start)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify({"day": day, "navigation": navigation})
 
 
 @pages_bp.route('/apps')

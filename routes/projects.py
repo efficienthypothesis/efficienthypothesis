@@ -4,6 +4,7 @@ import binascii
 import io
 import json
 import re
+import time
 import uuid
 from copy import deepcopy
 
@@ -34,6 +35,8 @@ RECOMMENDATION_KINDS = {"routine"}
 RECOMMENDATION_SLOTS = {"morning", "night", "anytime"}
 PROJECT_CALENDAR_WINDOW_DAYS = 7
 PROJECT_CALENDAR_CENTER_OFFSET = 3
+PROJECT_ACTIVITY_CACHE_SECONDS = 60
+_PROJECT_ACTIVITY_DATES_CACHE = {}
 RESEARCH_VERSION = 1
 RESEARCH_MAX_ITEMS = 200
 RESEARCH_MAX_STATEMENTS = 50
@@ -160,6 +163,20 @@ def _project_global_context_key(email, project_id):
 
 def _project_daily_context_key(email, project_id, date):
     return f"{email}/projects/{project_id}/daily-context/{date}.json"
+
+
+def _project_activity_cache_key(email, user_id):
+    return f"{user_id or email}#{email}"
+
+
+def _clear_project_activity_cache(email, user_id=None):
+    if user_id:
+        _PROJECT_ACTIVITY_DATES_CACHE.pop(_project_activity_cache_key(email, user_id), None)
+        return
+    prefix = f"#{email}"
+    for key in list(_PROJECT_ACTIVITY_DATES_CACHE):
+        if key.endswith(prefix) or key == _project_activity_cache_key(email, email):
+            _PROJECT_ACTIVITY_DATES_CACHE.pop(key, None)
 
 
 def _project_recommendations_key(email, project_id, date):
@@ -423,6 +440,7 @@ def _write_daily_context(email, project_id, context):
         ServerSideEncryption="AES256",
     )
     _write_daily_context_metadata(email, project_id, context)
+    _clear_project_activity_cache(email, context.get("userId"))
 
 
 def _query_daily_context_metadata(email, user_id, project_id, date_from=None, date_to=None):
@@ -735,6 +753,7 @@ def _write_recommendations(email, project_id, recommendations):
         ContentType="application/json",
         ServerSideEncryption="AES256",
     )
+    _clear_project_activity_cache(email, recommendations.get("userId"))
     return manifest
 
 
@@ -1080,6 +1099,17 @@ def _project_activity_dates_for_user(email, user_id):
     return sorted(dates)
 
 
+def _cached_project_activity_dates_for_user(email, user_id):
+    key = _project_activity_cache_key(email, user_id)
+    now = time.monotonic()
+    cached = _PROJECT_ACTIVITY_DATES_CACHE.get(key)
+    if cached and now - cached["created_at"] < PROJECT_ACTIVITY_CACHE_SECONDS:
+        return cached["dates"]
+    dates = _project_activity_dates_for_user(email, user_id)
+    _PROJECT_ACTIVITY_DATES_CACHE[key] = {"created_at": now, "dates": dates}
+    return dates
+
+
 def _project_calendar_default_start(timezone):
     today = datetime.datetime.now(timezone).date()
     return today - datetime.timedelta(days=PROJECT_CALENDAR_CENTER_OFFSET)
@@ -1112,39 +1142,51 @@ def _project_calendar_navigation(activity_dates, current_start, default_start):
     }
 
 
-def _project_calendar_for_user(email, user_id, timezone, start_date=None):
+def _project_calendar_day_for_user(email, user_id, timezone, date):
     today = datetime.datetime.now(timezone).date()
+    day = datetime.date.fromisoformat(_validate_daily_date(date))
+    projects = []
+    for project in PROJECTS:
+        context = _read_daily_context(email, project["id"], user_id, day.isoformat())
+        recommendations = _read_recommendations(email, project["id"], user_id, day.isoformat())
+        projects.append({
+            "id": project["id"],
+            "name": project["name"],
+            "entry_count": len(context["entries"]),
+            "image_count": sum(1 for entry in context["entries"] if entry.get("type") == "image"),
+            "raw_json": json.dumps(context, indent=2),
+            "recommendations_href": recommendations["href"],
+            "recommendations_count": len(recommendations["recommendations"]),
+            "recommendations": recommendations["recommendations"],
+            "recommendations_raw_json": json.dumps(recommendations, indent=2),
+        })
+    return {
+        "weekday": day.strftime("%A"),
+        "date": f"{day.day}/{day.month}",
+        "iso_date": day.isoformat(),
+        "is_today": day == today,
+        "projects": projects,
+    }
+
+
+def _project_calendar_navigation_for_user(email, user_id, timezone, start_date):
+    start = _project_calendar_start(timezone, start_date)
+    return _project_calendar_navigation(
+        _cached_project_activity_dates_for_user(email, user_id),
+        start,
+        _project_calendar_default_start(timezone),
+    )
+
+
+def _project_calendar_for_user(email, user_id, timezone, start_date=None):
     start = _project_calendar_start(timezone, start_date)
     days = []
     for offset in range(PROJECT_CALENDAR_WINDOW_DAYS):
         day = start + datetime.timedelta(days=offset)
-        date = day.isoformat()
-        projects = []
-        for project in PROJECTS:
-            context = _read_daily_context(email, project["id"], user_id, date)
-            recommendations = _read_recommendations(email, project["id"], user_id, date)
-            projects.append({
-                "id": project["id"],
-                "name": project["name"],
-                "entry_count": len(context["entries"]),
-                "image_count": sum(1 for entry in context["entries"] if entry.get("type") == "image"),
-                "raw_json": json.dumps(context, indent=2),
-                "recommendations_href": recommendations["href"],
-                "recommendations_count": len(recommendations["recommendations"]),
-                "recommendations": recommendations["recommendations"],
-                "recommendations_raw_json": json.dumps(recommendations, indent=2),
-            })
-        days.append({
-            "weekday": day.strftime("%A"),
-            "date": f"{day.day}/{day.month}",
-            "iso_date": date,
-            "is_today": day == today,
-            "projects": projects,
-        })
-    activity_dates = _project_activity_dates_for_user(email, user_id)
+        days.append(_project_calendar_day_for_user(email, user_id, timezone, day.isoformat()))
     return {
         "days": days,
-        "navigation": _project_calendar_navigation(activity_dates, start, _project_calendar_default_start(timezone)),
+        "navigation": _project_calendar_navigation_for_user(email, user_id, timezone, start.isoformat()),
     }
 
 

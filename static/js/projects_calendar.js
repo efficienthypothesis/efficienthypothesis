@@ -7,10 +7,13 @@
     return;
   }
 
-  const endpoint = board.dataset.calendarEndpoint || "/api/projects/calendar";
-  const cache = new Map();
+  const calendarEndpoint = board.dataset.calendarEndpoint || "/api/projects/calendar";
+  const calendarDayEndpoint = board.dataset.calendarDayEndpoint || "/api/projects/calendar-day";
+  const calendarCache = new Map();
+  const dayCache = new Map();
+  const dayResponseCache = new Map();
+  const pendingDays = new Set();
   let currentCalendar = null;
-  let pendingStart = null;
   const initialCalendar = parseInitialCalendar();
 
   function parseInitialCalendar() {
@@ -23,8 +26,36 @@
 
   function cacheCalendar(calendar) {
     if (calendar && calendar.navigation && calendar.navigation.current_start) {
-      cache.set(calendar.navigation.current_start, calendar);
+      calendarCache.set(calendar.navigation.current_start, calendar);
     }
+    (calendar && calendar.days ? calendar.days : []).forEach(cacheDay);
+  }
+
+  function cacheDay(day) {
+    if (day && day.iso_date) {
+      dayCache.set(day.iso_date, day);
+    }
+  }
+
+  function parseDate(value) {
+    const parts = String(value || "").split("-").map((part) => Number(part));
+    if (parts.length !== 3 || parts.some((part) => !Number.isInteger(part))) {
+      return null;
+    }
+    return new Date(Date.UTC(parts[0], parts[1] - 1, parts[2]));
+  }
+
+  function formatDate(date) {
+    return date.toISOString().slice(0, 10);
+  }
+
+  function addDays(value, count) {
+    const date = parseDate(value);
+    if (!date) {
+      return null;
+    }
+    date.setUTCDate(date.getUTCDate() + count);
+    return formatDate(date);
   }
 
   function plural(count, singular, pluralValue) {
@@ -159,10 +190,10 @@
   }
 
   async function fetchCalendar(start) {
-    if (cache.has(start)) {
-      return cache.get(start);
+    if (calendarCache.has(start)) {
+      return calendarCache.get(start);
     }
-    const url = new URL(endpoint, window.location.origin);
+    const url = new URL(calendarEndpoint, window.location.origin);
     url.searchParams.set("start", start);
     const response = await fetch(url.toString(), {
       credentials: "same-origin",
@@ -179,17 +210,66 @@
     return payload.calendar;
   }
 
-  function prefetchStart(start) {
-    if (!start || cache.has(start) || pendingStart === start) {
+  async function fetchCalendarDay(date, windowStart) {
+    const cacheKey = `${date}#${windowStart}`;
+    if (dayResponseCache.has(cacheKey)) {
+      return dayResponseCache.get(cacheKey);
+    }
+    const url = new URL(calendarDayEndpoint, window.location.origin);
+    url.searchParams.set("date", date);
+    url.searchParams.set("window_start", windowStart);
+    const response = await fetch(url.toString(), {
+      credentials: "same-origin",
+      headers: { Accept: "application/json" },
+    });
+    if (!response.ok) {
+      throw new Error(`calendar day request failed: ${response.status}`);
+    }
+    const payload = await response.json();
+    if (!payload || !payload.day || !payload.navigation) {
+      throw new Error("calendar day response missing payload");
+    }
+    cacheDay(payload.day);
+    dayResponseCache.set(cacheKey, payload);
+    return payload;
+  }
+
+  async function fetchShiftedCalendar(direction, start) {
+    if (calendarCache.has(start)) {
+      return calendarCache.get(start);
+    }
+    const days = currentCalendar && currentCalendar.days ? currentCalendar.days : [];
+    if (days.length !== 7 || !currentCalendar.navigation) {
+      return fetchCalendar(start);
+    }
+    const edgeDate = direction === "previous" ? start : addDays(start, 6);
+    if (!edgeDate) {
+      return fetchCalendar(start);
+    }
+    try {
+      const payload = await fetchCalendarDay(edgeDate, start);
+      const shiftedDays = direction === "previous"
+        ? [payload.day, ...days.slice(0, 6)]
+        : [...days.slice(1), payload.day];
+      return {
+        days: shiftedDays,
+        navigation: payload.navigation,
+      };
+    } catch (_error) {
+      return fetchCalendar(start);
+    }
+  }
+
+  function prefetchDay(date, windowStart) {
+    const cacheKey = `${date}#${windowStart}`;
+    if (!date || !windowStart || dayResponseCache.has(cacheKey) || pendingDays.has(cacheKey)) {
       return;
     }
-    pendingStart = start;
-    fetchCalendar(start)
+    pendingDays.add(cacheKey);
+    fetchCalendarDay(date, windowStart)
       .catch(() => {})
       .finally(() => {
-        if (pendingStart === start) {
-          pendingStart = null;
-        }
+        pendingDays.delete(cacheKey);
       });
   }
 
@@ -199,8 +279,10 @@
       return;
     }
     window.setTimeout(() => {
-      prefetchStart(navigation.previous_start);
-      prefetchStart(navigation.next_start);
+      prefetchDay(navigation.previous_start, navigation.previous_start);
+      if (navigation.next_start) {
+        prefetchDay(addDays(navigation.next_start, 6), navigation.next_start);
+      }
     }, 0);
   }
 
@@ -212,7 +294,7 @@
     }
     button.disabled = true;
     try {
-      renderCalendar(await fetchCalendar(start), { updateUrl: true });
+      renderCalendar(await fetchShiftedCalendar(direction, start), { updateUrl: true });
     } catch (_error) {
       button.disabled = false;
     }

@@ -15,7 +15,12 @@
 {% endblock %}
 
 {% block content %}
-  <section class="projects-board" aria-label="Projects calendar" data-calendar-endpoint="{{ url_for('pages.api_projects_calendar') }}">
+  <section
+    class="projects-board"
+    aria-label="Projects calendar"
+    data-calendar-endpoint="{{ url_for('pages.api_projects_calendar') }}"
+    data-calendar-day-endpoint="{{ url_for('pages.api_projects_calendar_day') }}"
+  >
     <button
       class="projects-nav-arrow projects-nav-previous{% if not project_calendar_nav.previous_start %} disabled{% endif %}"
       type="button"
