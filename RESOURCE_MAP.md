@@ -42,6 +42,7 @@ AWS is the source of truth for user data, deployment artifacts, and deployed run
 | Environment | Account/Profile | Region | Resource | Owner | Managed By | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
 | production | `eh` | `us-east-2` | Lambda `efficienthypothesis-backend` | Backend runtime | `deploy.sh` | Flask app packaged as Lambda |
+| production | `eh` | `us-east-2` | CloudFormation stacks `eh-runtime-data`, `eh-runtime-buckets`, `eh-api-hosting` | Infrastructure ownership | CloudFormation import and updates | Existing resources adopted without replacement |
 | production | `eh` | `us-east-2` | S3 bucket `eh-app-data` | User data, assets, deploy artifact | App code and `deploy.sh` | Stores workspace JSON, project context JSON, daily context JSON, assets, and Lambda zip |
 | production | `eh` | `us-east-2` | S3 object `admin/tasks.json` | Private admin task-board content | Authorized task-board updates | Read only after server-side admin session authorization |
 | production | `eh` | `us-east-2` | DynamoDB table `Users` | User records | Existing AWS state | Stores user metadata such as timezone |

@@ -34,7 +34,3 @@ Resources:
       Code:
         S3Bucket: !Ref DeploymentBucket
         S3Key: !Ref DeploymentKey
-
-Outputs:
-  BackendFunctionArn:
-    Value: !GetAtt BackendFunction.Arn

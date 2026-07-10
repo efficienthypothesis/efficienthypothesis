@@ -19,8 +19,8 @@ Private operational tasks and agent notices live in the S3-backed admin task boa
 
 - [ ] Decide whether to add infrastructure-as-code for durable AWS resources.
   Owner: unassigned.
-  Status: in progress.
-  Notes: Import-ready CloudFormation templates now describe the existing resources; adoption still requires a reviewed import change set.
+  Status: done.
+  Notes: Existing S3, DynamoDB, and Lambda resources were adopted into CloudFormation stacks without replacement.
 
 - [ ] Decide whether path-routed CI and deploy selectors are worth adding.
   Owner: unassigned.
