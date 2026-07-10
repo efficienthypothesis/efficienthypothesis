@@ -1131,7 +1131,8 @@ def _project_calendar_navigation(activity_dates, current_start, default_start):
     next_candidate = current_start + datetime.timedelta(days=1)
     previous_start = None
     next_start = None
-    if _window_contains_activity(activity_dates, previous_candidate):
+    earliest_activity = min(activity_dates) if activity_dates else None
+    if earliest_activity and previous_candidate >= earliest_activity:
         previous_start = previous_candidate
     if next_candidate <= default_start and _window_contains_activity(activity_dates, next_candidate):
         next_start = next_candidate

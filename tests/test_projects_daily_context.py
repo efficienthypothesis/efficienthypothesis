@@ -13,7 +13,7 @@ os.environ.setdefault("FLASK_SECRET_KEY", "test")
 os.environ.setdefault("OAUTH_SIGNING_KEY", "test")
 
 from app import app
-from routes.projects import _PROJECT_ACTIVITY_DATES_CACHE, _default_global_context, _normalize_daily_context, _normalize_global_context, _project_calendar_days_for_user, _project_calendar_for_user, _query_project_inventory, _read_recommendation_context, _store_daily_context_image, _write_inventory_item, _write_research_item
+from routes.projects import _PROJECT_ACTIVITY_DATES_CACHE, _default_global_context, _normalize_daily_context, _normalize_global_context, _project_calendar_days_for_user, _project_calendar_for_user, _project_calendar_navigation, _query_project_inventory, _read_recommendation_context, _store_daily_context_image, _write_inventory_item, _write_research_item
 
 
 def s3_error(code):
@@ -235,6 +235,24 @@ class DailyContextTests(unittest.TestCase):
             calendar = _project_calendar_for_user("user@example.com", "user-1", datetime.timezone.utc, "2026-06-25")
 
         self.assertIsNone(calendar["navigation"]["previous_start"])
+
+    def test_calendar_previous_navigation_stops_at_earliest_activity_date(self):
+        navigation = _project_calendar_navigation(
+            [datetime.date(2026, 7, 3)],
+            datetime.date(2026, 7, 3),
+            datetime.date(2026, 7, 7),
+        )
+
+        self.assertIsNone(navigation["previous_start"])
+
+    def test_calendar_previous_navigation_allows_shift_toward_earliest_activity_date(self):
+        navigation = _project_calendar_navigation(
+            [datetime.date(2026, 7, 3)],
+            datetime.date(2026, 7, 4),
+            datetime.date(2026, 7, 7),
+        )
+
+        self.assertEqual(navigation["previous_start"], "2026-07-03")
 
     def test_project_page_renders_history_link_when_available(self):
         with self.client.session_transaction(base_url="https://projects.efficienthypothesis.com") as session:
