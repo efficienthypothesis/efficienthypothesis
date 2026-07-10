@@ -175,13 +175,16 @@ Run `tests/test_workspace_fail_closed.py` when read-error handling or workspace 
 
 Project global context is stored privately at `<email>/projects/<project_id>/global-context.json`.
 GPT reads and writes project global context through the authenticated MCP tools `get_project_global_context` and `upsert_project_global_context`.
-The Acne global context includes locked `assessmentFields` for Baumann skin type, Fitzpatrick phototype, genetic scarring tendency, and anatomical pore size and distribution.
-The backend restores those Acne field definitions if omitted or malformed.
-Only field `value`, `reason`, and `updatedAt` values are mutable.
+New Acne global context files include editable starter `assessmentFields` for Baumann skin type, Fitzpatrick phototype, genetic scarring tendency, and anatomical pore size and distribution.
+They also include `aiGuidance` telling GPT to try to learn those values from the user because they improve recommendation accuracy.
+These starter fields are not locked; GPT can overwrite or delete them when replacing the global context file.
 
 Daily project context is stored privately at `<email>/projects/<project_id>/daily-context/<YYYY-MM-DD>.json`.
 Daily project context metadata is indexed in DynamoDB table `ProjectDailyContextMetadata` by `userProject` and `date`.
 Each document contains `schemaVersion`, `userId`, `projectId`, `date`, `entries`, `createdAt`, and `updatedAt`.
+New Acne daily context files also include editable `aiGuidance` and `starterFocusAreas` for physical friction habits, dietary triggers, sleep and cortisol load, and occupational or digital environments.
+Those fields are outside `entries`, so they do not count as real user observations.
+GPT can remove them by sending `daily_context` through `upsert_daily_context` rather than shorthand `entries`.
 Text entries contain `id`, `type: "text"`, optional `time`, `summary`, `createdAt`, and `updatedAt`.
 Image entries contain `id`, `type: "image"`, optional `time`, `summary`, `imageUrl`, `contentType`, optional `filename`, `createdAt`, and `updatedAt`.
 Image binaries are stored privately at `<email>/projects/<project_id>/daily-context/<YYYY-MM-DD>/images/<image_id>.<extension>`.

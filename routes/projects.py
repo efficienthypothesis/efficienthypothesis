@@ -25,6 +25,8 @@ GLOBAL_CONTEXT_VERSION = 1
 DAILY_CONTEXT_VERSION = 1
 DAILY_CONTEXT_MAX_ENTRIES = 100
 DAILY_CONTEXT_MAX_IMAGE_BYTES = 5 * 1024 * 1024
+CONTEXT_EXTRA_MAX_BYTES = 12 * 1024
+CONTEXT_EXTRA_MAX_FIELDS = 25
 RECOMMENDATION_VERSION = 1
 RECOMMENDATION_MAX_ITEMS = 50
 RECOMMENDATION_MAX_STEPS = 100
@@ -74,6 +76,71 @@ ACNE_ASSESSMENT_FIELDS = [
         ],
     },
 ]
+ACNE_GLOBAL_CONTEXT_GUIDANCE = (
+    "AI guidance: Try to learn these Acne assessment values from the user over conversation because they help "
+    "produce more accurate recommendations. These fields are starter context, not locked schema. You may update, "
+    "overwrite, or delete them when the user's context calls for it."
+)
+ACNE_DAILY_CONTEXT_GUIDANCE = (
+    "AI guidance: When building Acne daily context, consider whether the starter focus areas affected the user on "
+    "this date. These prompts are starter context, not locked schema. You may update, overwrite, or delete them."
+)
+ACNE_DAILY_CONTEXT_FOCUS_AREAS = [
+    {
+        "id": "daily_physical_friction_habits",
+        "label": "Daily Physical / Friction Habits (Mechanicals)",
+        "prompts": [
+            {"id": "post_workout_windows", "label": "Post Workout Windows", "value": "unknown", "reason": ""},
+            {"id": "friction_points", "label": "Friction Points", "value": "unknown", "reason": ""},
+        ],
+    },
+    {
+        "id": "dietary_biomarkers",
+        "label": "Dietary biomarkers (Metabolic Triggers)",
+        "prompts": [
+            {"id": "high_glycemic_loads", "label": "High Glycemic Loads", "value": "unknown", "reason": ""},
+            {"id": "whey_protein_dairy", "label": "Whey Protein & Dairy", "value": "unknown", "reason": ""},
+        ],
+    },
+    {
+        "id": "sleep_architecture_cortisol_load",
+        "label": "Sleep Architecture & Cortisol Load",
+        "prompts": [
+            {"id": "sleep_deprivation", "label": "Sleep Deprivation", "value": "unknown", "reason": ""},
+            {"id": "cortisol_effect", "label": "Cortisol Effect", "value": "unknown", "reason": ""},
+        ],
+    },
+    {
+        "id": "occupational_digital_environments",
+        "label": "Occupational & Digital Environments",
+        "prompts": [
+            {"id": "screen_light_exposure", "label": "Screen & Light Exposure", "value": "unknown", "reason": ""},
+            {"id": "airborne_context", "label": "Airborne Context", "value": "unknown", "reason": ""},
+        ],
+    },
+]
+GLOBAL_CONTEXT_RESERVED_KEYS = {
+    "schemaVersion",
+    "projectId",
+    "projectName",
+    "userId",
+    "summary",
+    "facts",
+    "preferences",
+    "constraints",
+    "openQuestions",
+    "createdAt",
+    "updatedAt",
+}
+DAILY_CONTEXT_RESERVED_KEYS = {
+    "schemaVersion",
+    "userId",
+    "projectId",
+    "date",
+    "entries",
+    "createdAt",
+    "updatedAt",
+}
 
 
 def _now_iso():
@@ -112,10 +179,10 @@ def _user_project_key(user_id, project_id):
     return f"{user_id}#{project_id}"
 
 
-def _default_global_context(project_id, user_id):
+def _base_global_context(project_id, user_id):
     project = PROJECT_BY_ID[project_id]
     now = _now_iso()
-    context = {
+    return {
         "schemaVersion": GLOBAL_CONTEXT_VERSION,
         "projectId": project_id,
         "projectName": project["name"],
@@ -128,7 +195,12 @@ def _default_global_context(project_id, user_id):
         "createdAt": now,
         "updatedAt": now,
     }
+
+
+def _default_global_context(project_id, user_id):
+    context = _base_global_context(project_id, user_id)
     if project_id == "acne":
+        context["aiGuidance"] = ACNE_GLOBAL_CONTEXT_GUIDANCE
         context["assessmentFields"] = _default_acne_assessment_fields()
     return context
 
@@ -143,45 +215,6 @@ def _default_acne_assessment_fields():
     return groups
 
 
-def _assessment_source_lookup(value):
-    lookup = {}
-    if not isinstance(value, list):
-        return lookup
-    for group in value:
-        if not isinstance(group, dict) or not isinstance(group.get("id"), str):
-            continue
-        fields = {}
-        for field in group.get("fields", []):
-            if isinstance(field, dict) and isinstance(field.get("id"), str):
-                fields[field["id"]] = field
-        lookup[group["id"]] = fields
-    return lookup
-
-
-def _apply_assessment_field_values(groups, source):
-    lookup = _assessment_source_lookup(source)
-    for group in groups:
-        source_fields = lookup.get(group["id"], {})
-        for field in group["fields"]:
-            source_field = source_fields.get(field["id"], {})
-            value = source_field.get("value")
-            reason = source_field.get("reason")
-            updated_at = source_field.get("updatedAt")
-            if isinstance(value, str) and value.strip() and len(value) <= 200:
-                field["value"] = value.strip()
-            if isinstance(reason, str) and len(reason) <= 2000:
-                field["reason"] = reason.strip()
-            if isinstance(updated_at, str) and updated_at.strip() and len(updated_at) <= 80:
-                field["updatedAt"] = updated_at.strip()
-
-
-def _normalize_acne_assessment_fields(incoming, existing=None):
-    groups = _default_acne_assessment_fields()
-    _apply_assessment_field_values(groups, existing)
-    _apply_assessment_field_values(groups, incoming)
-    return groups
-
-
 def _normalize_string_list(value):
     if not isinstance(value, list):
         return []
@@ -192,8 +225,29 @@ def _normalize_string_list(value):
     return normalized
 
 
+def _copy_context_extras(context, value, reserved_keys):
+    if not isinstance(value, dict):
+        return
+    copied = 0
+    for key, extra_value in value.items():
+        if key in reserved_keys:
+            continue
+        if not isinstance(key, str) or not key.strip() or len(key) > 80:
+            continue
+        if copied >= CONTEXT_EXTRA_MAX_FIELDS:
+            break
+        try:
+            raw = json.dumps(extra_value, ensure_ascii=False)
+        except (TypeError, ValueError, RecursionError):
+            continue
+        if len(raw.encode("utf-8")) > CONTEXT_EXTRA_MAX_BYTES:
+            continue
+        context[key] = deepcopy(extra_value)
+        copied += 1
+
+
 def _normalize_global_context(value, project_id, user_id, existing=None):
-    default_context = _default_global_context(project_id, user_id)
+    default_context = _base_global_context(project_id, user_id)
     if not isinstance(value, dict):
         value = {}
 
@@ -205,8 +259,7 @@ def _normalize_global_context(value, project_id, user_id, existing=None):
     context["preferences"] = _normalize_string_list(value.get("preferences"))
     context["constraints"] = _normalize_string_list(value.get("constraints"))
     context["openQuestions"] = _normalize_string_list(value.get("openQuestions"))
-    if project_id == "acne":
-        context["assessmentFields"] = _normalize_acne_assessment_fields(value.get("assessmentFields"), (existing or {}).get("assessmentFields"))
+    _copy_context_extras(context, value, GLOBAL_CONTEXT_RESERVED_KEYS)
     return context
 
 
@@ -237,7 +290,7 @@ def _write_project_global_context(email, project_id, context):
     )
 
 
-def _default_daily_context(project_id, user_id, date):
+def _base_daily_context(project_id, user_id, date):
     return {
         "schemaVersion": DAILY_CONTEXT_VERSION,
         "userId": user_id,
@@ -249,6 +302,14 @@ def _default_daily_context(project_id, user_id, date):
     }
 
 
+def _default_daily_context(project_id, user_id, date):
+    context = _base_daily_context(project_id, user_id, date)
+    if project_id == "acne":
+        context["aiGuidance"] = ACNE_DAILY_CONTEXT_GUIDANCE
+        context["starterFocusAreas"] = deepcopy(ACNE_DAILY_CONTEXT_FOCUS_AREAS)
+    return context
+
+
 def _validate_daily_date(date):
     if not isinstance(date, str) or not DAILY_DATE_PATTERN.fullmatch(date):
         raise ValueError("date must use YYYY-MM-DD")
@@ -258,9 +319,9 @@ def _validate_daily_date(date):
         raise ValueError("date must use YYYY-MM-DD") from exc
 
 
-def _normalize_daily_context(value, project_id, user_id, date):
+def _normalize_daily_context(value, project_id, user_id, date, include_default_template=False):
     date = _validate_daily_date(date)
-    default = _default_daily_context(project_id, user_id, date)
+    default = _default_daily_context(project_id, user_id, date) if include_default_template else _base_daily_context(project_id, user_id, date)
     if not isinstance(value, dict):
         return default
     entries = value.get("entries")
@@ -300,6 +361,7 @@ def _normalize_daily_context(value, project_id, user_id, date):
     result = {**default, "entries": normalized_entries}
     result["createdAt"] = value.get("createdAt") or result["createdAt"]
     result["updatedAt"] = value.get("updatedAt") or result["updatedAt"]
+    _copy_context_extras(result, value, DAILY_CONTEXT_RESERVED_KEYS)
     return result
 
 
@@ -954,7 +1016,8 @@ def api_project_daily_context(project_id, date):
         if request.method == "GET":
             return jsonify({"dailyContext": _read_daily_context(email, project_id, user_id, date)})
         data = request.get_json(silent=True) or {}
-        context = _normalize_daily_context(data.get("dailyContext", data), project_id, user_id, date)
+        has_full_context = "dailyContext" in data
+        context = _normalize_daily_context(data.get("dailyContext", data), project_id, user_id, date, include_default_template=not has_full_context)
         context["updatedAt"] = _now_iso()
         _write_daily_context(email, project_id, context)
         return jsonify({"ok": True, "dailyContext": context})

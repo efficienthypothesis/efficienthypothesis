@@ -131,8 +131,11 @@ and retired timetable documents before the cleaned workspace is saved again.
   referenced tag is archived.
 - GPT can write project daily context, daily context images, research items, and dated routine recommendation sets.
 - GPT can read and update project global context through `get_project_global_context` and `upsert_project_global_context`.
-- The Acne global context contains code-owned assessment field definitions.
-- MCP can update each Acne assessment field's `value`, `reason`, and `updatedAt`, but omitted or malformed writes cannot delete or redefine the fields.
+- New Acne global context files include editable assessment starter fields and AI guidance asking GPT to learn those values from the user.
+- Those starter fields are not locked; `upsert_project_global_context` can overwrite or delete them.
+- New Acne daily context files include editable starter focus areas outside `entries`.
+- `upsert_daily_context` accepts shorthand `entries` or a full `daily_context` replacement.
+- Full `daily_context` replacement can remove Acne starter prompts.
 - `bulk_upsert_project_history` requires `write_mode` set to `merge` or `replace`.
 - In `merge` mode, bulk daily context and recommendation sets update matching IDs and append new IDs.
 - In `replace` mode, each submitted project/date daily context or recommendation set replaces that date's existing set.
@@ -143,7 +146,8 @@ and retired timetable documents before the cleaned workspace is saved again.
 
 Project daily context is dated by project and calendar date.
 Project global context is project-scoped and stores durable profile information for each project.
-Acne global context includes locked assessment fields for Baumann skin type, Fitzpatrick phototype, genetic scarring tendency, and anatomical pore size and distribution.
+New Acne global context includes editable starter assessment fields for Baumann skin type, Fitzpatrick phototype, genetic scarring tendency, and anatomical pore size and distribution.
+New Acne daily context includes editable starter focus areas for physical friction habits, dietary triggers, sleep and cortisol load, and occupational or digital environments.
 Text entries are written through `upsert_daily_context` or `bulk_upsert_project_history`.
 Images are written through `add_daily_context_image` or the bulk tool's `image_contexts` array.
 Image payloads must be base64 PNG, JPEG, or WebP and are limited to 5 MiB decoded.

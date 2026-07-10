@@ -6,7 +6,7 @@ os.environ.setdefault("AWS_EC2_METADATA_DISABLED", "true")
 os.environ.setdefault("FLASK_SECRET_KEY", "test")
 os.environ.setdefault("OAUTH_SIGNING_KEY", "test")
 
-from routes.mcp import TOOLS, _bulk_upsert_project_history_result, _get_global_context_result, _upsert_global_context_result
+from routes.mcp import TOOLS, _bulk_upsert_project_history_result, _get_global_context_result, _upsert_daily_context_result, _upsert_global_context_result
 from routes.projects import _default_global_context
 
 
@@ -24,7 +24,7 @@ class MCPProjectHistoryTests(unittest.TestCase):
         self.assertIn("get_project_global_context", tool_names)
         self.assertIn("upsert_project_global_context", tool_names)
 
-    def test_global_context_update_preserves_locked_acne_fields(self):
+    def test_global_context_update_can_overwrite_editable_acne_fields(self):
         existing = _default_global_context("acne", "user-1")
         existing["assessmentFields"][0]["fields"][0]["value"] = "O"
         existing["assessmentFields"][0]["fields"][0]["reason"] = "Oilier T-zone."
@@ -46,9 +46,51 @@ class MCPProjectHistoryTests(unittest.TestCase):
 
         written = write_context.call_args.args[2]
         self.assertEqual(written["summary"], "Acne context.")
-        self.assertEqual(written["assessmentFields"][0]["fields"][0]["value"], "O")
-        self.assertEqual(written["assessmentFields"][0]["fields"][1]["value"], "S")
-        self.assertEqual(response["structuredContent"]["globalContext"]["assessmentFields"][0]["fields"][1]["reason"], "Irritation history.")
+        self.assertEqual(written["assessmentFields"][0]["fields"], [{"id": "s_vs_r", "value": "S", "reason": "Irritation history."}])
+        self.assertEqual(response["structuredContent"]["globalContext"]["assessmentFields"][0]["fields"][0]["reason"], "Irritation history.")
+
+    def test_global_context_update_can_delete_editable_acne_fields(self):
+        existing = _default_global_context("acne", "user-1")
+
+        with (
+            patch("routes.mcp._read_project_global_context", return_value=existing),
+            patch("routes.mcp._write_project_global_context") as write_context,
+        ):
+            _upsert_global_context_result("user@example.com", "user-1", {
+                "project_id": "acne",
+                "global_context": {"summary": "Keep only the summary."},
+            })
+
+        written = write_context.call_args.args[2]
+        self.assertEqual(written["summary"], "Keep only the summary.")
+        self.assertNotIn("assessmentFields", written)
+        self.assertNotIn("aiGuidance", written)
+
+    def test_daily_context_shorthand_write_includes_acne_starter_prompts(self):
+        with patch("routes.mcp._write_daily_context") as write_context:
+            response = _upsert_daily_context_result("user@example.com", "user-1", {
+                "project_id": "acne",
+                "date": "2026-07-10",
+                "entries": [],
+            })
+
+        written = write_context.call_args.args[2]
+        self.assertIn("starterFocusAreas", written)
+        self.assertEqual(written["entries"], [])
+        self.assertIn("starterFocusAreas", response["structuredContent"]["dailyContext"])
+
+    def test_daily_context_full_write_can_delete_acne_starter_prompts(self):
+        with patch("routes.mcp._write_daily_context") as write_context:
+            _upsert_daily_context_result("user@example.com", "user-1", {
+                "project_id": "acne",
+                "date": "2026-07-10",
+                "daily_context": {"entries": [{"id": "entry-1", "summary": "Custom context."}]},
+            })
+
+        written = write_context.call_args.args[2]
+        self.assertNotIn("starterFocusAreas", written)
+        self.assertNotIn("aiGuidance", written)
+        self.assertEqual(written["entries"][0]["summary"], "Custom context.")
 
     def test_global_context_read_returns_current_context(self):
         existing = _default_global_context("fitness", "user-1")

@@ -40,9 +40,10 @@ class DailyContextTests(unittest.TestCase):
         self.assertEqual(context["entries"][0]["summary"], "Did the thing.")
         self.assertEqual(context["entries"][0]["time"], "08:30")
 
-    def test_acne_global_context_includes_locked_assessment_fields(self):
+    def test_acne_global_context_includes_editable_assessment_starter_fields(self):
         context = _default_global_context("acne", "user-1")
 
+        self.assertIn("AI guidance", context["aiGuidance"])
         self.assertEqual([group["id"] for group in context["assessmentFields"]], [
             "baumann_skin_type",
             "fitzpatrick_phototype",
@@ -53,36 +54,63 @@ class DailyContextTests(unittest.TestCase):
         self.assertEqual([field["id"] for field in baumann["fields"]], ["o_vs_d", "s_vs_r", "p_vs_n", "w_vs_t"])
         self.assertTrue(all(field["value"] == "unknown" for group in context["assessmentFields"] for field in group["fields"]))
 
-    def test_acne_assessment_fields_preserve_existing_values_and_drop_unknown_fields(self):
-        existing = _default_global_context("acne", "user-1")
-        existing["assessmentFields"][0]["fields"][0]["value"] = "O"
-        existing["assessmentFields"][0]["fields"][0]["reason"] = "Consistent midday shine."
+    def test_acne_global_context_allows_assessment_fields_to_be_overwritten(self):
         incoming = {
             "summary": "Updated summary.",
             "assessmentFields": [{
                 "id": "baumann_skin_type",
-                "label": "Malicious replacement",
+                "label": "Custom replacement",
                 "fields": [
                     {"id": "s_vs_r", "label": "Changed", "value": "S", "reason": "Stinging with actives."},
-                    {"id": "delete_me", "value": "x", "reason": "x"},
                 ],
             }],
         }
 
-        context = _normalize_global_context(incoming, "acne", "user-1", existing=existing)
+        context = _normalize_global_context(incoming, "acne", "user-1")
 
         baumann = context["assessmentFields"][0]
-        self.assertEqual(baumann["label"], "Baumann Skin Type")
-        self.assertEqual([field["id"] for field in baumann["fields"]], ["o_vs_d", "s_vs_r", "p_vs_n", "w_vs_t"])
-        self.assertEqual(baumann["fields"][0]["value"], "O")
-        self.assertEqual(baumann["fields"][0]["reason"], "Consistent midday shine.")
-        self.assertEqual(baumann["fields"][1]["value"], "S")
-        self.assertEqual(baumann["fields"][1]["reason"], "Stinging with actives.")
+        self.assertEqual(baumann["label"], "Custom replacement")
+        self.assertEqual([field["id"] for field in baumann["fields"]], ["s_vs_r"])
+        self.assertEqual(baumann["fields"][0]["value"], "S")
+        self.assertEqual(baumann["fields"][0]["reason"], "Stinging with actives.")
+
+    def test_acne_global_context_allows_assessment_fields_to_be_deleted(self):
+        context = _normalize_global_context({"summary": "Only keep summary."}, "acne", "user-1")
+
+        self.assertEqual(context["summary"], "Only keep summary.")
+        self.assertNotIn("assessmentFields", context)
+        self.assertNotIn("aiGuidance", context)
 
     def test_non_acne_global_context_does_not_receive_acne_fields(self):
         context = _default_global_context("fitness", "user-1")
 
         self.assertNotIn("assessmentFields", context)
+
+    def test_acne_default_daily_context_includes_editable_starter_focus_areas(self):
+        context = _normalize_daily_context(
+            {"entries": []},
+            "acne",
+            "user-1",
+            "2026-07-10",
+            include_default_template=True,
+        )
+
+        self.assertEqual(context["entries"], [])
+        self.assertIn("starterFocusAreas", context)
+        self.assertEqual(context["starterFocusAreas"][0]["id"], "daily_physical_friction_habits")
+        self.assertEqual(context["starterFocusAreas"][0]["prompts"][0]["value"], "unknown")
+
+    def test_acne_full_daily_context_can_delete_starter_focus_areas(self):
+        context = _normalize_daily_context(
+            {"entries": [{"id": "entry-1", "summary": "Only this happened."}]},
+            "acne",
+            "user-1",
+            "2026-07-10",
+        )
+
+        self.assertEqual(context["entries"][0]["summary"], "Only this happened.")
+        self.assertNotIn("starterFocusAreas", context)
+        self.assertNotIn("aiGuidance", context)
 
     def test_daily_context_get_missing_object_returns_empty_document(self):
         with patch("routes.projects.s3.get_object", side_effect=s3_error("NoSuchKey")):

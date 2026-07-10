@@ -250,21 +250,21 @@ TOOLS = [
     _read_only_tool(
         "get_project_global_context",
         "Get project global context",
-        "Read one user's project-level global context file, including locked Acne assessment fields when present.",
+        "Read one user's project-level global context file. New Acne files include editable starter assessment fields and AI guidance.",
         {"type": "object", "properties": {"project_id": {"type": "string", "enum": list(PROJECT_BY_ID)}}, "required": ["project_id"], "additionalProperties": False},
         {"type": "object", "properties": {"globalContext": {"type": "object"}}, "required": ["globalContext"], "additionalProperties": False},
     ),
     _write_tool(
         "upsert_project_global_context",
         "Update project global context",
-        "Update a project-level global context file. Code-owned assessment field definitions cannot be deleted or redefined; only their values and reasons are mutable.",
+        "Replace a project-level global context file. Acne starter assessment fields are editable guidance and may be overwritten or deleted.",
         {"type": "object", "properties": {"project_id": {"type": "string", "enum": list(PROJECT_BY_ID)}, "global_context": {"type": "object"}}, "required": ["project_id", "global_context"], "additionalProperties": False},
         {"type": "object", "properties": {"globalContext": {"type": "object"}}, "required": ["globalContext"], "additionalProperties": False},
     ),
     _read_only_tool(
         "get_daily_context",
         "Get project daily context",
-        "Read one user's dated project context file. Use this for recommendations across one or more days.",
+        "Read one user's dated project context file. New Acne files include editable starter prompts outside entries.",
         {
             "type": "object",
             "properties": {
@@ -279,12 +279,16 @@ TOOLS = [
     _write_tool(
         "upsert_daily_context",
         "Update project daily context",
-        "Add or replace a dated project's text context entries. Use add_daily_context_image for image entries.",
+        "Add or replace dated project context. Send entries for shorthand creation, or daily_context to replace the full file and remove starter prompts if desired. Use add_daily_context_image for image entries.",
         {
             "type": "object",
             "properties": {
                 "project_id": {"type": "string", "enum": list(PROJECT_BY_ID)},
                 "date": {"type": "string", "description": "Date in YYYY-MM-DD form."},
+                "daily_context": {
+                    "type": "object",
+                    "description": "Optional full daily context file. When supplied, it replaces the file and can omit starter prompts.",
+                },
                 "entries": {
                     "type": "array",
                     "items": {
@@ -299,7 +303,7 @@ TOOLS = [
                     },
                 },
             },
-            "required": ["project_id", "date", "entries"],
+            "required": ["project_id", "date"],
             "additionalProperties": False,
         },
         {"type": "object", "properties": {"dailyContext": {"type": "object"}}, "required": ["dailyContext"], "additionalProperties": False},
@@ -1452,9 +1456,12 @@ def _upsert_daily_context_result(email, user_id, arguments):
     date = _require_nonempty(arguments.get("date"), "date")
     if project_id not in PROJECT_BY_ID:
         raise ValueError("unknown project")
-    context = _normalize_daily_context(
-        {"entries": arguments.get("entries")}, project_id, user_id, date
-    )
+    if isinstance(arguments.get("daily_context"), dict):
+        context = _normalize_daily_context(arguments["daily_context"], project_id, user_id, date)
+    elif "entries" in arguments:
+        context = _normalize_daily_context({"entries": arguments.get("entries")}, project_id, user_id, date, include_default_template=True)
+    else:
+        raise ValueError("daily_context or entries is required")
     _write_daily_context(email, project_id, context)
     return {
         "structuredContent": {"dailyContext": context},
