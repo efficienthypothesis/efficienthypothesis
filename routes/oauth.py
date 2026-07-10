@@ -17,9 +17,18 @@ class OAuthRegistryUnavailable(Exception):
     pass
 
 
+class OAuthRegistryBusy(Exception):
+    pass
+
+
 @oauth_bp.errorhandler(OAuthRegistryUnavailable)
 def oauth_registry_unavailable(_error):
     return jsonify({"error": "oauth_registry_unavailable"}), 503
+
+
+@oauth_bp.errorhandler(OAuthRegistryBusy)
+def oauth_registry_busy(_error):
+    return jsonify({"error": "oauth_registry_busy"}), 409
 
 
 def _issuer():
@@ -155,6 +164,45 @@ def _save_oauth_clients(email, clients):
     )
 
 
+def _oauth_registry_lock_key(email):
+    return f"oauth_registry_lock:{email}"
+
+
+def _update_oauth_clients(email, update):
+    lock_id = secrets.token_urlsafe(16)
+    lock_key = _oauth_registry_lock_key(email)
+    now = int(time.time())
+    try:
+        oauth_tokens_table.put_item(
+            Item={
+                "token_hash": lock_key,
+                "type": "oauth_registry_lock",
+                "lock_id": lock_id,
+                "lock_expires_at": now + 30,
+            },
+            ConditionExpression="attribute_not_exists(token_hash) OR lock_expires_at < :now",
+            ExpressionAttributeValues={":now": now},
+        )
+    except ClientError as exc:
+        if str(exc.response.get("Error", {}).get("Code", "")) == "ConditionalCheckFailedException":
+            raise OAuthRegistryBusy() from exc
+        raise OAuthRegistryUnavailable() from exc
+    try:
+        clients = _load_oauth_clients(email)
+        updated = update(clients)
+        _save_oauth_clients(email, updated)
+        return updated
+    finally:
+        try:
+            oauth_tokens_table.delete_item(
+                Key={"token_hash": lock_key},
+                ConditionExpression="lock_id = :lock_id",
+                ExpressionAttributeValues={":lock_id": lock_id},
+            )
+        except Exception:
+            pass
+
+
 def _revoke_client_tokens(client_id):
     last_key = None
     while True:
@@ -214,9 +262,7 @@ def api_oauth_clients_create():
         "scopes": ["full_access"],
         "created_at": datetime.datetime.utcnow().isoformat() + "Z",
     }
-    clients = _load_oauth_clients(ctx["email"])
-    clients.append(client)
-    _save_oauth_clients(ctx["email"], clients)
+    _update_oauth_clients(ctx["email"], lambda clients: [*clients, client])
     return jsonify({
         "client_id": client_id,
         "client_secret": client_secret,
@@ -233,9 +279,7 @@ def api_oauth_clients_delete(cid):
     if _is_programmatic(ctx):
         return jsonify({"error": "Requires browser session"}), 403
     email = ctx["email"]
-    clients = _load_oauth_clients(email)
-    clients = [c for c in clients if c["client_id"] != cid]
-    _save_oauth_clients(email, clients)
+    _update_oauth_clients(email, lambda clients: [c for c in clients if c["client_id"] != cid])
     # Revoke all tokens for this client, including every scan page.
     try:
         _revoke_client_tokens(cid)

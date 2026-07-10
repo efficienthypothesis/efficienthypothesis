@@ -10,7 +10,13 @@ os.environ.setdefault("OAUTH_SIGNING_KEY", "test")
 
 from app import app
 from config import _create_access_token, _hash_token, _verify_access_token
-from routes.oauth import OAuthRegistryUnavailable, _load_oauth_clients, _revoke_client_tokens
+from routes.oauth import (
+    OAuthRegistryBusy,
+    OAuthRegistryUnavailable,
+    _load_oauth_clients,
+    _revoke_client_tokens,
+    _update_oauth_clients,
+)
 
 
 def s3_error(code):
@@ -88,6 +94,31 @@ class OAuthSecurityTests(unittest.TestCase):
             [call.kwargs["Key"] for call in table.delete_item.call_args_list],
             [{"token_hash": "one"}, {"token_hash": "two"}],
         )
+
+    def test_registry_update_uses_expiring_conditional_lock(self):
+        table = Mock()
+        with patch("routes.oauth.oauth_tokens_table", table), patch(
+            "routes.oauth._load_oauth_clients", return_value=[{"client_id": "old"}]
+        ), patch("routes.oauth._save_oauth_clients") as save:
+            result = _update_oauth_clients(
+                "user@example.com", lambda clients: [*clients, {"client_id": "new"}]
+            )
+
+        self.assertEqual([client["client_id"] for client in result], ["old", "new"])
+        put_kwargs = table.put_item.call_args.kwargs
+        self.assertIn("ConditionExpression", put_kwargs)
+        self.assertEqual(put_kwargs["Item"]["type"], "oauth_registry_lock")
+        save.assert_called_once()
+        table.delete_item.assert_called_once()
+
+    def test_registry_update_reports_busy_lock(self):
+        table = Mock()
+        table.put_item.side_effect = ClientError(
+            {"Error": {"Code": "ConditionalCheckFailedException"}}, "PutItem"
+        )
+        with patch("routes.oauth.oauth_tokens_table", table):
+            with self.assertRaises(OAuthRegistryBusy):
+                _update_oauth_clients("user@example.com", lambda clients: clients)
 
 
 if __name__ == "__main__":
