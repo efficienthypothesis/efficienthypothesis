@@ -1,4 +1,8 @@
 import os
+import base64
+import datetime
+import io
+import json
 import unittest
 from unittest.mock import Mock, patch
 
@@ -9,7 +13,7 @@ os.environ.setdefault("FLASK_SECRET_KEY", "test")
 os.environ.setdefault("OAUTH_SIGNING_KEY", "test")
 
 from app import app
-from routes.projects import _normalize_daily_context
+from routes.projects import _normalize_daily_context, _project_calendar_days_for_user, _store_daily_context_image
 
 
 def s3_error(code):
@@ -52,6 +56,70 @@ class DailyContextTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(put_object.call_args.kwargs["Key"], "user@example.com/projects/acne/daily-context/2026-07-10.json")
+
+    def test_daily_context_image_is_stored_and_added_to_document(self):
+        image_data = base64.b64encode(b"\x89PNG\r\n\x1a\npayload").decode("ascii")
+        with patch("routes.projects.s3.get_object", side_effect=s3_error("NoSuchKey")), patch("routes.projects.s3.put_object") as put_object:
+            entry = _store_daily_context_image("user@example.com", "acne", "user-1", "2026-07-10", image_data, "Screenshot", filename="nested/photo.png")
+
+        self.assertEqual(entry["type"], "image")
+        self.assertEqual(entry["contentType"], "image/png")
+        self.assertEqual(entry["filename"], "photo.png")
+        image_call = put_object.call_args_list[0].kwargs
+        self.assertIn("/daily-context/2026-07-10/images/", image_call["Key"])
+        self.assertEqual(image_call["ServerSideEncryption"], "AES256")
+
+    def test_daily_context_image_rejects_non_image_payload(self):
+        with self.assertRaises(ValueError):
+            _store_daily_context_image("user@example.com", "acne", "user-1", "2026-07-10", base64.b64encode(b"not an image").decode("ascii"), "Invalid")
+
+    def test_daily_context_image_route_returns_private_image(self):
+        context = {
+            "schemaVersion": 1,
+            "userId": "user-1",
+            "projectId": "acne",
+            "date": "2026-07-10",
+            "entries": [{
+                "id": "image-1",
+                "type": "image",
+                "summary": "Screenshot",
+                "imageUrl": "/api/projects/acne/daily-context/2026-07-10/images/image-1",
+                "contentType": "image/png",
+                "filename": "photo.png",
+                "createdAt": "2026-07-10T00:00:00Z",
+                "updatedAt": "2026-07-10T00:00:00Z",
+            }],
+            "createdAt": "2026-07-10T00:00:00Z",
+            "updatedAt": "2026-07-10T00:00:00Z",
+        }
+        body = Mock()
+        body.read.return_value = b"\x89PNG\r\n\x1a\npayload"
+        responses = [{"Body": io.BytesIO(json.dumps(context).encode("utf-8"))}, {"Body": body}]
+        with patch("routes.projects.s3.get_object", side_effect=responses):
+            response = self.client.get("/api/projects/acne/daily-context/2026-07-10/images/image-1")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.mimetype, "image/png")
+        self.assertEqual(response.data, b"\x89PNG\r\n\x1a\npayload")
+
+    def test_calendar_counts_image_entries(self):
+        def read_context(_email, project_id, _user_id, date):
+            return _normalize_daily_context({
+                "entries": [{
+                    "id": "image-1",
+                    "type": "image",
+                    "summary": "Screenshot",
+                    "imageUrl": f"/api/projects/{project_id}/daily-context/{date}/images/image-1",
+                    "contentType": "image/png",
+                }]
+            }, project_id, "user-1", date)
+
+        with patch("routes.projects._read_daily_context", side_effect=read_context), patch("routes.projects._read_recommendations") as read_recommendations:
+            read_recommendations.return_value = {"recommendations": []}
+            days = _project_calendar_days_for_user("user@example.com", "user-1", datetime.timezone.utc)
+
+        self.assertEqual(days[0]["projects"][0]["entry_count"], 1)
+        self.assertEqual(days[0]["projects"][0]["image_count"], 1)
 
     def test_daily_context_rejects_invalid_date(self):
         response = self.client.get("/api/projects/acne/daily-context/20260710")

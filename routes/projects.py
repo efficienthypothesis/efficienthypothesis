@@ -1,9 +1,13 @@
+import base64
 import datetime
+import binascii
+import io
 import json
 import re
+import uuid
 from copy import deepcopy
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, send_file
 from botocore.exceptions import BotoCoreError, ClientError
 
 from config import PRODUCTIVITY_BUCKET, s3, _require_auth
@@ -19,6 +23,7 @@ PROJECT_BY_ID = {project["id"]: project for project in PROJECTS}
 GLOBAL_CONTEXT_VERSION = 1
 DAILY_CONTEXT_VERSION = 1
 DAILY_CONTEXT_MAX_ENTRIES = 100
+DAILY_CONTEXT_MAX_IMAGE_BYTES = 5 * 1024 * 1024
 RECOMMENDATION_VERSION = 1
 RECOMMENDATION_MAX_ITEMS = 50
 DAILY_DATE_PATTERN = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
@@ -38,6 +43,10 @@ def _project_daily_context_key(email, project_id, date):
 
 def _project_recommendations_key(email, project_id, date):
     return f"{email}/projects/{project_id}/recommendations/{date}.json"
+
+
+def _project_daily_image_key(email, project_id, date, image_id, extension):
+    return f"{email}/projects/{project_id}/daily-context/{date}/images/{image_id}.{extension}"
 
 
 def _default_global_context(project_id, user_id):
@@ -149,13 +158,27 @@ def _normalize_daily_context(value, project_id, user_id, date):
             raise ValueError(f"entries[{index}].id is invalid")
         if not isinstance(summary, str) or not summary.strip() or len(summary) > 2000:
             raise ValueError(f"entries[{index}].summary is invalid")
-        normalized_entries.append({
+        entry_type = entry.get("type", "text")
+        if entry_type not in {"text", "image"}:
+            raise ValueError(f"entries[{index}].type is invalid")
+        normalized_entry = {
             "id": entry_id.strip(),
+            "type": entry_type,
             "time": entry.get("time") if isinstance(entry.get("time"), str) else None,
             "summary": summary.strip(),
             "createdAt": entry.get("createdAt") or default["createdAt"],
             "updatedAt": entry.get("updatedAt") or default["updatedAt"],
-        })
+        }
+        if entry_type == "image":
+            if not isinstance(entry.get("imageUrl"), str) or not entry["imageUrl"].startswith("/api/"):
+                raise ValueError(f"entries[{index}].imageUrl is invalid")
+            if entry.get("contentType") not in {"image/png", "image/jpeg", "image/webp"}:
+                raise ValueError(f"entries[{index}].contentType is invalid")
+            normalized_entry["imageUrl"] = entry["imageUrl"]
+            normalized_entry["contentType"] = entry["contentType"]
+            if isinstance(entry.get("filename"), str) and entry["filename"].strip():
+                normalized_entry["filename"] = entry["filename"].strip().split("/")[-1].split("\\")[-1]
+        normalized_entries.append(normalized_entry)
     result = {**default, "entries": normalized_entries}
     result["createdAt"] = value.get("createdAt") or result["createdAt"]
     result["updatedAt"] = value.get("updatedAt") or result["updatedAt"]
@@ -186,6 +209,60 @@ def _write_daily_context(email, project_id, context):
         Body=json.dumps(context, indent=2),
         ContentType="application/json",
     )
+
+
+def _decode_image_data(image_data):
+    if not isinstance(image_data, str):
+        raise ValueError("image_data must be a base64 string")
+    encoded = image_data
+    if encoded.startswith("data:"):
+        header, separator, encoded = encoded.partition(",")
+        if not separator or ";base64" not in header:
+            raise ValueError("image_data must be base64 encoded")
+    try:
+        raw = base64.b64decode(encoded, validate=True)
+    except (ValueError, binascii.Error) as exc:
+        raise ValueError("image_data is not valid base64") from exc
+    if not raw or len(raw) > DAILY_CONTEXT_MAX_IMAGE_BYTES:
+        raise ValueError("image_data exceeds the 5 MiB limit")
+    signatures = ((b"\x89PNG\r\n\x1a\n", "png", "image/png"), (b"\xff\xd8\xff", "jpg", "image/jpeg"), (b"RIFF", "webp", "image/webp"))
+    for signature, extension, content_type in signatures:
+        if raw.startswith(signature) and (extension != "webp" or raw[8:12] == b"WEBP"):
+            return raw, extension, content_type
+    raise ValueError("image_data must be PNG, JPEG, or WebP")
+
+
+def _store_daily_context_image(email, project_id, user_id, date, image_data, summary, time=None, filename=None):
+    date = _validate_daily_date(date)
+    raw, extension, content_type = _decode_image_data(image_data)
+    image_id = f"image-{uuid.uuid4().hex}"
+    key = _project_daily_image_key(email, project_id, date, image_id, extension)
+    context = _read_daily_context(email, project_id, user_id, date)
+    if len(context["entries"]) >= DAILY_CONTEXT_MAX_ENTRIES:
+        raise ValueError("entries must be an array with at most 100 items")
+    now = _now_iso()
+    entry = {
+        "id": image_id,
+        "type": "image",
+        "time": time if isinstance(time, str) else None,
+        "summary": summary.strip() if isinstance(summary, str) and summary.strip() else "Image context",
+        "imageUrl": f"/api/projects/{project_id}/daily-context/{date}/images/{image_id}",
+        "contentType": content_type,
+        "filename": (filename.strip().split("/")[-1].split("\\")[-1] if isinstance(filename, str) and filename.strip() else f"{image_id}.{extension}"),
+        "createdAt": now,
+        "updatedAt": now,
+    }
+    context["entries"].append(entry)
+    context["updatedAt"] = now
+    s3.put_object(Bucket=PRODUCTIVITY_BUCKET, Key=key, Body=raw, ContentType=content_type, ServerSideEncryption="AES256")
+    try:
+        _write_daily_context(email, project_id, context)
+    except Exception:
+        try:
+            s3.delete_object(Bucket=PRODUCTIVITY_BUCKET, Key=key)
+        finally:
+            raise
+    return entry
 
 
 def _default_recommendations(project_id, user_id, date):
@@ -270,6 +347,7 @@ def _project_calendar_days_for_user(email, user_id, timezone):
                 "id": project["id"],
                 "name": project["name"],
                 "entry_count": len(context["entries"]),
+                "image_count": sum(1 for entry in context["entries"] if entry.get("type") == "image"),
                 "raw_json": json.dumps(context, indent=2),
                 "recommendations": recommendations["recommendations"],
                 "recommendations_raw_json": json.dumps(recommendations, indent=2),
@@ -345,6 +423,28 @@ def api_project_daily_context(project_id, date):
         context["updatedAt"] = _now_iso()
         _write_daily_context(email, project_id, context)
         return jsonify({"ok": True, "dailyContext": context})
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except (ClientError, BotoCoreError, RuntimeError):
+        return jsonify({"error": "daily_context_unavailable"}), 503
+
+
+@projects_bp.route("/api/projects/<project_id>/daily-context/<date>/images/<image_id>", methods=["GET"])
+def api_project_daily_context_image(project_id, date, image_id):
+    ctx, err = _require_auth()
+    if err:
+        return err
+    if project_id not in PROJECT_BY_ID:
+        return jsonify({"error": "unknown project"}), 404
+    try:
+        date = _validate_daily_date(date)
+        context = _read_daily_context(ctx["email"], project_id, ctx.get("user_id") or ctx["email"], date)
+        entry = next((item for item in context["entries"] if item.get("id") == image_id and item.get("type") == "image"), None)
+        if not entry:
+            return jsonify({"error": "image not found"}), 404
+        extension = {"image/png": "png", "image/jpeg": "jpg", "image/webp": "webp"}.get(entry.get("contentType"))
+        obj = s3.get_object(Bucket=PRODUCTIVITY_BUCKET, Key=_project_daily_image_key(ctx["email"], project_id, date, image_id, extension))
+        return send_file(io.BytesIO(obj["Body"].read()), mimetype=entry["contentType"], download_name=entry.get("filename"), max_age=0)
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
     except (ClientError, BotoCoreError, RuntimeError):

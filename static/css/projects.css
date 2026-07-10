@@ -100,6 +100,12 @@ body.projects-page main {
   font-size: 0.76rem;
 }
 
+.projects-context-images {
+  margin-top: 2px;
+  color: #64748b;
+  font-size: 0.72rem;
+}
+
 .projects-context-raw {
   margin-top: 6px;
   color: #475569;

@@ -32,6 +32,7 @@
               <article class="projects-context-summary">
                 <div class="projects-context-project">{{ project.name }}</div>
                 <div class="projects-context-count">{{ project.entry_count }} {% if project.entry_count == 1 %}entry{% else %}entries{% endif %}</div>
+                <div class="projects-context-images">{{ project.image_count }} {% if project.image_count == 1 %}image{% else %}images{% endif %}</div>
                 <details class="projects-context-raw">
                   <summary>View JSON</summary>
                   <pre>{{ project.raw_json }}</pre>

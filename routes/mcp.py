@@ -19,6 +19,7 @@ from routes.projects import (
     _normalize_daily_context,
     _read_daily_context,
     _write_daily_context,
+    _store_daily_context_image,
     _normalize_recommendations,
     _read_recommendations,
     _write_recommendations,
@@ -253,7 +254,7 @@ TOOLS = [
     _write_tool(
         "upsert_daily_context",
         "Update project daily context",
-        "Add or replace a dated project's context entries. Entries contain only an ID, optional time, and summary.",
+        "Add or replace a dated project's text context entries. Use add_daily_context_image for image entries.",
         {
             "type": "object",
             "properties": {
@@ -277,6 +278,13 @@ TOOLS = [
             "additionalProperties": False,
         },
         {"type": "object", "properties": {"dailyContext": {"type": "object"}}, "required": ["dailyContext"], "additionalProperties": False},
+    ),
+    _write_tool(
+        "add_daily_context_image",
+        "Add daily context image",
+        "Store a user-scoped PNG, JPEG, or WebP image as daily project context. Send bounded base64 data and a concise summary.",
+        {"type": "object", "properties": {"project_id": {"type": "string", "enum": list(PROJECT_BY_ID)}, "date": {"type": "string"}, "image_data": {"type": "string", "description": "Base64 image data or a base64 data URL, maximum 5 MiB decoded."}, "summary": {"type": "string"}, "time": {"type": "string"}, "filename": {"type": "string"}}, "required": ["project_id", "date", "image_data", "summary"], "additionalProperties": False},
+        {"type": "object", "properties": {"entry": {"type": "object"}}, "required": ["entry"], "additionalProperties": False},
     ),
     _read_only_tool(
         "get_project_recommendations",
@@ -1292,6 +1300,14 @@ def _upsert_daily_context_result(email, user_id, arguments):
     }
 
 
+def _add_daily_context_image_result(email, user_id, arguments):
+    project_id = _require_nonempty(arguments.get("project_id"), "project_id")
+    if project_id not in PROJECT_BY_ID:
+        raise ValueError("unknown project")
+    entry = _store_daily_context_image(email, project_id, user_id, arguments.get("date"), arguments.get("image_data"), arguments.get("summary"), arguments.get("time"), arguments.get("filename"))
+    return {"structuredContent": {"entry": entry}, "content": [{"type": "text", "text": f"Added image context to {project_id} on {arguments.get('date')}."}]}
+
+
 def _get_recommendations_result(email, user_id, arguments):
     project_id = _require_nonempty(arguments.get("project_id"), "project_id")
     date = _require_nonempty(arguments.get("date"), "date")
@@ -1335,6 +1351,8 @@ def _call_tool(name, arguments, ctx):
         return _get_daily_context_result(email, user_id, arguments)
     if name == "upsert_daily_context":
         return _upsert_daily_context_result(email, user_id, arguments)
+    if name == "add_daily_context_image":
+        return _add_daily_context_image_result(email, user_id, arguments)
     if name == "get_project_recommendations":
         return _get_recommendations_result(email, user_id, arguments)
     if name == "upsert_project_recommendations":

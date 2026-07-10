@@ -173,9 +173,14 @@ Run `tests/test_workspace_fail_closed.py` when read-error handling or workspace 
 
 Daily project context is stored privately at `<email>/projects/<project_id>/daily-context/<YYYY-MM-DD>.json`.
 Each document contains `schemaVersion`, `userId`, `projectId`, `date`, `entries`, `createdAt`, and `updatedAt`.
-Each entry contains only `id`, optional `time`, `summary`, `createdAt`, and `updatedAt`.
-The Projects calendar shows each day's entry count and a raw JSON disclosure for each project.
-GPT accesses the same data through the authenticated MCP tools `get_daily_context` and `upsert_daily_context`.
+Text entries contain `id`, `type: "text"`, optional `time`, `summary`, `createdAt`, and `updatedAt`.
+Image entries contain `id`, `type: "image"`, optional `time`, `summary`, `imageUrl`, `contentType`, optional `filename`, `createdAt`, and `updatedAt`.
+Image binaries are stored privately at `<email>/projects/<project_id>/daily-context/<YYYY-MM-DD>/images/<image_id>.<extension>`.
+Image uploads accept PNG, JPEG, and WebP content up to 5 MiB after base64 decoding.
+Image retrieval goes through the authenticated `/api/projects/<project_id>/daily-context/<YYYY-MM-DD>/images/<image_id>` route.
+The Projects calendar shows each day's entry count, image count, and a raw JSON disclosure for each project.
+GPT accesses text context through the authenticated MCP tools `get_daily_context` and `upsert_daily_context`.
+GPT uploads image context through the authenticated MCP tool `add_daily_context_image`.
 Daily context reads and writes are scoped to the authenticated user and validated by project and date.
 
 ## Recommendation Contract
