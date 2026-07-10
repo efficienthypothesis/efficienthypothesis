@@ -6,7 +6,7 @@ os.environ.setdefault("AWS_EC2_METADATA_DISABLED", "true")
 os.environ.setdefault("FLASK_SECRET_KEY", "test")
 os.environ.setdefault("OAUTH_SIGNING_KEY", "test")
 
-from routes.mcp import TOOLS, _bulk_upsert_project_history_result, _get_global_context_result, _list_inventory_result, _upsert_daily_context_result, _upsert_global_context_result, _upsert_inventory_item_result
+from routes.mcp import TOOLS, _bulk_upsert_project_history_result, _get_global_context_result, _list_inventory_result, _upsert_daily_context_result, _upsert_global_context_result, _upsert_inventory_item_result, _upsert_recommendations_result
 from routes.projects import _default_global_context
 
 
@@ -189,6 +189,7 @@ class MCPProjectHistoryTests(unittest.TestCase):
                         {
                             "id": "rec-update",
                             "kind": "routine",
+                            "slot": "night",
                             "title": "Updated",
                             "summary": "Updated rec.",
                             "steps": [{"item": "new", "command": "new"}],
@@ -196,6 +197,7 @@ class MCPProjectHistoryTests(unittest.TestCase):
                         {
                             "id": "rec-new",
                             "kind": "routine",
+                            "slot": "morning",
                             "title": "New",
                             "summary": "New rec.",
                             "steps": [{"item": "new", "command": "new"}],
@@ -218,6 +220,72 @@ class MCPProjectHistoryTests(unittest.TestCase):
         self.assertEqual(result["counts"]["images"], 1)
         self.assertEqual(result["counts"]["researchItems"], 1)
         self.assertEqual(result["counts"]["recommendationSets"], 1)
+
+    def test_recommendation_upsert_merges_by_default(self):
+        existing_recommendations = {
+            "schemaVersion": 1,
+            "userId": "user-1",
+            "projectId": "acne",
+            "date": "2026-07-10",
+            "href": "/projects/acne/recommendations/2026-07-10",
+            "recommendations": [
+                {"id": "morning-routine", "kind": "routine", "slot": "morning", "title": "Morning", "summary": "Morning rec."},
+                {"id": "night-routine", "kind": "routine", "slot": "night", "title": "Old night", "summary": "Old night rec."},
+            ],
+            "createdAt": "old-created",
+            "updatedAt": "old-updated",
+        }
+        recommendation_files = {
+            "morning-routine": {
+                "id": "morning-routine",
+                "kind": "routine",
+                "slot": "morning",
+                "title": "Morning",
+                "summary": "Morning rec.",
+                "steps": [{"item": "cleanser", "command": "wash face"}],
+                "createdAt": "old-created",
+                "updatedAt": "old-updated",
+            },
+            "night-routine": {
+                "id": "night-routine",
+                "kind": "routine",
+                "slot": "night",
+                "title": "Old night",
+                "summary": "Old night rec.",
+                "steps": [{"item": "moisturizer", "command": "apply"}],
+                "createdAt": "old-created",
+                "updatedAt": "old-updated",
+            },
+        }
+
+        def read_recommendation_file(_email, _project_id, _user_id, _date, recommendation_id):
+            item = next(item for item in existing_recommendations["recommendations"] if item["id"] == recommendation_id)
+            return item, recommendation_files[recommendation_id]
+
+        with (
+            patch("routes.mcp._read_recommendations", return_value=existing_recommendations),
+            patch("routes.mcp._read_recommendation_file", side_effect=read_recommendation_file),
+            patch("routes.mcp._write_recommendations", side_effect=lambda _email, _project_id, recommendations: recommendations) as write_recommendations,
+        ):
+            response = _upsert_recommendations_result("user@example.com", "user-1", {
+                "project_id": "acne",
+                "date": "2026-07-10",
+                "recommendations": [{
+                    "id": "night-routine",
+                    "kind": "routine",
+                    "slot": "night",
+                    "title": "Updated night",
+                    "summary": "Updated night rec.",
+                    "steps": [{"item": "retin A", "command": "apply only to acne spots"}],
+                }],
+            })
+
+        written = write_recommendations.call_args.args[2]
+        self.assertEqual([item["id"] for item in written["recommendations"]], ["morning-routine", "night-routine"])
+        self.assertEqual(written["createdAt"], "old-created")
+        self.assertEqual(written["recommendations"][0]["slot"], "morning")
+        self.assertEqual(written["recommendations"][1]["title"], "Updated night")
+        self.assertIn("merge mode", response["content"][0]["text"])
 
 
 if __name__ == "__main__":

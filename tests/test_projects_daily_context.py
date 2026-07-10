@@ -248,6 +248,7 @@ class DailyContextTests(unittest.TestCase):
                 json={"recommendations": [{
                     "id": "rec-1",
                     "kind": "routine",
+                    "slot": "night",
                     "title": "Evening routine",
                     "summary": "Use a gentle evening routine.",
                     "steps": [
@@ -261,6 +262,7 @@ class DailyContextTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         item = response.get_json()["recommendations"]["recommendations"][0]
         self.assertEqual(item["kind"], "routine")
+        self.assertEqual(item["slot"], "night")
         self.assertEqual(item["title"], "Evening routine")
         self.assertEqual(item["href"], "/projects/fitness/recommendations/2026-07-10/rec-1")
 
@@ -270,6 +272,7 @@ class DailyContextTests(unittest.TestCase):
             json={"recommendations": [{
                 "id": "rec-1",
                 "kind": "workout",
+                "slot": "anytime",
                 "title": "Workout",
                 "summary": "Do a workout.",
                 "steps": [{"item": "run", "command": "20 minutes"}],
@@ -284,6 +287,7 @@ class DailyContextTests(unittest.TestCase):
             json={"recommendations": [{
                 "id": "rec-1",
                 "kind": "routine",
+                "slot": "morning",
                 "title": "Morning routine",
                 "summary": "Use a gentle routine.",
             }]},
@@ -298,6 +302,7 @@ class DailyContextTests(unittest.TestCase):
                 json={"recommendations": [{
                     "id": "rec-1",
                     "kind": "routine",
+                    "slot": "morning",
                     "title": "Morning routine",
                     "summary": "Use a gentle routine.",
                     "steps": [

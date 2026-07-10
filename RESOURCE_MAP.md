@@ -226,11 +226,17 @@ Archived items are omitted from default inventory lists and recommendation conte
 
 Project recommendation manifests are stored privately at `<email>/projects/<project_id>/recommendations/<YYYY-MM-DD>/manifest.json`.
 Individual recommendation files are stored privately at `<email>/projects/<project_id>/recommendations/<YYYY-MM-DD>/files/<recommendation_id>.json`.
-Each manifest stores the project/date page `href` and recommendation metadata including `id`, `kind`, `title`, `summary`, timestamps, `contentType`, and a backend-generated user-scoped `href`.
-Each recommendation file stores `id`, `projectId`, `date`, `kind`, `title`, `summary`, `steps`, `createdAt`, and `updatedAt`.
+Each manifest stores the project/date page `href` and recommendation metadata including `id`, `kind`, `slot`, `title`, `summary`, timestamps, `contentType`, and a backend-generated user-scoped `href`.
+Each recommendation file stores `id`, `projectId`, `date`, `kind`, `slot`, `title`, `summary`, `steps`, `createdAt`, and `updatedAt`.
 The only currently enabled recommendation kind is `routine`; `workout` is temporarily disabled.
 Routine `steps` are ordered objects with `item`, `command`, and optional `clarification`.
+Routine `slot` values are `morning`, `night`, and `anytime`.
+Each recommendation should describe one project, one calendar date, and one routine slot.
+Multi-day plans must be split across separate dated recommendation sets, and same-day skincare routines should usually use separate morning and night items.
+The `summary` field should stay short; the actual routine belongs in ordered `steps`.
 GPT writes recommendations through `upsert_project_recommendations` and reads them through `get_project_recommendations`.
+`upsert_project_recommendations` defaults to merge mode so a new morning or night item does not hide existing items for the same date.
+Use `write_mode: "replace"` only when intentionally replacing the whole date manifest.
 GPT should use `get_recommendation_context` before generating recommendations because it returns active research metadata, non-archived project inventory, and up to 31 days of prior recommendations.
 GPT can bulk import dated recommendation sets through `bulk_upsert_project_history` with explicit `merge` or `replace` write mode.
 The weekly Projects calendar always renders each project/date recommendation state as a link to the authenticated recommendation page.

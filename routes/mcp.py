@@ -21,6 +21,7 @@ from routes.projects import (
     _read_project_global_context,
     _write_project_global_context,
     RECOMMENDATION_MAX_ITEMS,
+    RECOMMENDATION_MAX_STEPS,
     _normalize_daily_context,
     _read_daily_context,
     _write_daily_context,
@@ -334,8 +335,8 @@ TOOLS = [
     _write_tool(
         "upsert_project_recommendations",
         "Store project recommendations",
-        "Store dated routine recommendation files. Workout is temporarily disabled. Each routine must be a sequence of item/command steps.",
-        {"type": "object", "properties": {"project_id": {"type": "string", "enum": list(PROJECT_BY_ID)}, "date": {"type": "string"}, "recommendations": {"type": "array", "items": {"type": "object", "properties": {"id": {"type": "string"}, "kind": {"type": "string", "enum": ["routine"]}, "title": {"type": "string"}, "summary": {"type": "string"}, "steps": {"type": "array", "items": {"type": "object", "properties": {"item": {"type": "string"}, "command": {"type": "string"}, "clarification": {"type": "string"}}, "required": ["item", "command"], "additionalProperties": False}}}, "required": ["id", "kind", "title", "summary", "steps"], "additionalProperties": False}}}, "required": ["project_id", "date", "recommendations"], "additionalProperties": False},
+        "Store dated routine recommendation files. Default write_mode is merge, so one call adds or updates items for that date. Do not store a seven-day plan in one recommendation. For skincare routines, create separate dated recommendation sets and separate morning and night routine items for each date. Each routine must be a sequence of item/command steps, not prose in the summary.",
+        {"type": "object", "properties": {"project_id": {"type": "string", "enum": list(PROJECT_BY_ID)}, "date": {"type": "string", "description": "One calendar date in YYYY-MM-DD form. To store a seven-day plan, call this tool once per date."}, "write_mode": {"type": "string", "enum": ["merge", "replace"], "description": "Defaults to merge. merge updates matching IDs and preserves other visible recommendations for this date. replace overwrites the date manifest."}, "recommendations": {"type": "array", "items": {"type": "object", "properties": {"id": {"type": "string", "description": "Stable item ID for this date, for example morning-routine or night-routine."}, "kind": {"type": "string", "enum": ["routine"]}, "slot": {"type": "string", "enum": ["morning", "night", "anytime"], "description": "Routine slot. Use morning and night for skincare routines."}, "title": {"type": "string"}, "summary": {"type": "string", "description": "Short summary only. Do not put the full routine here; put ordered actions in steps."}, "steps": {"type": "array", "maxItems": RECOMMENDATION_MAX_STEPS, "items": {"type": "object", "properties": {"item": {"type": "string"}, "command": {"type": "string"}, "clarification": {"type": "string"}}, "required": ["item", "command"], "additionalProperties": False}}}, "required": ["id", "kind", "slot", "title", "summary", "steps"], "additionalProperties": False}}}, "required": ["project_id", "date", "recommendations"], "additionalProperties": False},
         {"type": "object", "properties": {"recommendations": {"type": "object"}}, "required": ["recommendations"], "additionalProperties": False},
     ),
     _read_only_tool(
@@ -448,7 +449,35 @@ TOOLS = [
                         "properties": {
                             "project_id": {"type": "string", "enum": list(PROJECT_BY_ID)},
                             "date": {"type": "string"},
-                            "recommendations": {"type": "array", "items": {"type": "object"}},
+                            "recommendations": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "id": {"type": "string"},
+                                        "kind": {"type": "string", "enum": ["routine"]},
+                                        "slot": {"type": "string", "enum": ["morning", "night", "anytime"]},
+                                        "title": {"type": "string"},
+                                        "summary": {"type": "string"},
+                                        "steps": {
+                                            "type": "array",
+                                            "maxItems": RECOMMENDATION_MAX_STEPS,
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "item": {"type": "string"},
+                                                    "command": {"type": "string"},
+                                                    "clarification": {"type": "string"},
+                                                },
+                                                "required": ["item", "command"],
+                                                "additionalProperties": False,
+                                            },
+                                        },
+                                    },
+                                    "required": ["id", "kind", "slot", "title", "summary", "steps"],
+                                    "additionalProperties": False,
+                                },
+                            },
                         },
                         "required": ["project_id", "date", "recommendations"],
                         "additionalProperties": False,
@@ -1516,9 +1545,18 @@ def _upsert_recommendations_result(email, user_id, arguments):
     date = _require_nonempty(arguments.get("date"), "date")
     if project_id not in PROJECT_BY_ID:
         raise ValueError("unknown project")
+    write_mode = arguments.get("write_mode", "merge")
+    if write_mode not in {"merge", "replace"}:
+        raise ValueError("write_mode must be merge or replace")
     recommendations = _normalize_recommendations({"recommendations": arguments.get("recommendations")}, project_id, user_id, date, strict=True)
+    if write_mode == "merge":
+        existing = _read_recommendations(email, project_id, user_id, date)
+        existing_items = _recommendation_full_items(email, project_id, user_id, date, existing)
+        recommendations["recommendations"] = _merge_by_id(existing_items, recommendations["recommendations"], RECOMMENDATION_MAX_ITEMS, "recommendations")
+        recommendations["createdAt"] = existing.get("createdAt") or recommendations["createdAt"]
+        recommendations = _normalize_recommendations(recommendations, project_id, user_id, date, strict=True)
     recommendations = _write_recommendations(email, project_id, recommendations)
-    return {"structuredContent": {"recommendations": recommendations}, "content": [{"type": "text", "text": f"Updated recommendations for {project_id} on {date}."}]}
+    return {"structuredContent": {"recommendations": recommendations}, "content": [{"type": "text", "text": f"Updated recommendations for {project_id} on {date} using {write_mode} mode."}]}
 
 
 def _list_daily_context_metadata_result(email, user_id, arguments):
@@ -1611,6 +1649,21 @@ def _merge_by_id(existing, incoming, max_items, label):
     return merged
 
 
+def _legacy_recommendation_slot(item):
+    text = f"{item.get('id', '')} {item.get('title', '')}".lower()
+    if "morning" in text or "am" in text:
+        return "morning"
+    if "night" in text or "evening" in text or "pm" in text:
+        return "night"
+    return "anytime"
+
+
+def _recommendation_with_merge_slot(item):
+    if item.get("slot") in {"morning", "night", "anytime"}:
+        return item
+    return {**item, "slot": _legacy_recommendation_slot(item)}
+
+
 def _bulk_upsert_daily_context(email, user_id, write_mode, item):
     project_id = _require_project_id(item.get("project_id"))
     date = _require_nonempty(item.get("date"), "date")
@@ -1628,7 +1681,7 @@ def _recommendation_full_items(email, project_id, user_id, date, recommendations
     for item in recommendations.get("recommendations", []):
         _, file_document = _read_recommendation_file(email, project_id, user_id, date, item["id"])
         if file_document:
-            full_items.append(file_document)
+            full_items.append(_recommendation_with_merge_slot(file_document))
     return full_items
 
 

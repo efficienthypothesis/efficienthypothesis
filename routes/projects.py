@@ -31,6 +31,7 @@ RECOMMENDATION_VERSION = 1
 RECOMMENDATION_MAX_ITEMS = 50
 RECOMMENDATION_MAX_STEPS = 100
 RECOMMENDATION_KINDS = {"routine"}
+RECOMMENDATION_SLOTS = {"morning", "night", "anytime"}
 RESEARCH_VERSION = 1
 RESEARCH_MAX_ITEMS = 200
 RESEARCH_MAX_STATEMENTS = 50
@@ -528,6 +529,16 @@ def _normalize_recommendation_kind(value, project_id, strict=False):
     return _default_recommendation_kind(project_id)
 
 
+def _normalize_recommendation_slot(value, strict=False):
+    if isinstance(value, str):
+        slot = value.strip().lower()
+        if slot in RECOMMENDATION_SLOTS:
+            return slot
+    if strict:
+        raise ValueError("recommendation slot must be morning, night, or anytime")
+    return None
+
+
 def _normalize_routine_steps(value, fallback_text=None, strict=False):
     if not isinstance(value, list):
         if strict:
@@ -574,9 +585,10 @@ def _normalize_recommendation_file(value, project_id, date, recommendation_id, d
         title = summary if isinstance(summary, str) else recommendation_id
     if not isinstance(summary, str) or not summary.strip() or len(summary) > 2000:
         raise ValueError("recommendation summary is invalid")
+    slot = _normalize_recommendation_slot(value.get("slot", value.get("routineSlot", default.get("slot"))), strict=strict)
     steps = _normalize_routine_steps(value.get("steps", value.get("routine")), value.get("body", value.get("content", default.get("body", summary))), strict=strict)
     now = _now_iso()
-    return {
+    document = {
         "schemaVersion": RECOMMENDATION_VERSION,
         "id": recommendation_id,
         "projectId": project_id,
@@ -588,6 +600,9 @@ def _normalize_recommendation_file(value, project_id, date, recommendation_id, d
         "createdAt": value.get("createdAt") or default.get("createdAt") or now,
         "updatedAt": value.get("updatedAt") or default.get("updatedAt") or now,
     }
+    if slot:
+        document["slot"] = slot
+    return document
 
 
 def _normalize_recommendations(value, project_id, user_id, date, strict=False):
@@ -612,6 +627,7 @@ def _normalize_recommendations(value, project_id, user_id, date, strict=False):
         item_id = item_id.strip()
         seen.add(item_id)
         kind = _normalize_recommendation_kind(item.get("kind"), project_id, strict=strict)
+        slot = _normalize_recommendation_slot(item.get("slot", item.get("routineSlot")), strict=strict)
         title = item.get("title") if isinstance(item.get("title"), str) and item["title"].strip() else summary
         normalized_item = {
             "id": item_id,
@@ -623,6 +639,8 @@ def _normalize_recommendations(value, project_id, user_id, date, strict=False):
             "createdAt": item.get("createdAt") or default["createdAt"],
             "updatedAt": item.get("updatedAt") or default["updatedAt"],
         }
+        if slot:
+            normalized_item["slot"] = slot
         if strict or "steps" in item or "routine" in item or "body" in item or "content" in item:
             file_document = _normalize_recommendation_file(item, project_id, date, item_id, normalized_item, strict=strict)
             normalized_item["steps"] = file_document["steps"]
@@ -697,6 +715,7 @@ def _write_recommendations(email, project_id, recommendations):
             "contentType": "application/json",
             "createdAt": file_document["createdAt"],
             "updatedAt": file_document["updatedAt"],
+            **({"slot": file_document["slot"]} if file_document.get("slot") else {}),
         })
     manifest = {**recommendations, "href": f"/projects/{project_id}/recommendations/{recommendations['date']}", "recommendations": manifest_items}
     for file_document in files:

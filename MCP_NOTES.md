@@ -141,6 +141,8 @@ and retired timetable documents before the cleaned workspace is saved again.
 - `bulk_upsert_project_history` requires `write_mode` set to `merge` or `replace`.
 - In `merge` mode, bulk daily context and recommendation sets update matching IDs and append new IDs.
 - In `replace` mode, each submitted project/date daily context or recommendation set replaces that date's existing set.
+- `upsert_project_recommendations` defaults to merge mode.
+- Use `write_mode: "replace"` only when intentionally replacing every visible recommendation for that project/date.
 - Bulk image context always appends a new image entry because images receive backend-generated IDs.
 - Bulk imports return per-section counts and partial failures instead of failing the whole batch when one submitted item is invalid.
 
@@ -167,7 +169,13 @@ Archived inventory is hidden from default lists and recommendation context.
 
 Recommendations are dated by project and calendar date.
 The only enabled recommendation kind is currently `routine`.
+Each recommendation must represent one project, one calendar date, and one routine slot.
+Routine `slot` must be `morning`, `night`, or `anytime`.
+Skincare plans that cover several days must be split into separate dated recommendation sets.
+Skincare plans for the same day should usually be split into separate `morning` and `night` routine recommendations.
 Routine recommendations must include ordered `steps`, each with `item`, `command`, and optional `clarification`.
+Do not put the full routine in `summary`.
+Use `summary` only for a short human-readable overview.
 GPT should call `get_recommendation_context` before generating a new recommendation because it returns active research metadata, non-archived project inventory, and up to 31 days of prior recommendations.
 
 ## Field Guidance
