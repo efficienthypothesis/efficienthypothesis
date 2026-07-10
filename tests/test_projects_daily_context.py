@@ -218,7 +218,7 @@ class DailyContextTests(unittest.TestCase):
         ):
             calendar = _project_calendar_for_user("user@example.com", "user-1", datetime.timezone.utc, "2026-07-07")
 
-        self.assertEqual(calendar["navigation"]["previous_start"], "2026-06-28")
+        self.assertEqual(calendar["navigation"]["previous_start"], "2026-07-06")
 
     def test_calendar_previous_navigation_stops_without_earlier_files(self):
         empty_context = {"entries": []}
@@ -231,7 +231,7 @@ class DailyContextTests(unittest.TestCase):
             patch("routes.projects._read_recommendations", side_effect=lambda _email, project_id, _user_id, date: {"href": f"/projects/{project_id}/recommendations/{date}", "recommendations": []}),
             patch("routes.projects._project_activity_dates_for_user", return_value=[datetime.date(2026, 7, 1)]),
         ):
-            calendar = _project_calendar_for_user("user@example.com", "user-1", datetime.timezone.utc, "2026-06-28")
+            calendar = _project_calendar_for_user("user@example.com", "user-1", datetime.timezone.utc, "2026-06-25")
 
         self.assertIsNone(calendar["navigation"]["previous_start"])
 
@@ -245,8 +245,21 @@ class DailyContextTests(unittest.TestCase):
             response = self.client.get("/", headers={"Host": "projects.efficienthypothesis.com"})
 
         self.assertEqual(response.status_code, 200)
-        self.assertIn(b'href="/?start=2026-06-28"', response.data)
+        self.assertIn(b'data-start="2026-06-28"', response.data)
         self.assertIn(b"No later project days with files", response.data)
+
+    def test_project_calendar_api_returns_calendar_json(self):
+        with self.client.session_transaction(base_url="https://projects.efficienthypothesis.com") as session:
+            session["user"] = {"id": "user-1", "email": "user@example.com"}
+        with patch("routes.pages._project_calendar_for_user", return_value={
+            "days": [],
+            "navigation": {"previous_start": "2026-06-28", "next_start": None, "current_start": "2026-07-07"},
+        }) as calendar_for_user:
+            response = self.client.get("/api/projects/calendar?start=2026-07-07", headers={"Host": "projects.efficienthypothesis.com"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["calendar"]["navigation"]["previous_start"], "2026-06-28")
+        calendar_for_user.assert_called_once()
 
     def test_daily_context_rejects_invalid_date(self):
         response = self.client.get("/api/projects/acne/daily-context/20260710")

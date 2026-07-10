@@ -1091,23 +1091,20 @@ def _project_calendar_start(timezone, start_date=None):
     return _project_calendar_default_start(timezone)
 
 
+def _window_contains_activity(activity_dates, start):
+    end = start + datetime.timedelta(days=PROJECT_CALENDAR_WINDOW_DAYS - 1)
+    return any(start <= activity_date <= end for activity_date in activity_dates)
+
+
 def _project_calendar_navigation(activity_dates, current_start, default_start):
-    window_end = current_start + datetime.timedelta(days=PROJECT_CALENDAR_WINDOW_DAYS - 1)
-    earlier_dates = [date for date in activity_dates if date < current_start]
-    later_dates = [date for date in activity_dates if date > window_end]
+    previous_candidate = current_start - datetime.timedelta(days=1)
+    next_candidate = current_start + datetime.timedelta(days=1)
     previous_start = None
     next_start = None
-    if earlier_dates:
-        previous_start = max(earlier_dates) - datetime.timedelta(days=PROJECT_CALENDAR_CENTER_OFFSET)
-    if current_start < default_start:
-        if later_dates:
-            next_start = min(later_dates) - datetime.timedelta(days=PROJECT_CALENDAR_CENTER_OFFSET)
-            if next_start <= current_start:
-                next_start = current_start + datetime.timedelta(days=PROJECT_CALENDAR_WINDOW_DAYS)
-            if next_start > default_start:
-                next_start = default_start
-        else:
-            next_start = default_start
+    if _window_contains_activity(activity_dates, previous_candidate):
+        previous_start = previous_candidate
+    if next_candidate <= default_start and _window_contains_activity(activity_dates, next_candidate):
+        next_start = next_candidate
     return {
         "previous_start": previous_start.isoformat() if previous_start else None,
         "next_start": next_start.isoformat() if next_start else None,

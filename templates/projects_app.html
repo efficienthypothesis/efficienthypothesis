@@ -15,16 +15,22 @@
 {% endblock %}
 
 {% block content %}
-  <section class="projects-board" aria-label="Projects calendar">
-    {% if project_calendar_nav.previous_start %}
-      <a class="projects-nav-arrow" href="{{ url_for('pages.home', start=project_calendar_nav.previous_start) }}" aria-label="Previous project days with files">
-        <span class="material-symbols-outlined" aria-hidden="true">chevron_left</span>
-      </a>
-    {% else %}
-      <span class="projects-nav-arrow disabled" role="button" aria-disabled="true" aria-label="No earlier project days with files">
-        <span class="material-symbols-outlined" aria-hidden="true">chevron_left</span>
-      </span>
-    {% endif %}
+  <section class="projects-board" aria-label="Projects calendar" data-calendar-endpoint="{{ url_for('pages.api_projects_calendar') }}">
+    <button
+      class="projects-nav-arrow projects-nav-previous{% if not project_calendar_nav.previous_start %} disabled{% endif %}"
+      type="button"
+      data-direction="previous"
+      {% if project_calendar_nav.previous_start %}
+        data-start="{{ project_calendar_nav.previous_start }}"
+        aria-label="Previous project day with files"
+      {% else %}
+        disabled
+        aria-disabled="true"
+        aria-label="No earlier project days with files"
+      {% endif %}
+    >
+      <span class="material-symbols-outlined" aria-hidden="true">chevron_left</span>
+    </button>
 
     <div class="projects-calendar" aria-label="Project days">
       {% for day in project_days %}
@@ -64,14 +70,26 @@
       {% endfor %}
     </div>
 
-    {% if project_calendar_nav.next_start %}
-      <a class="projects-nav-arrow" href="{{ url_for('pages.home', start=project_calendar_nav.next_start) }}" aria-label="Next project days with files">
-        <span class="material-symbols-outlined" aria-hidden="true">chevron_right</span>
-      </a>
-    {% else %}
-      <span class="projects-nav-arrow disabled" role="button" aria-disabled="true" aria-label="No later project days with files">
-        <span class="material-symbols-outlined" aria-hidden="true">chevron_right</span>
-      </span>
-    {% endif %}
+    <button
+      class="projects-nav-arrow projects-nav-next{% if not project_calendar_nav.next_start %} disabled{% endif %}"
+      type="button"
+      data-direction="next"
+      {% if project_calendar_nav.next_start %}
+        data-start="{{ project_calendar_nav.next_start }}"
+        aria-label="Next project day with files"
+      {% else %}
+        disabled
+        aria-disabled="true"
+        aria-label="No later project days with files"
+      {% endif %}
+    >
+      <span class="material-symbols-outlined" aria-hidden="true">chevron_right</span>
+    </button>
   </section>
+  <script id="projects-calendar-data" type="application/json">{{ {"days": project_days, "navigation": project_calendar_nav}|tojson }}</script>
+{% endblock %}
+
+{% block scripts %}
+  {{ super() }}
+  <script src="{{ url_for('static', filename='js/projects_calendar.js') }}" defer></script>
 {% endblock %}

@@ -164,6 +164,23 @@ def projects_app():
     return redirect(_projects_app_url("/"), code=302)
 
 
+@pages_bp.route('/api/projects/calendar')
+def api_projects_calendar():
+    ctx, err = _require_auth()
+    if err:
+        return err
+    try:
+        calendar = _project_calendar_for_user(
+            ctx["email"],
+            ctx.get("user_id") or ctx["email"],
+            _project_timezone(session.get("user") or {"id": ctx.get("user_id"), "email": ctx["email"]}),
+            request.args.get("start"),
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify({"calendar": calendar})
+
+
 @pages_bp.route('/apps')
 def app_menu():
     if "user" not in session:

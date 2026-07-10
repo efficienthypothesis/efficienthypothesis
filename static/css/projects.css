@@ -356,7 +356,8 @@ body.projects-page main {
   border-left: 1px solid #d8dee8;
 }
 
-.projects-nav-arrow.disabled {
+.projects-nav-arrow.disabled,
+.projects-nav-arrow:disabled {
   opacity: 1;
   color: #94a3b8;
   cursor: default;

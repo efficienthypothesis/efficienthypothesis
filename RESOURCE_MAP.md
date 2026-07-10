@@ -141,8 +141,9 @@ Image binaries are stored privately at `<email>/projects/<project_id>/daily-cont
 Image uploads accept PNG, JPEG, and WebP content up to 5 MiB after base64 decoding.
 Image retrieval goes through the authenticated `/api/projects/<project_id>/daily-context/<YYYY-MM-DD>/images/<image_id>` route.
 The Projects calendar shows each day's entry count, image count, and a raw JSON disclosure for each project.
-The Projects calendar can navigate backward only to windows containing daily context entries, daily context images, or recommendations.
-When no earlier project files exist, the left navigation control is disabled.
+The Projects calendar loads its initial seven-day window from the server-rendered page, then uses `/api/projects/calendar?start=YYYY-MM-DD` for client-side one-day navigation without full page reloads.
+The browser caches fetched calendar windows in memory and prefetches adjacent available windows after each render.
+The left and right navigation controls are enabled only when the next one-day-shifted seven-day window contains daily context entries, daily context images, or recommendations.
 GPT accesses text context through the authenticated MCP tools `get_daily_context` and `upsert_daily_context`.
 GPT uploads image context through the authenticated MCP tool `add_daily_context_image`.
 GPT can discover available dated context through the authenticated MCP tool `list_daily_context_metadata`.
