@@ -57,10 +57,6 @@
                     <div class="projects-context-empty">No entries</div>
                   {% endif %}
                 </div>
-                <details class="projects-context-raw">
-                  <summary>View JSON</summary>
-                  <pre>{{ project.raw_json }}</pre>
-                </details>
                 <div class="projects-recommendations-label">Recommendations</div>
                 <a class="projects-recommendation" href="{{ project.recommendations_href }}">
                   {% if project.recommendations_count == 0 %}
@@ -71,10 +67,6 @@
                     {{ project.recommendations_count }} recommendations
                   {% endif %}
                 </a>
-                <details class="projects-context-raw projects-recommendations-raw">
-                  <summary>View recommendation JSON</summary>
-                  <pre>{{ project.recommendations_raw_json }}</pre>
-                </details>
               </article>
             {% endfor %}
           </div>

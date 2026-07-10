@@ -1181,11 +1181,8 @@ def _project_calendar_day_for_user(email, user_id, timezone, date):
                 }
                 for entry in context["entries"]
             ],
-            "raw_json": json.dumps(context, indent=2),
             "recommendations_href": recommendations["href"],
             "recommendations_count": len(recommendations["recommendations"]),
-            "recommendations": recommendations["recommendations"],
-            "recommendations_raw_json": json.dumps(recommendations, indent=2),
         })
     return {
         "weekday": day.strftime("%A"),

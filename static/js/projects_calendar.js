@@ -78,17 +78,6 @@
     return `${count} recommendations`;
   }
 
-  function renderRawDetails(summaryText, jsonText, className) {
-    const details = document.createElement("details");
-    details.className = className || "projects-context-raw";
-    const summary = document.createElement("summary");
-    summary.textContent = summaryText;
-    const pre = document.createElement("pre");
-    pre.textContent = jsonText || "{}";
-    details.append(summary, pre);
-    return details;
-  }
-
   function renderProject(project) {
     const article = document.createElement("article");
     article.className = "projects-context-summary";
@@ -110,7 +99,6 @@
       entries.appendChild(makeText("div", "projects-context-empty", "No entries"));
     }
     article.appendChild(entries);
-    article.appendChild(renderRawDetails("View JSON", project.raw_json, "projects-context-raw"));
     article.appendChild(makeText("div", "projects-recommendations-label", "Recommendations"));
 
     const recommendationLink = document.createElement("a");
@@ -118,12 +106,6 @@
     recommendationLink.href = project.recommendations_href || "#";
     recommendationLink.textContent = recommendationLabel(project.recommendations_count || 0);
     article.appendChild(recommendationLink);
-    article.appendChild(renderRawDetails(
-      "View recommendation JSON",
-      project.recommendations_raw_json,
-      "projects-context-raw projects-recommendations-raw",
-    ));
-
     return article;
   }
 

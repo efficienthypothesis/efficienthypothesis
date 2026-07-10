@@ -85,7 +85,7 @@ The backend owns:
 
 Daily project context is stored as private, user-scoped S3 JSON documents under each project's dated `daily-context/` prefix.
 DynamoDB stores per-project daily context metadata keyed by user/project and date so GPT can discover which dated files exist before reading a specific S3-backed file.
-The Projects calendar retrieves the seven-day window through the backend and shows each entry as a named link with raw JSON disclosures.
+The Projects calendar retrieves the seven-day window through the backend and shows each entry as a named link.
 Each authenticated entry link opens a focused detail page containing the entry summary and its image when applicable.
 GPT reads and updates the same documents through authenticated MCP tools, keeping AWS access on the backend.
 
