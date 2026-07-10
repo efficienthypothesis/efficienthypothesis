@@ -14,7 +14,7 @@ from flask import (
 )
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from config import s3, PRODUCTIVITY_BUCKET, GOOGLE_CLIENT_ID, _require_auth, user_table
-from routes.projects import _project_calendar_days_for_user
+from routes.projects import _project_calendar_for_user
 
 pages_bp = Blueprint('pages', __name__)
 
@@ -125,14 +125,20 @@ def home():
             return redirect(
                 _external_url(PRIMARY_HOST, f"/login?{urlencode({'next': _projects_app_url('/')})}")
             )
-        return render_template(
-            "projects_app.html",
-            user=session["user"],
-            project_days=_project_calendar_days_for_user(
+        try:
+            calendar = _project_calendar_for_user(
                 session["user"]["email"],
                 session["user"].get("id") or session["user"]["email"],
                 _project_timezone(session["user"]),
-            ),
+                request.args.get("start"),
+            )
+        except ValueError:
+            return redirect(_projects_app_url("/"), code=302)
+        return render_template(
+            "projects_app.html",
+            user=session["user"],
+            project_days=calendar["days"],
+            project_calendar_nav=calendar["navigation"],
         )
     return render_template('index.html')
 

@@ -16,9 +16,15 @@
 
 {% block content %}
   <section class="projects-board" aria-label="Projects calendar">
-    <button class="projects-nav-arrow" type="button" aria-label="Previous days" disabled>
-      <span class="material-symbols-outlined" aria-hidden="true">chevron_left</span>
-    </button>
+    {% if project_calendar_nav.previous_start %}
+      <a class="projects-nav-arrow" href="{{ url_for('pages.home', start=project_calendar_nav.previous_start) }}" aria-label="Previous project days with files">
+        <span class="material-symbols-outlined" aria-hidden="true">chevron_left</span>
+      </a>
+    {% else %}
+      <span class="projects-nav-arrow disabled" role="button" aria-disabled="true" aria-label="No earlier project days with files">
+        <span class="material-symbols-outlined" aria-hidden="true">chevron_left</span>
+      </span>
+    {% endif %}
 
     <div class="projects-calendar" aria-label="Project days">
       {% for day in project_days %}
@@ -58,8 +64,14 @@
       {% endfor %}
     </div>
 
-    <button class="projects-nav-arrow" type="button" aria-label="Next days" disabled>
-      <span class="material-symbols-outlined" aria-hidden="true">chevron_right</span>
-    </button>
+    {% if project_calendar_nav.next_start %}
+      <a class="projects-nav-arrow" href="{{ url_for('pages.home', start=project_calendar_nav.next_start) }}" aria-label="Next project days with files">
+        <span class="material-symbols-outlined" aria-hidden="true">chevron_right</span>
+      </a>
+    {% else %}
+      <span class="projects-nav-arrow disabled" role="button" aria-disabled="true" aria-label="No later project days with files">
+        <span class="material-symbols-outlined" aria-hidden="true">chevron_right</span>
+      </span>
+    {% endif %}
   </section>
 {% endblock %}

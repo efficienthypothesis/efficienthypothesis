@@ -32,6 +32,8 @@ RECOMMENDATION_MAX_ITEMS = 50
 RECOMMENDATION_MAX_STEPS = 100
 RECOMMENDATION_KINDS = {"routine"}
 RECOMMENDATION_SLOTS = {"morning", "night", "anytime"}
+PROJECT_CALENDAR_WINDOW_DAYS = 7
+PROJECT_CALENDAR_CENTER_OFFSET = 3
 RESEARCH_VERSION = 1
 RESEARCH_MAX_ITEMS = 200
 RESEARCH_MAX_STATEMENTS = 50
@@ -1027,11 +1029,113 @@ def _read_recommendation_context(email, project_id, user_id, date):
     }
 
 
-def _project_calendar_days_for_user(email, user_id, timezone):
+def _positive_count(value):
+    try:
+        return int(value) > 0
+    except (TypeError, ValueError):
+        return False
+
+
+def _safe_iso_date(value):
+    try:
+        return datetime.date.fromisoformat(_validate_daily_date(value))
+    except ValueError:
+        return None
+
+
+def _recommendation_key_date(key, project_id):
+    manifest_suffix = "/manifest.json"
+    if key.endswith(manifest_suffix):
+        parts = key.split("/")
+        if len(parts) >= 5 and parts[-3] == "recommendations":
+            return _safe_iso_date(parts[-2])
+    legacy_match = re.search(rf"/projects/{re.escape(project_id)}/recommendations/(\d{{4}}-\d{{2}}-\d{{2}})\.json$", key)
+    if legacy_match:
+        return _safe_iso_date(legacy_match.group(1))
+    return None
+
+
+def _recommendation_key_has_items(key, project_id, user_id, date):
+    try:
+        obj = s3.get_object(Bucket=PRODUCTIVITY_BUCKET, Key=key)
+        with obj["Body"] as body:
+            raw = json.loads(body.read().decode("utf-8"))
+        return bool(_normalize_recommendations(raw, project_id, user_id, date.isoformat()).get("recommendations"))
+    except ClientError as exc:
+        code = str(exc.response.get("Error", {}).get("Code", ""))
+        if code in {"NoSuchKey", "404", "NotFound"}:
+            return False
+        raise
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
+        return False
+
+
+def _recommendation_activity_dates(email, project_id, user_id):
+    prefix = f"{email}/projects/{project_id}/recommendations/"
+    paginator = s3.get_paginator("list_objects_v2")
+    dates = set()
+    for page in paginator.paginate(Bucket=PRODUCTIVITY_BUCKET, Prefix=prefix):
+        for item in page.get("Contents", []):
+            key = item.get("Key", "")
+            date = _recommendation_key_date(key, project_id)
+            if date and _recommendation_key_has_items(key, project_id, user_id, date):
+                dates.add(date)
+    return dates
+
+
+def _project_activity_dates_for_user(email, user_id):
+    dates = set()
+    for project in PROJECTS:
+        for item in _query_daily_context_metadata(email, user_id, project["id"]):
+            if _positive_count(item.get("entryCount")) or _positive_count(item.get("imageCount")):
+                date = _safe_iso_date(item.get("date"))
+                if date:
+                    dates.add(date)
+        dates.update(_recommendation_activity_dates(email, project["id"], user_id))
+    return sorted(dates)
+
+
+def _project_calendar_default_start(timezone):
     today = datetime.datetime.now(timezone).date()
+    return today - datetime.timedelta(days=PROJECT_CALENDAR_CENTER_OFFSET)
+
+
+def _project_calendar_start(timezone, start_date=None):
+    if start_date:
+        return datetime.date.fromisoformat(_validate_daily_date(start_date))
+    return _project_calendar_default_start(timezone)
+
+
+def _project_calendar_navigation(activity_dates, current_start, default_start):
+    window_end = current_start + datetime.timedelta(days=PROJECT_CALENDAR_WINDOW_DAYS - 1)
+    earlier_dates = [date for date in activity_dates if date < current_start]
+    later_dates = [date for date in activity_dates if date > window_end]
+    previous_start = None
+    next_start = None
+    if earlier_dates:
+        previous_start = max(earlier_dates) - datetime.timedelta(days=PROJECT_CALENDAR_CENTER_OFFSET)
+    if current_start < default_start:
+        if later_dates:
+            next_start = min(later_dates) - datetime.timedelta(days=PROJECT_CALENDAR_CENTER_OFFSET)
+            if next_start <= current_start:
+                next_start = current_start + datetime.timedelta(days=PROJECT_CALENDAR_WINDOW_DAYS)
+            if next_start > default_start:
+                next_start = default_start
+        else:
+            next_start = default_start
+    return {
+        "previous_start": previous_start.isoformat() if previous_start else None,
+        "next_start": next_start.isoformat() if next_start else None,
+        "current_start": current_start.isoformat(),
+    }
+
+
+def _project_calendar_for_user(email, user_id, timezone, start_date=None):
+    today = datetime.datetime.now(timezone).date()
+    start = _project_calendar_start(timezone, start_date)
     days = []
-    for offset in range(-3, 4):
-        day = today + datetime.timedelta(days=offset)
+    for offset in range(PROJECT_CALENDAR_WINDOW_DAYS):
+        day = start + datetime.timedelta(days=offset)
         date = day.isoformat()
         projects = []
         for project in PROJECTS:
@@ -1052,10 +1156,18 @@ def _project_calendar_days_for_user(email, user_id, timezone):
             "weekday": day.strftime("%A"),
             "date": f"{day.day}/{day.month}",
             "iso_date": date,
-            "is_today": offset == 0,
+            "is_today": day == today,
             "projects": projects,
         })
-    return days
+    activity_dates = _project_activity_dates_for_user(email, user_id)
+    return {
+        "days": days,
+        "navigation": _project_calendar_navigation(activity_dates, start, _project_calendar_default_start(timezone)),
+    }
+
+
+def _project_calendar_days_for_user(email, user_id, timezone, start_date=None):
+    return _project_calendar_for_user(email, user_id, timezone, start_date)["days"]
 
 
 @projects_bp.route("/api/projects/global-contexts", methods=["GET"])

@@ -344,7 +344,8 @@ body.projects-page main {
   border: 0;
   background: #eef2f7;
   color: #233a8b;
-  cursor: default;
+  cursor: pointer;
+  text-decoration: none;
 }
 
 .projects-nav-arrow:first-child {
@@ -355,8 +356,10 @@ body.projects-page main {
   border-left: 1px solid #d8dee8;
 }
 
-.projects-nav-arrow:disabled {
+.projects-nav-arrow.disabled {
   opacity: 1;
+  color: #94a3b8;
+  cursor: default;
 }
 
 .projects-nav-arrow .material-symbols-outlined {

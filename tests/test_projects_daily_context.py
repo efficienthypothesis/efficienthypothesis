@@ -13,7 +13,7 @@ os.environ.setdefault("FLASK_SECRET_KEY", "test")
 os.environ.setdefault("OAUTH_SIGNING_KEY", "test")
 
 from app import app
-from routes.projects import _default_global_context, _normalize_daily_context, _normalize_global_context, _project_calendar_days_for_user, _query_project_inventory, _read_recommendation_context, _store_daily_context_image, _write_inventory_item, _write_research_item
+from routes.projects import _default_global_context, _normalize_daily_context, _normalize_global_context, _project_calendar_days_for_user, _project_calendar_for_user, _query_project_inventory, _read_recommendation_context, _store_daily_context_image, _write_inventory_item, _write_research_item
 
 
 def s3_error(code):
@@ -190,7 +190,7 @@ class DailyContextTests(unittest.TestCase):
                 }]
             }, project_id, "user-1", date)
 
-        with patch("routes.projects._read_daily_context", side_effect=read_context), patch("routes.projects._read_recommendations") as read_recommendations:
+        with patch("routes.projects._read_daily_context", side_effect=read_context), patch("routes.projects._read_recommendations") as read_recommendations, patch("routes.projects._project_activity_dates_for_user", return_value=[]):
             read_recommendations.return_value = {
                 "href": "/projects/acne/recommendations/2026-07-10",
                 "recommendations": [],
@@ -201,6 +201,52 @@ class DailyContextTests(unittest.TestCase):
         self.assertEqual(days[0]["projects"][0]["image_count"], 1)
         self.assertEqual(days[0]["projects"][0]["recommendations_count"], 0)
         self.assertEqual(days[0]["projects"][0]["recommendations_href"], "/projects/acne/recommendations/2026-07-10")
+
+    def test_calendar_previous_navigation_jumps_to_earlier_file_day(self):
+        empty_context = {"entries": []}
+
+        def read_context(_email, project_id, _user_id, date):
+            return _normalize_daily_context(empty_context, project_id, "user-1", date)
+
+        with (
+            patch("routes.projects._read_daily_context", side_effect=read_context),
+            patch("routes.projects._read_recommendations", side_effect=lambda _email, project_id, _user_id, date: {"href": f"/projects/{project_id}/recommendations/{date}", "recommendations": []}),
+            patch("routes.projects._project_activity_dates_for_user", return_value=[
+                datetime.date(2026, 7, 1),
+                datetime.date(2026, 7, 10),
+            ]),
+        ):
+            calendar = _project_calendar_for_user("user@example.com", "user-1", datetime.timezone.utc, "2026-07-07")
+
+        self.assertEqual(calendar["navigation"]["previous_start"], "2026-06-28")
+
+    def test_calendar_previous_navigation_stops_without_earlier_files(self):
+        empty_context = {"entries": []}
+
+        def read_context(_email, project_id, _user_id, date):
+            return _normalize_daily_context(empty_context, project_id, "user-1", date)
+
+        with (
+            patch("routes.projects._read_daily_context", side_effect=read_context),
+            patch("routes.projects._read_recommendations", side_effect=lambda _email, project_id, _user_id, date: {"href": f"/projects/{project_id}/recommendations/{date}", "recommendations": []}),
+            patch("routes.projects._project_activity_dates_for_user", return_value=[datetime.date(2026, 7, 1)]),
+        ):
+            calendar = _project_calendar_for_user("user@example.com", "user-1", datetime.timezone.utc, "2026-06-28")
+
+        self.assertIsNone(calendar["navigation"]["previous_start"])
+
+    def test_project_page_renders_history_link_when_available(self):
+        with self.client.session_transaction(base_url="https://projects.efficienthypothesis.com") as session:
+            session["user"] = {"id": "user-1", "email": "user@example.com"}
+        with patch("routes.pages._project_calendar_for_user", return_value={
+            "days": [],
+            "navigation": {"previous_start": "2026-06-28", "next_start": None, "current_start": "2026-07-07"},
+        }):
+            response = self.client.get("/", headers={"Host": "projects.efficienthypothesis.com"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'href="/?start=2026-06-28"', response.data)
+        self.assertIn(b"No later project days with files", response.data)
 
     def test_daily_context_rejects_invalid_date(self):
         response = self.client.get("/api/projects/acne/daily-context/20260710")
@@ -234,7 +280,10 @@ class DailyContextTests(unittest.TestCase):
     def test_projects_nav_includes_research_modal(self):
         with self.client.session_transaction(base_url="https://projects.efficienthypothesis.com") as session:
             session["user"] = {"id": "user-1", "email": "user@example.com"}
-        with patch("routes.pages._project_calendar_days_for_user", return_value=[]):
+        with patch("routes.pages._project_calendar_for_user", return_value={
+            "days": [],
+            "navigation": {"previous_start": None, "next_start": None, "current_start": "2026-07-07"},
+        }):
             response = self.client.get("/", headers={"Host": "projects.efficienthypothesis.com"})
 
         self.assertEqual(response.status_code, 200)
