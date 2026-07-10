@@ -120,6 +120,10 @@ Legacy tables such as `Tasks`, `Actions`, `Drafts`, `TimeLogs`, and `OAuthTokens
 
 ## Infrastructure Boundary
 
+Efficient Hypothesis is transitioning from script-only resource management to CloudFormation-managed infrastructure.
+The import-ready templates in `infra/` describe the existing S3 bucket, DynamoDB tables, and Lambda without changing them by default.
+Application code deployment remains in `deploy.sh` until resource adoption is reviewed and completed.
+
 The current deployment path is script-based rather than full infrastructure-as-code.
 `deploy.sh` runs `npm run build`, installs Lambda Python dependencies from `requirements-lambda.txt`, builds a zip in `/tmp`, uploads it to S3, and updates the `efficienthypothesis-backend` Lambda in `us-east-2`.
 

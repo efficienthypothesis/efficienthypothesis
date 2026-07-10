@@ -1,0 +1,80 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Existing Efficient Hypothesis DynamoDB tables, prepared for CloudFormation import.
+
+Resources:
+  UsersTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: Users
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions: [{AttributeName: user_id, AttributeType: S}]
+      KeySchema: [{AttributeName: user_id, KeyType: HASH}]
+  OAuthTokensTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: OAuthTokens
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions: [{AttributeName: token_hash, AttributeType: S}]
+      KeySchema: [{AttributeName: token_hash, KeyType: HASH}]
+  TasksTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: Tasks
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions: [{AttributeName: task_id, AttributeType: S}]
+      KeySchema: [{AttributeName: task_id, KeyType: HASH}]
+  ActionsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: Actions
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions: [{AttributeName: action_id, AttributeType: S}]
+      KeySchema: [{AttributeName: action_id, KeyType: HASH}]
+  DraftsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: Drafts
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions: [{AttributeName: draft_id, AttributeType: S}]
+      KeySchema: [{AttributeName: draft_id, KeyType: HASH}]
+  TimeLogsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: TimeLogs
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions: [{AttributeName: log_id, AttributeType: S}]
+      KeySchema: [{AttributeName: log_id, KeyType: HASH}]
+  ChatUsageTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: ChatUsage
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - {AttributeName: user_id, AttributeType: S}
+        - {AttributeName: date, AttributeType: S}
+      KeySchema:
+        - {AttributeName: user_id, KeyType: HASH}
+        - {AttributeName: date, KeyType: RANGE}
+  ChatFeedbackTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: ChatFeedback
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions: [{AttributeName: feedback_id, AttributeType: S}]
+      KeySchema: [{AttributeName: feedback_id, KeyType: HASH}]

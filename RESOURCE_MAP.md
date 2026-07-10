@@ -19,6 +19,7 @@ AWS is the source of truth for user data, deployment artifacts, and deployed run
 | `app.py`, `config.py`, `routes/` | Flask API and backend app | Flask compilation, behavior tests, and route smoke check | Lambda bundle through `bash deploy.sh` | Privileged AWS access stays here |
 | `requirements-lambda.txt` | Lambda Python dependencies | Route compile and import smoke check | Lambda bundle through `bash deploy.sh` | Deployment installs these into the zip |
 | `deploy.sh` | Deployment packaging | Inspect diff, dry-run mentally, deploy smoke after use | AWS Lambda and deployment artifact | Uses AWS profile `eh` |
+| `infra/`, `scripts/deploy-infrastructure.sh` | CloudFormation infrastructure ownership and validation | `scripts/deploy-infrastructure.sh plan` | AWS resource adoption via explicit import change sets | Templates are import-ready; no resource adoption occurs by default |
 | `.github/workflows/` | CI | GitHub Actions | None directly | Checks pushes and pull requests |
 | `MCP_NOTES.md` | MCP connector docs | Documentation review | None unless MCP code changes | Keep connector URL and tool notes current |
 | `ARCHITECTURE.md`, `RESOURCE_MAP.md`, `TASK_LIST.md`, `review.md`, `ADRS/`, `AI_RESOURCES/` | Public AI workflow docs | Documentation review | None | Never store private admin task content in this public repository |
@@ -192,6 +193,10 @@ The shared legacy key `eh_workspace_cache_v1` is no longer used for reads and is
 ## Routing Rules
 
 Documentation-only changes should not deploy unless they change published runtime content.
+
+Infrastructure adoption is intentionally separate from application deployment.
+Run `scripts/deploy-infrastructure.sh plan` to validate templates without changing AWS.
+Do not import existing production resources until a reviewed CloudFormation change set confirms no replacement or destructive action.
 Frontend source changes should run frontend checks and deploy the Lambda bundle because built assets are served from the Flask package.
 Flask route, template, static asset, dependency, or deployment-script changes should run targeted backend checks and deploy the Lambda bundle.
 Private task-board payload changes update AWS runtime state and should never be copied into public repository files or logs.
