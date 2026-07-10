@@ -137,6 +137,25 @@ body.projects-page main {
   text-decoration: underline;
 }
 
+.projects-recommendations-label {
+  margin-top: 10px;
+  color: #475569;
+  font-size: 0.68rem;
+  font-weight: 750;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.projects-recommendations-empty {
+  margin-top: 3px;
+  color: #64748b;
+  font-size: 0.72rem;
+}
+
+.projects-recommendations-raw {
+  margin-top: 5px;
+}
+
 .projects-nav-arrow {
   display: grid;
   place-items: center;

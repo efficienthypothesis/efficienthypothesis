@@ -272,6 +272,7 @@ def _project_calendar_days_for_user(email, user_id, timezone):
                 "entry_count": len(context["entries"]),
                 "raw_json": json.dumps(context, indent=2),
                 "recommendations": recommendations["recommendations"],
+                "recommendations_raw_json": json.dumps(recommendations, indent=2),
             })
         days.append({
             "weekday": day.strftime("%A"),
