@@ -282,7 +282,7 @@ TOOLS = [
     _write_tool(
         "upsert_daily_context",
         "Update project daily context",
-        "Add or replace dated project context. Send entries for shorthand creation, or daily_context to replace the full file and remove starter prompts if desired. Use add_daily_context_image for image entries.",
+        "Add or replace dated project context. Give each entry a concise display_name for the calendar. Send entries for shorthand creation, or daily_context to replace the full file and remove starter prompts if desired. Use add_daily_context_image for image entries.",
         {
             "type": "object",
             "properties": {
@@ -298,6 +298,7 @@ TOOLS = [
                         "type": "object",
                         "properties": {
                             "id": {"type": "string"},
+                            "display_name": {"type": "string", "description": "Concise human-readable name shown on the calendar."},
                             "time": {"type": ["string", "null"]},
                             "summary": {"type": "string"},
                         },
@@ -314,8 +315,8 @@ TOOLS = [
     _write_tool(
         "add_daily_context_image",
         "Add daily context image",
-        "Store a user-scoped PNG, JPEG, or WebP image as daily project context. Send bounded base64 data and a concise summary.",
-        {"type": "object", "properties": {"project_id": {"type": "string", "enum": list(PROJECT_BY_ID)}, "date": {"type": "string"}, "image_data": {"type": "string", "description": "Base64 image data or a base64 data URL, maximum 5 MiB decoded."}, "summary": {"type": "string"}, "time": {"type": "string"}, "filename": {"type": "string"}}, "required": ["project_id", "date", "image_data", "summary"], "additionalProperties": False},
+        "Store a user-scoped PNG, JPEG, or WebP image as daily project context. Send bounded base64 data, a concise display name, and a summary.",
+        {"type": "object", "properties": {"project_id": {"type": "string", "enum": list(PROJECT_BY_ID)}, "date": {"type": "string"}, "image_data": {"type": "string", "description": "Base64 image data or a base64 data URL, maximum 5 MiB decoded."}, "display_name": {"type": "string", "description": "Concise human-readable name shown on the calendar."}, "summary": {"type": "string"}, "time": {"type": "string"}, "filename": {"type": "string"}}, "required": ["project_id", "date", "image_data", "summary"], "additionalProperties": False},
         {"type": "object", "properties": {"entry": {"type": "object"}}, "required": ["entry"], "additionalProperties": False},
     ),
     _read_only_tool(
@@ -402,6 +403,7 @@ TOOLS = [
                                     "type": "object",
                                     "properties": {
                                         "id": {"type": "string"},
+                                        "display_name": {"type": "string", "description": "Concise human-readable name shown on the calendar."},
                                         "time": {"type": ["string", "null"]},
                                         "summary": {"type": "string"},
                                     },
@@ -422,6 +424,7 @@ TOOLS = [
                             "project_id": {"type": "string", "enum": list(PROJECT_BY_ID)},
                             "date": {"type": "string"},
                             "image_data": {"type": "string"},
+                            "display_name": {"type": "string", "description": "Concise human-readable name shown on the calendar."},
                             "summary": {"type": "string"},
                             "time": {"type": "string"},
                             "filename": {"type": "string"},
@@ -1518,7 +1521,7 @@ def _add_daily_context_image_result(email, user_id, arguments):
     project_id = _require_nonempty(arguments.get("project_id"), "project_id")
     if project_id not in PROJECT_BY_ID:
         raise ValueError("unknown project")
-    entry = _store_daily_context_image(email, project_id, user_id, arguments.get("date"), arguments.get("image_data"), arguments.get("summary"), arguments.get("time"), arguments.get("filename"))
+    entry = _store_daily_context_image(email, project_id, user_id, arguments.get("date"), arguments.get("image_data"), arguments.get("summary"), arguments.get("time"), arguments.get("filename"), arguments.get("display_name"))
     return {"structuredContent": {"entry": entry}, "content": [{"type": "text", "text": f"Added image context to {project_id} on {arguments.get('date')}."}]}
 
 
@@ -1721,7 +1724,7 @@ def _bulk_upsert_project_history_result(email, user_id, arguments):
     for index, item in enumerate(_optional_array(arguments, "image_contexts")):
         try:
             project_id = _require_project_id(item.get("project_id"))
-            entry = _store_daily_context_image(email, project_id, user_id, item.get("date"), item.get("image_data"), item.get("summary"), item.get("time"), item.get("filename"))
+            entry = _store_daily_context_image(email, project_id, user_id, item.get("date"), item.get("image_data"), item.get("summary"), item.get("time"), item.get("filename"), item.get("display_name"))
             result["images"].append({"projectId": project_id, "date": item.get("date"), "entryId": entry["id"]})
         except Exception as exc:
             result["errors"].append({"section": "image_contexts", "index": index, "error": _bulk_error_message(exc)})

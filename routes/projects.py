@@ -7,6 +7,7 @@ import re
 import time
 import uuid
 from copy import deepcopy
+from urllib.parse import urlencode
 
 from boto3.dynamodb.conditions import Key
 from flask import Blueprint, jsonify, redirect, render_template, request, send_file, session, url_for
@@ -364,9 +365,20 @@ def _normalize_daily_context(value, project_id, user_id, date, include_default_t
         entry_type = entry.get("type", "text")
         if entry_type not in {"text", "image"}:
             raise ValueError(f"entries[{index}].type is invalid")
+        display_name = entry.get("displayName", entry.get("display_name"))
+        if display_name is not None and not isinstance(display_name, str):
+            raise ValueError(f"entries[{index}].displayName is invalid")
+        if isinstance(display_name, str) and len(display_name.strip()) > 120:
+            raise ValueError(f"entries[{index}].displayName is invalid")
+        if not display_name:
+            display_name = entry.get("filename") if entry_type == "image" else None
+        if not isinstance(display_name, str) or not display_name.strip():
+            display_name = f"Entry {index + 1}"
+        display_name = display_name.strip()[:120]
         normalized_entry = {
             "id": entry_id.strip(),
             "type": entry_type,
+            "displayName": display_name,
             "time": entry.get("time") if isinstance(entry.get("time"), str) else None,
             "summary": summary.strip(),
             "createdAt": entry.get("createdAt") or default["createdAt"],
@@ -486,9 +498,13 @@ def _decode_image_data(image_data):
     raise ValueError("image_data must be PNG, JPEG, or WebP")
 
 
-def _store_daily_context_image(email, project_id, user_id, date, image_data, summary, time=None, filename=None):
+def _store_daily_context_image(email, project_id, user_id, date, image_data, summary, time=None, filename=None, display_name=None):
     date = _validate_daily_date(date)
     raw, extension, content_type = _decode_image_data(image_data)
+    if display_name is not None and not isinstance(display_name, str):
+        raise ValueError("display_name is invalid")
+    if isinstance(display_name, str) and len(display_name.strip()) > 120:
+        raise ValueError("display_name is invalid")
     image_id = f"image-{uuid.uuid4().hex}"
     key = _project_daily_image_key(email, project_id, date, image_id, extension)
     context = _read_daily_context(email, project_id, user_id, date)
@@ -498,6 +514,7 @@ def _store_daily_context_image(email, project_id, user_id, date, image_data, sum
     entry = {
         "id": image_id,
         "type": "image",
+        "displayName": (display_name.strip() if isinstance(display_name, str) and display_name.strip() else (filename.strip().split("/")[-1].split("\\")[-1] if isinstance(filename, str) and filename.strip() else "Image context"))[:120],
         "time": time if isinstance(time, str) else None,
         "summary": summary.strip() if isinstance(summary, str) and summary.strip() else "Image context",
         "imageUrl": f"/api/projects/{project_id}/daily-context/{date}/images/{image_id}",
@@ -1155,6 +1172,15 @@ def _project_calendar_day_for_user(email, user_id, timezone, date):
             "name": project["name"],
             "entry_count": len(context["entries"]),
             "image_count": sum(1 for entry in context["entries"] if entry.get("type") == "image"),
+            "entries": [
+                {
+                    "id": entry["id"],
+                    "type": entry["type"],
+                    "display_name": entry["displayName"],
+                    "href": f"/projects/{project['id']}/daily-context/{day.isoformat()}/entry?{urlencode({'entry_id': entry['id']})}",
+                }
+                for entry in context["entries"]
+            ],
             "raw_json": json.dumps(context, indent=2),
             "recommendations_href": recommendations["href"],
             "recommendations_count": len(recommendations["recommendations"]),
@@ -1355,6 +1381,36 @@ def _require_page_user():
     if not user:
         return None, redirect(url_for("pages.login_page", next=request.url))
     return user, None
+
+
+@projects_bp.route("/projects/<project_id>/daily-context/<date>/entry", methods=["GET"])
+def project_daily_context_entry_page(project_id, date):
+    user, err = _require_page_user()
+    if err:
+        return err
+    if project_id not in PROJECT_BY_ID:
+        return "<h1>404 - Project Not Found</h1>", 404
+    entry_id = request.args.get("entry_id", "")
+    if not entry_id:
+        return "<h1>404 - Entry Not Found</h1>", 404
+    try:
+        date = _validate_daily_date(date)
+        context = _read_daily_context(user["email"], project_id, user.get("id") or user["email"], date)
+        entry = next((item for item in context["entries"] if item.get("id") == entry_id), None)
+        if not entry:
+            return "<h1>404 - Entry Not Found</h1>", 404
+        return render_template(
+            "project_daily_context_entry.html",
+            user=user,
+            project=PROJECT_BY_ID[project_id],
+            date=date,
+            entry=entry,
+            raw_json=json.dumps(entry, indent=2),
+        )
+    except ValueError:
+        return "<h1>404 - Entry Not Found</h1>", 404
+    except (ClientError, BotoCoreError, RuntimeError):
+        return "<h1>Daily context is temporarily unavailable.</h1>", 503
 
 
 @projects_bp.route("/projects/<project_id>/recommendations/<date>", methods=["GET"])

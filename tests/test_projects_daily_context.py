@@ -40,6 +40,17 @@ class DailyContextTests(unittest.TestCase):
         self.assertEqual(context["date"], "2026-07-10")
         self.assertEqual(context["entries"][0]["summary"], "Did the thing.")
         self.assertEqual(context["entries"][0]["time"], "08:30")
+        self.assertEqual(context["entries"][0]["displayName"], "Entry 1")
+
+    def test_daily_context_preserves_explicit_display_name(self):
+        context = _normalize_daily_context(
+            {"entries": [{"id": "entry-1", "display_name": "Morning skin check", "summary": "Redness improved."}]},
+            "acne",
+            "user-1",
+            "2026-07-10",
+        )
+
+        self.assertEqual(context["entries"][0]["displayName"], "Morning skin check")
 
     def test_acne_global_context_includes_editable_assessment_starter_fields(self):
         context = _default_global_context("acne", "user-1")
@@ -142,6 +153,7 @@ class DailyContextTests(unittest.TestCase):
         self.assertEqual(entry["type"], "image")
         self.assertEqual(entry["contentType"], "image/png")
         self.assertEqual(entry["filename"], "photo.png")
+        self.assertEqual(entry["displayName"], "photo.png")
         image_call = put_object.call_args_list[0].kwargs
         self.assertIn("/daily-context/2026-07-10/images/", image_call["Key"])
         self.assertEqual(image_call["ServerSideEncryption"], "AES256")
@@ -200,8 +212,26 @@ class DailyContextTests(unittest.TestCase):
 
         self.assertEqual(days[0]["projects"][0]["entry_count"], 1)
         self.assertEqual(days[0]["projects"][0]["image_count"], 1)
+        self.assertEqual(days[0]["projects"][0]["entries"][0]["display_name"], "Entry 1")
+        self.assertIn("entry_id=image-1", days[0]["projects"][0]["entries"][0]["href"])
         self.assertEqual(days[0]["projects"][0]["recommendations_count"], 0)
         self.assertEqual(days[0]["projects"][0]["recommendations_href"], "/projects/acne/recommendations/2026-07-10")
+
+    def test_daily_context_entry_page_renders_display_name_and_summary(self):
+        context = _normalize_daily_context({
+            "entries": [{
+                "id": "entry-1",
+                "displayName": "Morning skin check",
+                "summary": "Redness improved overnight.",
+            }]
+        }, "acne", "user-1", "2026-07-10")
+
+        with patch("routes.projects._read_daily_context", return_value=context):
+            response = self.client.get("/projects/acne/daily-context/2026-07-10/entry?entry_id=entry-1")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"Morning skin check", response.data)
+        self.assertIn(b"Redness improved overnight.", response.data)
 
     def test_calendar_previous_navigation_jumps_to_earlier_file_day(self):
         empty_context = {"entries": []}

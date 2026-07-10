@@ -94,14 +94,37 @@ body.projects-page main {
   font-weight: 700;
 }
 
-.projects-context-count {
-  margin-top: 3px;
-  color: #64748b;
-  font-size: 0.76rem;
+.projects-context-entries {
+  display: grid;
+  gap: 5px;
+  margin-top: 7px;
 }
 
-.projects-context-images {
-  margin-top: 2px;
+.projects-context-entry {
+  display: block;
+  min-width: 0;
+  padding: 6px 8px;
+  overflow: hidden;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  background: #ffffff;
+  color: #233a8b;
+  font-size: 0.72rem;
+  font-weight: 650;
+  line-height: 1.3;
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.projects-context-entry:hover,
+.projects-context-entry:focus-visible {
+  border-color: #233a8b;
+  background: #f8faff;
+  text-decoration: underline;
+}
+
+.projects-context-empty {
   color: #64748b;
   font-size: 0.72rem;
 }
@@ -261,7 +284,8 @@ body.projects-page main {
 }
 
 .recommendations-empty-state,
-.recommendation-body {
+.recommendation-body,
+.context-entry-body {
   border: 1px solid #d8dee8;
   background: #ffffff;
   padding: 22px;
@@ -274,11 +298,21 @@ body.projects-page main {
 }
 
 .recommendations-empty-state p,
-.recommendation-summary {
+.recommendation-summary,
+.context-entry-summary {
   margin: 0;
   color: #64748b;
   font-size: 0.95rem;
   line-height: 1.5;
+}
+
+.context-entry-image {
+  display: block;
+  width: min(100%, 760px);
+  max-height: 70vh;
+  margin-top: 20px;
+  object-fit: contain;
+  object-position: left top;
 }
 
 .recommendation-steps {

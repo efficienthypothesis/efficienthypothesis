@@ -59,10 +59,6 @@
     return formatDate(date);
   }
 
-  function plural(count, singular, pluralValue) {
-    return count === 1 ? singular : pluralValue;
-  }
-
   function makeText(tagName, className, text) {
     const node = document.createElement(tagName);
     if (className) {
@@ -98,16 +94,22 @@
     article.className = "projects-context-summary";
 
     article.appendChild(makeText("div", "projects-context-project", project.name || project.id || "Project"));
-    article.appendChild(makeText(
-      "div",
-      "projects-context-count",
-      `${project.entry_count || 0} ${plural(project.entry_count || 0, "entry", "entries")}`,
-    ));
-    article.appendChild(makeText(
-      "div",
-      "projects-context-images",
-      `${project.image_count || 0} ${plural(project.image_count || 0, "image", "images")}`,
-    ));
+    const entries = document.createElement("div");
+    entries.className = "projects-context-entries";
+    if (Array.isArray(project.entries) && project.entries.length) {
+      project.entries.forEach((entry) => {
+        const link = document.createElement("a");
+        link.className = "projects-context-entry";
+        link.href = entry.href || "#";
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.textContent = entry.display_name || "Entry";
+        entries.appendChild(link);
+      });
+    } else {
+      entries.appendChild(makeText("div", "projects-context-empty", "No entries"));
+    }
+    article.appendChild(entries);
     article.appendChild(renderRawDetails("View JSON", project.raw_json, "projects-context-raw"));
     article.appendChild(makeText("div", "projects-recommendations-label", "Recommendations"));
 

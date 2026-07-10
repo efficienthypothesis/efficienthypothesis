@@ -135,12 +135,14 @@ Each document contains `schemaVersion`, `userId`, `projectId`, `date`, `entries`
 New Acne daily context files also include editable `aiGuidance` and `starterFocusAreas` for physical friction habits, dietary triggers, sleep and cortisol load, and occupational or digital environments.
 Those fields are outside `entries`, so they do not count as real user observations.
 GPT can remove them by sending `daily_context` through `upsert_daily_context` rather than shorthand `entries`.
-Text entries contain `id`, `type: "text"`, optional `time`, `summary`, `createdAt`, and `updatedAt`.
-Image entries contain `id`, `type: "image"`, optional `time`, `summary`, `imageUrl`, `contentType`, optional `filename`, `createdAt`, and `updatedAt`.
+Text entries contain `id`, `type: "text"`, `displayName`, optional `time`, `summary`, `createdAt`, and `updatedAt`.
+Image entries contain `id`, `type: "image"`, `displayName`, optional `time`, `summary`, `imageUrl`, `contentType`, optional `filename`, `createdAt`, and `updatedAt`.
+Legacy or newly submitted entries without a display name receive a positional placeholder during normalization.
 Image binaries are stored privately at `<email>/projects/<project_id>/daily-context/<YYYY-MM-DD>/images/<image_id>.<extension>`.
 Image uploads accept PNG, JPEG, and WebP content up to 5 MiB after base64 decoding.
 Image retrieval goes through the authenticated `/api/projects/<project_id>/daily-context/<YYYY-MM-DD>/images/<image_id>` route.
-The Projects calendar shows each day's entry count, image count, and a raw JSON disclosure for each project.
+The Projects calendar shows each daily context entry as a named rectangular link and retains a raw JSON disclosure for each project.
+Entry links open an authenticated detail page in a new tab with the summary content and image when applicable.
 The Projects calendar loads its initial seven-day window from the server-rendered page, then uses `/api/projects/calendar-day?date=YYYY-MM-DD&window_start=YYYY-MM-DD` to shift by one day without full page reloads.
 The browser reuses the six overlapping rendered days, fetches only the newly exposed edge day, caches fetched days in memory, and prefetches the adjacent edge days after each render.
 `/api/projects/calendar?start=YYYY-MM-DD` remains available for full-window fallback and browser history restoration.

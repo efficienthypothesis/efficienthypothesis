@@ -48,8 +48,15 @@
             {% for project in day.projects %}
               <article class="projects-context-summary">
                 <div class="projects-context-project">{{ project.name }}</div>
-                <div class="projects-context-count">{{ project.entry_count }} {% if project.entry_count == 1 %}entry{% else %}entries{% endif %}</div>
-                <div class="projects-context-images">{{ project.image_count }} {% if project.image_count == 1 %}image{% else %}images{% endif %}</div>
+                <div class="projects-context-entries">
+                  {% if project.entries %}
+                    {% for entry in project.entries %}
+                      <a class="projects-context-entry" href="{{ entry.href }}" target="_blank" rel="noopener noreferrer">{{ entry.display_name }}</a>
+                    {% endfor %}
+                  {% else %}
+                    <div class="projects-context-empty">No entries</div>
+                  {% endif %}
+                </div>
                 <details class="projects-context-raw">
                   <summary>View JSON</summary>
                   <pre>{{ project.raw_json }}</pre>

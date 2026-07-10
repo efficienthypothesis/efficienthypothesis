@@ -154,6 +154,8 @@ New Acne global context includes editable starter assessment fields for Baumann 
 New Acne daily context includes editable starter focus areas for physical friction habits, dietary triggers, sleep and cortisol load, and occupational or digital environments.
 Text entries are written through `upsert_daily_context` or `bulk_upsert_project_history`.
 Images are written through `add_daily_context_image` or the bulk tool's `image_contexts` array.
+Daily context entries should include a concise `display_name` for the calendar.
+If it is omitted, the backend supplies a placeholder display name for compatibility with older entries.
 Image payloads must be base64 PNG, JPEG, or WebP and are limited to 5 MiB decoded.
 
 Research uses metadata for discovery and S3-backed details for full content.

@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+
+{% block title %}{{ entry.displayName }} - Efficient Hypothesis{% endblock %}
+
+{% block head %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/navbar.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}">
+{% endblock %}
+
+{% block bodyattrs %}class="projects-page recommendations-page"{% endblock %}
+
+{% block navbar %}
+  {% include "navbar.html" %}
+{% endblock %}
+
+{% block content %}
+  <div class="recommendations-shell context-entry-detail">
+    <header class="recommendations-header">
+      <a class="recommendations-back" href="{{ url_for('pages.home') }}?start={{ date }}">Projects</a>
+      <div>
+        <p class="recommendations-eyebrow">{{ project.name }} - {{ date }} - {{ entry.type }}</p>
+        <h1>{{ entry.displayName }}</h1>
+      </div>
+    </header>
+
+    <section class="context-entry-body">
+      <p class="context-entry-summary">{{ entry.summary }}</p>
+      {% if entry.type == "image" %}
+        <img class="context-entry-image" src="{{ entry.imageUrl }}" alt="{{ entry.displayName }}">
+      {% endif %}
+    </section>
+
+    <details class="recommendations-json">
+      <summary>View JSON</summary>
+      <pre>{{ raw_json }}</pre>
+    </details>
+  </div>
+{% endblock %}
