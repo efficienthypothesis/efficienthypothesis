@@ -38,12 +38,15 @@
                   <pre>{{ project.raw_json }}</pre>
                 </details>
                 <div class="projects-recommendations-label">Recommendations</div>
-                {% if not project.recommendations %}
-                  <div class="projects-recommendations-empty">No recommendations</div>
-                {% endif %}
-                {% for recommendation in project.recommendations %}
-                  <a class="projects-recommendation" href="{{ recommendation.href }}" target="_blank" rel="noopener">{{ recommendation.summary }}</a>
-                {% endfor %}
+                <a class="projects-recommendation" href="{{ project.recommendations_href }}">
+                  {% if project.recommendations_count == 0 %}
+                    No recommendations
+                  {% elif project.recommendations_count == 1 %}
+                    1 recommendation
+                  {% else %}
+                    {{ project.recommendations_count }} recommendations
+                  {% endif %}
+                </a>
                 <details class="projects-context-raw projects-recommendations-raw">
                   <summary>View recommendation JSON</summary>
                   <pre>{{ project.recommendations_raw_json }}</pre>

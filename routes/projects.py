@@ -7,7 +7,7 @@ import re
 import uuid
 from copy import deepcopy
 
-from flask import Blueprint, jsonify, request, send_file
+from flask import Blueprint, jsonify, redirect, render_template, request, send_file, session, url_for
 from botocore.exceptions import BotoCoreError, ClientError
 
 from config import PRODUCTIVITY_BUCKET, s3, _require_auth
@@ -26,6 +26,8 @@ DAILY_CONTEXT_MAX_ENTRIES = 100
 DAILY_CONTEXT_MAX_IMAGE_BYTES = 5 * 1024 * 1024
 RECOMMENDATION_VERSION = 1
 RECOMMENDATION_MAX_ITEMS = 50
+RECOMMENDATION_BODY_MAX_CHARS = 50000
+RECOMMENDATION_KINDS = {"Routine", "Workout"}
 DAILY_DATE_PATTERN = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
 
 
@@ -43,6 +45,14 @@ def _project_daily_context_key(email, project_id, date):
 
 def _project_recommendations_key(email, project_id, date):
     return f"{email}/projects/{project_id}/recommendations/{date}.json"
+
+
+def _project_recommendations_manifest_key(email, project_id, date):
+    return f"{email}/projects/{project_id}/recommendations/{date}/manifest.json"
+
+
+def _project_recommendation_file_key(email, project_id, date, recommendation_id):
+    return f"{email}/projects/{project_id}/recommendations/{date}/files/{recommendation_id}.json"
 
 
 def _project_daily_image_key(email, project_id, date, image_id, extension):
@@ -272,9 +282,48 @@ def _default_recommendations(project_id, user_id, date):
         "userId": user_id,
         "projectId": project_id,
         "date": date,
+        "href": f"/projects/{project_id}/recommendations/{date}",
         "recommendations": [],
         "createdAt": now,
         "updatedAt": now,
+    }
+
+
+def _default_recommendation_kind(project_id):
+    return "Routine" if project_id == "acne" else "Workout"
+
+
+def _normalize_recommendation_kind(value, project_id):
+    if isinstance(value, str) and value.strip() in RECOMMENDATION_KINDS:
+        return value.strip()
+    return _default_recommendation_kind(project_id)
+
+
+def _normalize_recommendation_file(value, project_id, date, recommendation_id, default):
+    if not isinstance(value, dict):
+        value = {}
+    kind = _normalize_recommendation_kind(value.get("kind", default.get("kind")), project_id)
+    title = value.get("title", default.get("title"))
+    summary = value.get("summary", default.get("summary"))
+    body = value.get("body", value.get("content", default.get("body", summary)))
+    if not isinstance(title, str) or not title.strip() or len(title) > 200:
+        title = summary if isinstance(summary, str) else recommendation_id
+    if not isinstance(summary, str) or not summary.strip() or len(summary) > 2000:
+        raise ValueError("recommendation summary is invalid")
+    if not isinstance(body, str) or not body.strip() or len(body) > RECOMMENDATION_BODY_MAX_CHARS:
+        raise ValueError("recommendation body is invalid")
+    now = _now_iso()
+    return {
+        "schemaVersion": RECOMMENDATION_VERSION,
+        "id": recommendation_id,
+        "projectId": project_id,
+        "date": date,
+        "kind": kind,
+        "title": title.strip(),
+        "summary": summary.strip(),
+        "body": body.strip(),
+        "createdAt": value.get("createdAt") or default.get("createdAt") or now,
+        "updatedAt": value.get("updatedAt") or default.get("updatedAt") or now,
     }
 
 
@@ -293,23 +342,50 @@ def _normalize_recommendations(value, project_id, user_id, date):
             raise ValueError(f"recommendations[{index}] must be an object")
         item_id = item.get("id")
         summary = item.get("summary")
-        if not isinstance(item_id, str) or not item_id.strip() or len(item_id) > 80 or item_id in seen:
+        if not isinstance(item_id, str) or not item_id.strip() or len(item_id.strip()) > 80 or item_id.strip() in seen:
             raise ValueError(f"recommendations[{index}].id is invalid or duplicated")
         if not isinstance(summary, str) or not summary.strip() or len(summary) > 2000:
             raise ValueError(f"recommendations[{index}].summary is invalid")
+        item_id = item_id.strip()
         seen.add(item_id)
-        items.append({
-            "id": item_id.strip(),
+        kind = _normalize_recommendation_kind(item.get("kind"), project_id)
+        title = item.get("title") if isinstance(item.get("title"), str) and item["title"].strip() else summary
+        normalized_item = {
+            "id": item_id,
+            "kind": kind,
+            "title": title.strip()[:200],
             "summary": summary.strip(),
-            "href": f"/api/projects/{project_id}/recommendations/{date}/{item_id.strip()}",
+            "href": f"/projects/{project_id}/recommendations/{date}/{item_id}",
+            "contentType": "application/json",
             "createdAt": item.get("createdAt") or default["createdAt"],
             "updatedAt": item.get("updatedAt") or default["updatedAt"],
-        })
-    return {**default, "recommendations": items, "createdAt": value.get("createdAt") or default["createdAt"], "updatedAt": value.get("updatedAt") or default["updatedAt"]}
+        }
+        body = item.get("body", item.get("content"))
+        if isinstance(body, str) and body.strip():
+            if len(body) > RECOMMENDATION_BODY_MAX_CHARS:
+                raise ValueError(f"recommendations[{index}].body is invalid")
+            normalized_item["body"] = body.strip()
+        items.append(normalized_item)
+    return {**default, "href": f"/projects/{project_id}/recommendations/{date}", "recommendations": items, "createdAt": value.get("createdAt") or default["createdAt"], "updatedAt": value.get("updatedAt") or default["updatedAt"]}
 
 
 def _read_recommendations(email, project_id, user_id, date):
     date = _validate_daily_date(date)
+    try:
+        obj = s3.get_object(Bucket=PRODUCTIVITY_BUCKET, Key=_project_recommendations_manifest_key(email, project_id, date))
+        with obj["Body"] as body:
+            raw = json.loads(body.read().decode("utf-8"))
+        return _normalize_recommendations(raw, project_id, user_id, date)
+    except ClientError as exc:
+        code = str(exc.response.get("Error", {}).get("Code", ""))
+        if code in {"NoSuchKey", "404", "NotFound"}:
+            return _read_legacy_recommendations(email, project_id, user_id, date)
+        raise
+    except (BotoCoreError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise RuntimeError("recommendations unavailable") from exc
+
+
+def _read_legacy_recommendations(email, project_id, user_id, date):
     try:
         obj = s3.get_object(Bucket=PRODUCTIVITY_BUCKET, Key=_project_recommendations_key(email, project_id, date))
         with obj["Body"] as body:
@@ -324,13 +400,60 @@ def _read_recommendations(email, project_id, user_id, date):
         raise RuntimeError("recommendations unavailable") from exc
 
 
+def _read_recommendation_file(email, project_id, user_id, date, recommendation_id):
+    date = _validate_daily_date(date)
+    recommendations = _read_recommendations(email, project_id, user_id, date)
+    item = next((item for item in recommendations["recommendations"] if item["id"] == recommendation_id), None)
+    if not item:
+        return None, None
+    try:
+        obj = s3.get_object(Bucket=PRODUCTIVITY_BUCKET, Key=_project_recommendation_file_key(email, project_id, date, recommendation_id))
+        with obj["Body"] as body:
+            raw = json.loads(body.read().decode("utf-8"))
+        file_document = _normalize_recommendation_file(raw, project_id, date, recommendation_id, item)
+    except ClientError as exc:
+        code = str(exc.response.get("Error", {}).get("Code", ""))
+        if code not in {"NoSuchKey", "404", "NotFound"}:
+            raise
+        file_document = _normalize_recommendation_file(item, project_id, date, recommendation_id, item)
+    except (BotoCoreError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise RuntimeError("recommendations unavailable") from exc
+    return item, file_document
+
+
 def _write_recommendations(email, project_id, recommendations):
+    files = []
+    manifest_items = []
+    for item in recommendations["recommendations"]:
+        file_document = _normalize_recommendation_file(item, project_id, recommendations["date"], item["id"], item)
+        files.append(file_document)
+        manifest_items.append({
+            "id": file_document["id"],
+            "kind": file_document["kind"],
+            "title": file_document["title"],
+            "summary": file_document["summary"],
+            "href": f"/projects/{project_id}/recommendations/{recommendations['date']}/{file_document['id']}",
+            "contentType": "application/json",
+            "createdAt": file_document["createdAt"],
+            "updatedAt": file_document["updatedAt"],
+        })
+    manifest = {**recommendations, "href": f"/projects/{project_id}/recommendations/{recommendations['date']}", "recommendations": manifest_items}
+    for file_document in files:
+        s3.put_object(
+            Bucket=PRODUCTIVITY_BUCKET,
+            Key=_project_recommendation_file_key(email, project_id, recommendations["date"], file_document["id"]),
+            Body=json.dumps(file_document, indent=2),
+            ContentType="application/json",
+            ServerSideEncryption="AES256",
+        )
     s3.put_object(
         Bucket=PRODUCTIVITY_BUCKET,
-        Key=_project_recommendations_key(email, project_id, recommendations["date"]),
-        Body=json.dumps(recommendations, indent=2),
+        Key=_project_recommendations_manifest_key(email, project_id, recommendations["date"]),
+        Body=json.dumps(manifest, indent=2),
         ContentType="application/json",
+        ServerSideEncryption="AES256",
     )
+    return manifest
 
 
 def _project_calendar_days_for_user(email, user_id, timezone):
@@ -349,6 +472,8 @@ def _project_calendar_days_for_user(email, user_id, timezone):
                 "entry_count": len(context["entries"]),
                 "image_count": sum(1 for entry in context["entries"] if entry.get("type") == "image"),
                 "raw_json": json.dumps(context, indent=2),
+                "recommendations_href": recommendations["href"],
+                "recommendations_count": len(recommendations["recommendations"]),
                 "recommendations": recommendations["recommendations"],
                 "recommendations_raw_json": json.dumps(recommendations, indent=2),
             })
@@ -466,7 +591,7 @@ def api_project_recommendations(project_id, date):
         data = request.get_json(silent=True) or {}
         recommendations = _normalize_recommendations({"recommendations": data.get("recommendations", [])}, project_id, user_id, date)
         recommendations["updatedAt"] = _now_iso()
-        _write_recommendations(email, project_id, recommendations)
+        recommendations = _write_recommendations(email, project_id, recommendations)
         return jsonify({"ok": True, "recommendations": recommendations})
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
@@ -484,12 +609,69 @@ def api_project_recommendation(project_id, date, recommendation_id):
     try:
         email = ctx["email"]
         user_id = ctx.get("user_id") or email
-        recommendations = _read_recommendations(email, project_id, user_id, date)
-        item = next((item for item in recommendations["recommendations"] if item["id"] == recommendation_id), None)
+        item, file_document = _read_recommendation_file(email, project_id, user_id, date, recommendation_id)
         if not item:
             return jsonify({"error": "recommendation not found"}), 404
-        return jsonify({"recommendation": item})
+        return jsonify({"recommendation": item, "file": file_document})
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
     except (ClientError, BotoCoreError, RuntimeError):
         return jsonify({"error": "recommendations_unavailable"}), 503
+
+
+def _require_page_user():
+    user = session.get("user")
+    if not user:
+        return None, redirect(url_for("pages.login_page", next=request.url))
+    return user, None
+
+
+@projects_bp.route("/projects/<project_id>/recommendations/<date>", methods=["GET"])
+def project_recommendations_page(project_id, date):
+    user, err = _require_page_user()
+    if err:
+        return err
+    if project_id not in PROJECT_BY_ID:
+        return "<h1>404 - Project Not Found</h1>", 404
+    try:
+        date = _validate_daily_date(date)
+        recommendations = _read_recommendations(user["email"], project_id, user.get("id") or user["email"], date)
+        return render_template(
+            "project_recommendations.html",
+            user=user,
+            project=PROJECT_BY_ID[project_id],
+            date=date,
+            recommendations=recommendations,
+            raw_json=json.dumps(recommendations, indent=2),
+        )
+    except ValueError:
+        return "<h1>400 - Invalid Date</h1>", 400
+    except (ClientError, BotoCoreError, RuntimeError):
+        return "<h1>Recommendations are temporarily unavailable.</h1>", 503
+
+
+@projects_bp.route("/projects/<project_id>/recommendations/<date>/<recommendation_id>", methods=["GET"])
+def project_recommendation_page(project_id, date, recommendation_id):
+    user, err = _require_page_user()
+    if err:
+        return err
+    if project_id not in PROJECT_BY_ID:
+        return "<h1>404 - Project Not Found</h1>", 404
+    try:
+        date = _validate_daily_date(date)
+        item, file_document = _read_recommendation_file(user["email"], project_id, user.get("id") or user["email"], date, recommendation_id)
+        if not item:
+            return "<h1>404 - Recommendation Not Found</h1>", 404
+        return render_template(
+            "project_recommendation.html",
+            user=user,
+            project=PROJECT_BY_ID[project_id],
+            date=date,
+            recommendation=item,
+            file=file_document,
+            raw_json=json.dumps(file_document, indent=2),
+        )
+    except ValueError:
+        return "<h1>400 - Invalid Date</h1>", 400
+    except (ClientError, BotoCoreError, RuntimeError):
+        return "<h1>Recommendation is temporarily unavailable.</h1>", 503

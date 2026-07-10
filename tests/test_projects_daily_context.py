@@ -115,11 +115,16 @@ class DailyContextTests(unittest.TestCase):
             }, project_id, "user-1", date)
 
         with patch("routes.projects._read_daily_context", side_effect=read_context), patch("routes.projects._read_recommendations") as read_recommendations:
-            read_recommendations.return_value = {"recommendations": []}
+            read_recommendations.return_value = {
+                "href": "/projects/acne/recommendations/2026-07-10",
+                "recommendations": [],
+            }
             days = _project_calendar_days_for_user("user@example.com", "user-1", datetime.timezone.utc)
 
         self.assertEqual(days[0]["projects"][0]["entry_count"], 1)
         self.assertEqual(days[0]["projects"][0]["image_count"], 1)
+        self.assertEqual(days[0]["projects"][0]["recommendations_count"], 0)
+        self.assertEqual(days[0]["projects"][0]["recommendations_href"], "/projects/acne/recommendations/2026-07-10")
 
     def test_daily_context_rejects_invalid_date(self):
         response = self.client.get("/api/projects/acne/daily-context/20260710")
@@ -130,12 +135,114 @@ class DailyContextTests(unittest.TestCase):
         with patch("routes.projects.s3.put_object"):
             response = self.client.put(
                 "/api/projects/fitness/recommendations/2026-07-10",
-                json={"recommendations": [{"id": "rec-1", "summary": "Prioritize recovery."}]},
+                json={"recommendations": [{"id": "rec-1", "kind": "Workout", "title": "Recovery workout", "summary": "Prioritize recovery.", "body": "Walk for 20 minutes."}]},
             )
 
         self.assertEqual(response.status_code, 200)
         item = response.get_json()["recommendations"]["recommendations"][0]
-        self.assertEqual(item["href"], "/api/projects/fitness/recommendations/2026-07-10/rec-1")
+        self.assertEqual(item["kind"], "Workout")
+        self.assertEqual(item["title"], "Recovery workout")
+        self.assertEqual(item["href"], "/projects/fitness/recommendations/2026-07-10/rec-1")
+
+    def test_recommendations_are_written_as_manifest_and_files(self):
+        with patch("routes.projects.s3.put_object") as put_object:
+            response = self.client.put(
+                "/api/projects/acne/recommendations/2026-07-10",
+                json={"recommendations": [{"id": "rec-1", "kind": "Routine", "title": "Morning routine", "summary": "Use a gentle routine.", "body": "Cleanse and moisturize."}]},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        keys = [call.kwargs["Key"] for call in put_object.call_args_list]
+        self.assertIn("user@example.com/projects/acne/recommendations/2026-07-10/files/rec-1.json", keys)
+        self.assertIn("user@example.com/projects/acne/recommendations/2026-07-10/manifest.json", keys)
+        for call in put_object.call_args_list:
+            self.assertEqual(call.kwargs["ServerSideEncryption"], "AES256")
+
+    def test_recommendation_detail_reads_manifest_and_file(self):
+        manifest = {
+            "schemaVersion": 1,
+            "userId": "user-1",
+            "projectId": "fitness",
+            "date": "2026-07-10",
+            "href": "/projects/fitness/recommendations/2026-07-10",
+            "recommendations": [{
+                "id": "rec-1",
+                "kind": "Workout",
+                "title": "Recovery workout",
+                "summary": "Prioritize recovery.",
+                "href": "/projects/fitness/recommendations/2026-07-10/rec-1",
+                "contentType": "application/json",
+            }],
+            "createdAt": "2026-07-10T00:00:00Z",
+            "updatedAt": "2026-07-10T00:00:00Z",
+        }
+        file_document = {
+            "schemaVersion": 1,
+            "id": "rec-1",
+            "projectId": "fitness",
+            "date": "2026-07-10",
+            "kind": "Workout",
+            "title": "Recovery workout",
+            "summary": "Prioritize recovery.",
+            "body": "Walk for 20 minutes.",
+            "createdAt": "2026-07-10T00:00:00Z",
+            "updatedAt": "2026-07-10T00:00:00Z",
+        }
+        responses = [
+            {"Body": io.BytesIO(json.dumps(manifest).encode("utf-8"))},
+            {"Body": io.BytesIO(json.dumps(file_document).encode("utf-8"))},
+        ]
+        with patch("routes.projects.s3.get_object", side_effect=responses):
+            response = self.client.get("/api/projects/fitness/recommendations/2026-07-10/rec-1")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["recommendation"]["href"], "/projects/fitness/recommendations/2026-07-10/rec-1")
+        self.assertEqual(payload["file"]["body"], "Walk for 20 minutes.")
+
+    def test_recommendation_pages_render_manifest_and_file(self):
+        manifest = {
+            "schemaVersion": 1,
+            "userId": "user-1",
+            "projectId": "fitness",
+            "date": "2026-07-10",
+            "href": "/projects/fitness/recommendations/2026-07-10",
+            "recommendations": [{
+                "id": "rec-1",
+                "kind": "Workout",
+                "title": "Recovery workout",
+                "summary": "Prioritize recovery.",
+                "href": "/projects/fitness/recommendations/2026-07-10/rec-1",
+                "contentType": "application/json",
+            }],
+            "createdAt": "2026-07-10T00:00:00Z",
+            "updatedAt": "2026-07-10T00:00:00Z",
+        }
+        file_document = {
+            "schemaVersion": 1,
+            "id": "rec-1",
+            "projectId": "fitness",
+            "date": "2026-07-10",
+            "kind": "Workout",
+            "title": "Recovery workout",
+            "summary": "Prioritize recovery.",
+            "body": "Walk for 20 minutes.",
+            "createdAt": "2026-07-10T00:00:00Z",
+            "updatedAt": "2026-07-10T00:00:00Z",
+        }
+        responses = [
+            {"Body": io.BytesIO(json.dumps(manifest).encode("utf-8"))},
+            {"Body": io.BytesIO(json.dumps(manifest).encode("utf-8"))},
+            {"Body": io.BytesIO(json.dumps(file_document).encode("utf-8"))},
+        ]
+        with patch("routes.projects.s3.get_object", side_effect=responses):
+            list_response = self.client.get("/projects/fitness/recommendations/2026-07-10")
+            detail_response = self.client.get("/projects/fitness/recommendations/2026-07-10/rec-1")
+
+        self.assertEqual(list_response.status_code, 200)
+        self.assertIn(b"Recovery workout", list_response.data)
+        self.assertEqual(detail_response.status_code, 200)
+        self.assertIn(b"Walk for 20 minutes.", detail_response.data)
 
 
 if __name__ == "__main__":

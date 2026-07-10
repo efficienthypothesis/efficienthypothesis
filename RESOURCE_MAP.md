@@ -185,10 +185,14 @@ Daily context reads and writes are scoped to the authenticated user and validate
 
 ## Recommendation Contract
 
-Project recommendations are stored privately at `<email>/projects/<project_id>/recommendations/<YYYY-MM-DD>.json`.
-Each recommendation stores an `id`, a concise `summary`, timestamps, and a backend-generated user-scoped `href`.
+Project recommendation manifests are stored privately at `<email>/projects/<project_id>/recommendations/<YYYY-MM-DD>/manifest.json`.
+Individual recommendation files are stored privately at `<email>/projects/<project_id>/recommendations/<YYYY-MM-DD>/files/<recommendation_id>.json`.
+Each manifest stores the project/date page `href` and recommendation metadata including `id`, `kind`, `title`, `summary`, timestamps, `contentType`, and a backend-generated user-scoped `href`.
+Each recommendation file stores `id`, `projectId`, `date`, `kind`, `title`, `summary`, `body`, `createdAt`, and `updatedAt`.
+The only recommendation kinds are `Routine` and `Workout`.
 GPT writes recommendations through `upsert_project_recommendations` and reads them through `get_project_recommendations`.
-The weekly Projects calendar renders summaries as links to authenticated recommendation resources.
+The weekly Projects calendar always renders each project/date recommendation state as a link to the authenticated recommendation page.
+Legacy single-object recommendation files at `<email>/projects/<project_id>/recommendations/<YYYY-MM-DD>.json` are read as a fallback only.
 
 ## Browser Cache Contract
 

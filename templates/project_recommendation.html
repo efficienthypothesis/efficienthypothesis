@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+
+{% block title %}{{ file.title }} - Efficient Hypothesis{% endblock %}
+
+{% block head %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/navbar.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/projects.css') }}">
+{% endblock %}
+
+{% block bodyattrs %}class="projects-page recommendations-page"{% endblock %}
+
+{% block navbar %}
+  {% include "navbar.html" %}
+{% endblock %}
+
+{% block content %}
+  <div class="recommendations-shell recommendation-detail">
+    <header class="recommendations-header">
+      <a class="recommendations-back" href="{{ url_for('projects.project_recommendations_page', project_id=project.id, date=date) }}">Recommendations</a>
+      <div>
+        <p class="recommendations-eyebrow">{{ project.name }} - {{ date }} - {{ file.kind }}</p>
+        <h1>{{ file.title }}</h1>
+      </div>
+    </header>
+
+    <section class="recommendation-body">
+      <p class="recommendation-summary">{{ file.summary }}</p>
+      <div class="recommendation-content">{{ file.body }}</div>
+    </section>
+
+    <details class="recommendations-json">
+      <summary>View JSON</summary>
+      <pre>{{ raw_json }}</pre>
+    </details>
+  </div>
+{% endblock %}
