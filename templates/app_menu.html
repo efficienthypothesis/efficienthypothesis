@@ -1,55 +1,63 @@
-{% extends "base.html" %}
+{% extends "base.html" %} {% block title %}Apps - Efficient Hypothesis{%
+endblock %} {% block head %}
+<link
+  rel="stylesheet"
+  href="{{ url_for('static', filename='css/base.css') }}"
+/>
+<link
+  rel="stylesheet"
+  href="{{ url_for('static', filename='css/navbar.css') }}"
+/>
+<link
+  rel="stylesheet"
+  href="{{ url_for('static', filename='css/footer.css') }}"
+/>
+<link
+  rel="stylesheet"
+  href="{{ url_for('static', filename='css/app_menu.css') }}"
+/>
+{% endblock %} {% block navbar %} {% include "navbar.html" %} {% endblock %} {%
+block content %}
+<section class="app-menu" aria-label="Efficient Hypothesis apps">
+  <div class="app-menu-heading">
+    <h1>Apps</h1>
+    <p>{{ user.email }}</p>
+  </div>
 
-{% block title %}Apps - Efficient Hypothesis{% endblock %}
+  <div class="app-option-grid">
+    <a class="app-option active" href="{{ home_app_url }}">
+      <span class="material-symbols-outlined" aria-hidden="true">home</span>
+      <span>
+        <strong>Home</strong>
+        <small
+          >Tasks, websites, subscriptions, tags, and entity references.</small
+        >
+      </span>
+    </a>
 
-{% block head %}
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/navbar.css') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/footer.css') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/app_menu.css') }}">
-{% endblock %}
+    <a class="app-option" href="{{ url_for('pages.projects_app') }}">
+      <span class="material-symbols-outlined" aria-hidden="true"
+        >monitor_heart</span
+      >
+      <span>
+        <strong>Projects</strong>
+        <small>Self improvement and health workflows.</small>
+      </span>
+    </a>
 
-{% block navbar %}
-  {% include "navbar.html" %}
-{% endblock %}
-
-{% block content %}
-  <section class="app-menu" aria-label="Efficient Hypothesis apps">
-    <div class="app-menu-heading">
-      <h1>Apps</h1>
-      <p>{{ user.email }}</p>
-    </div>
-
-    <div class="app-option-grid">
-      <a class="app-option active" href="{{ home_app_url }}">
-        <span class="material-symbols-outlined" aria-hidden="true">home</span>
-        <span>
-          <strong>Home</strong>
-          <small>Tasks, websites, subscriptions, tags, and entity references.</small>
-        </span>
-      </a>
-
-      <a class="app-option" href="{{ url_for('pages.projects_app') }}">
-        <span class="material-symbols-outlined" aria-hidden="true">monitor_heart</span>
-        <span>
-          <strong>Projects</strong>
-          <small>Self improvement and health workflows.</small>
-        </span>
-      </a>
-
-      {% if show_admin_tasks %}
-        <a class="app-option active" href="{{ url_for('pages.admin_tasks') }}">
-          <span class="material-symbols-outlined" aria-hidden="true">admin_panel_settings</span>
-          <span>
-            <strong>Admin Tasks</strong>
-            <small>Current work, planned follow-ups, and agent notes for Neer.</small>
-          </span>
-        </a>
-      {% endif %}
-    </div>
-  </section>
-{% endblock %}
-
-{% block footer %}
-  {% include "footer.html" %}
-{% endblock %}
+    {% if show_admin_tasks %}
+    <a class="app-option active" href="{{ url_for('pages.admin_tasks') }}">
+      <span class="material-symbols-outlined" aria-hidden="true"
+        >admin_panel_settings</span
+      >
+      <span>
+        <strong>Admin Tasks</strong>
+        <small
+          >Current work, planned follow-ups, and agent notes for Neer.</small
+        >
+      </span>
+    </a>
+    {% endif %}
+  </div>
+</section>
+{% endblock %} {% block footer %} {% include "footer.html" %} {% endblock %}

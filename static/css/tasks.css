@@ -1,6 +1,10 @@
 .tasks-page {
   background:
-    radial-gradient(circle at 8% 0%, rgba(35, 58, 139, 0.08), transparent 30rem),
+    radial-gradient(
+      circle at 8% 0%,
+      rgba(35, 58, 139, 0.08),
+      transparent 30rem
+    ),
     #f5f7fb;
 }
 

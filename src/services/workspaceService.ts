@@ -6,7 +6,7 @@ import {
   clearWorkspaceEncryptionArtifacts,
   decryptWorkspaceEnvelope,
   importWorkspaceKey,
-  readCachedEncryptedWorkspace
+  readCachedEncryptedWorkspace,
 } from "./encryptionService";
 import { normalizeWorkspaceForClient } from "./nodeService";
 
@@ -19,7 +19,10 @@ export class WorkspaceConflictError extends Error {
   serverState: WorkspaceState | null;
   serverUpdatedAt: string | null;
 
-  constructor(serverState: WorkspaceState | null, serverUpdatedAt: string | null) {
+  constructor(
+    serverState: WorkspaceState | null,
+    serverUpdatedAt: string | null,
+  ) {
     super("Workspace changed on the server before this browser saved.");
     this.name = "WorkspaceConflictError";
     this.serverState = serverState;
@@ -32,7 +35,9 @@ export type LoadWorkspaceResult = {
   shouldPersist: boolean;
 };
 
-export async function loadWorkspaceWithMetadata(userId: string): Promise<LoadWorkspaceResult> {
+export async function loadWorkspaceWithMetadata(
+  userId: string,
+): Promise<LoadWorkspaceResult> {
   try {
     const payload = await fetchWorkspacePayload();
     if (payload.state) {
@@ -41,26 +46,32 @@ export async function loadWorkspaceWithMetadata(userId: string): Promise<LoadWor
       cachePlaintextWorkspace(normalizedState);
       return {
         state: normalizedState,
-        shouldPersist: false
+        shouldPersist: false,
       };
     }
     if (payload.encryptedState) {
       const serverUpdatedAt = payload.encryptedState.updatedAt || null;
-      const serverState = await decryptWorkspaceEnvelope(userId, payload.encryptedState);
+      const serverState = await decryptWorkspaceEnvelope(
+        userId,
+        payload.encryptedState,
+      );
       const normalizedState = normalizeWorkspaceForClient(serverState);
       const migrationState = {
         ...normalizedState,
-        updatedAt: serverUpdatedAt || normalizedState.updatedAt
+        updatedAt: serverUpdatedAt || normalizedState.updatedAt,
       };
       try {
         const saved = await saveWorkspace(migrationState, serverUpdatedAt);
         return {
           state: { ...migrationState, updatedAt: saved.updatedAt },
-          shouldPersist: false
+          shouldPersist: false,
         };
       } catch (saveError) {
         if (import.meta.env.DEV) {
-          console.warn("Loaded legacy encrypted workspace but could not persist plaintext migration:", saveError);
+          console.warn(
+            "Loaded legacy encrypted workspace but could not persist plaintext migration:",
+            saveError,
+          );
         }
       }
       return { state: migrationState, shouldPersist: false };
@@ -69,7 +80,11 @@ export async function loadWorkspaceWithMetadata(userId: string): Promise<LoadWor
   } catch (error) {
     if (error instanceof WorkspaceLockedError) throw error;
     const cached = await readCachedWorkspace(userId);
-    if (cached) return { state: normalizeWorkspaceForClient(cached), shouldPersist: false };
+    if (cached)
+      return {
+        state: normalizeWorkspaceForClient(cached),
+        shouldPersist: false,
+      };
     if (import.meta.env.DEV) {
       console.warn("Using local workspace fallback:", error);
     }
@@ -93,7 +108,7 @@ export async function fetchWorkspaceFromServer(): Promise<WorkspaceState | null>
   }
   if (payload.encryptedState) {
     const state = normalizeWorkspaceForClient(
-      await decryptWorkspaceEnvelope(userId, payload.encryptedState)
+      await decryptWorkspaceEnvelope(userId, payload.encryptedState),
     );
     return state;
   }
@@ -103,20 +118,21 @@ export async function fetchWorkspaceFromServer(): Promise<WorkspaceState | null>
 async function fetchWorkspacePayload(): Promise<WorkspacePayload> {
   const response = await fetch("/api/workspace");
   if (response.status === 401) throw new Error("Not authenticated");
-  if (!response.ok) throw new Error(`Workspace load failed: ${response.status}`);
+  if (!response.ok)
+    throw new Error(`Workspace load failed: ${response.status}`);
   return (await response.json()) as WorkspacePayload;
 }
 
 export async function saveWorkspace(
   state: WorkspaceState,
-  baseUpdatedAt: string | null
+  baseUpdatedAt: string | null,
 ): Promise<{ updatedAt: string }> {
   const updatedAt = new Date().toISOString();
   const stateForStorage = { ...state, updatedAt };
   const response = await fetch("/api/workspace", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ state: stateForStorage, baseUpdatedAt })
+    body: JSON.stringify({ state: stateForStorage, baseUpdatedAt }),
   });
   if (response.status === 409) {
     const payload = (await response.json()) as {
@@ -124,15 +140,17 @@ export async function saveWorkspace(
       encryptedState?: EncryptedWorkspaceEnvelope | null;
       serverUpdatedAt?: string | null;
     };
-    let serverState = payload.state ? normalizeWorkspaceForClient(payload.state) : null;
+    let serverState = payload.state
+      ? normalizeWorkspaceForClient(payload.state)
+      : null;
     if (!serverState && payload.encryptedState) {
       serverState = normalizeWorkspaceForClient(
-        await decryptWorkspaceEnvelope(state.userId, payload.encryptedState)
+        await decryptWorkspaceEnvelope(state.userId, payload.encryptedState),
       );
     }
     throw new WorkspaceConflictError(
       serverState,
-      payload.serverUpdatedAt || null
+      payload.serverUpdatedAt || null,
     );
   }
   if (!response.ok) {
@@ -140,11 +158,16 @@ export async function saveWorkspace(
   }
   const payload = (await response.json()) as { updatedAt?: string };
   clearWorkspaceEncryptionArtifacts(state.userId);
-  cachePlaintextWorkspace({ ...stateForStorage, updatedAt: payload.updatedAt || updatedAt });
+  cachePlaintextWorkspace({
+    ...stateForStorage,
+    updatedAt: payload.updatedAt || updatedAt,
+  });
   return { updatedAt: payload.updatedAt || updatedAt };
 }
 
-async function readCachedWorkspace(userId: string): Promise<WorkspaceState | null> {
+async function readCachedWorkspace(
+  userId: string,
+): Promise<WorkspaceState | null> {
   clearLegacyPlaintextWorkspaceCache();
   try {
     const raw = localStorage.getItem(localCacheKey(userId));
@@ -175,7 +198,7 @@ export async function ensureUserTimezone(): Promise<void> {
     await fetch("/api/user/timezone", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ timezone })
+      body: JSON.stringify({ timezone }),
     });
   } catch {
     // Timezone improves date rendering, but the editor should still load without it.
@@ -227,7 +250,7 @@ export async function deleteAccount(confirmation: string): Promise<void> {
   const response = await fetch("/api/account", {
     method: "DELETE",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ confirmation })
+    body: JSON.stringify({ confirmation }),
   });
   if (!response.ok) {
     let detail = "";
