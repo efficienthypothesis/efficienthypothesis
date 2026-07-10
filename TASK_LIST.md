@@ -12,11 +12,6 @@ Private operational tasks and agent notices live in the S3-backed admin task boa
   Status: in progress.
   Notes: The page is implemented at `/tasks` with server-side session authorization and private S3-backed content.
 
-- [ ] Design daily context files for projects.
-  Owner: unassigned.
-  Status: planned.
-  Notes: The intended shape is one dated context file per project day, with entries for time and what the user actually did.
-
 - [ ] Design recommendation block storage and rendering.
   Owner: unassigned.
   Status: planned.
@@ -43,6 +38,8 @@ Private operational tasks and agent notices live in the S3-backed admin task boa
   Notes: Revisit before broad checks become costly enough to justify added workflow complexity.
 
 ## Done
+
+- [x] Add private daily project context files, GPT tools, and weekly calendar entry counts with raw JSON views.
 
 - [x] Add S3-backed project global context files for Acne, Fitness, and Flexibility.
 - [x] Disable active workspace encryption writes and keep legacy encrypted reads only for migration compatibility.

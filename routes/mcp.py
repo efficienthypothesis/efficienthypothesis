@@ -14,6 +14,12 @@ from routes.workspace_crypto import (
     decrypt_workspace_envelope,
     is_encrypted_workspace,
 )
+from routes.projects import (
+    PROJECT_BY_ID,
+    _normalize_daily_context,
+    _read_daily_context,
+    _write_daily_context,
+)
 
 
 mcp_bp = Blueprint("mcp", __name__)
@@ -226,6 +232,49 @@ def _node_fields_schema(description):
 
 
 TOOLS = [
+    _read_only_tool(
+        "get_daily_context",
+        "Get project daily context",
+        "Read one user's dated project context file. Use this for recommendations across one or more days.",
+        {
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "string", "enum": list(PROJECT_BY_ID)},
+                "date": {"type": "string", "description": "Date in YYYY-MM-DD form."},
+            },
+            "required": ["project_id", "date"],
+            "additionalProperties": False,
+        },
+        {"type": "object", "properties": {"dailyContext": {"type": "object"}}, "required": ["dailyContext"], "additionalProperties": False},
+    ),
+    _write_tool(
+        "upsert_daily_context",
+        "Update project daily context",
+        "Add or replace a dated project's context entries. Entries contain only an ID, optional time, and summary.",
+        {
+            "type": "object",
+            "properties": {
+                "project_id": {"type": "string", "enum": list(PROJECT_BY_ID)},
+                "date": {"type": "string", "description": "Date in YYYY-MM-DD form."},
+                "entries": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "string"},
+                            "time": {"type": ["string", "null"]},
+                            "summary": {"type": "string"},
+                        },
+                        "required": ["id", "summary"],
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            "required": ["project_id", "date", "entries"],
+            "additionalProperties": False,
+        },
+        {"type": "object", "properties": {"dailyContext": {"type": "object"}}, "required": ["dailyContext"], "additionalProperties": False},
+    ),
     _read_only_tool(
         "query_nodes",
         "Query workspace nodes",
@@ -1199,6 +1248,33 @@ def _get_node_result(email, user_id, arguments):
     }
 
 
+def _get_daily_context_result(email, user_id, arguments):
+    project_id = _require_nonempty(arguments.get("project_id"), "project_id")
+    date = _require_nonempty(arguments.get("date"), "date")
+    if project_id not in PROJECT_BY_ID:
+        raise ValueError("unknown project")
+    context = _read_daily_context(email, project_id, user_id, date)
+    return {
+        "structuredContent": {"dailyContext": context},
+        "content": [{"type": "text", "text": f"Loaded {project_id} context for {date}."}],
+    }
+
+
+def _upsert_daily_context_result(email, user_id, arguments):
+    project_id = _require_nonempty(arguments.get("project_id"), "project_id")
+    date = _require_nonempty(arguments.get("date"), "date")
+    if project_id not in PROJECT_BY_ID:
+        raise ValueError("unknown project")
+    context = _normalize_daily_context(
+        {"entries": arguments.get("entries")}, project_id, user_id, date
+    )
+    _write_daily_context(email, project_id, context)
+    return {
+        "structuredContent": {"dailyContext": context},
+        "content": [{"type": "text", "text": f"Updated {project_id} context for {date}."}],
+    }
+
+
 def _mutation_result(action, node, created):
     return {
         "structuredContent": {"ok": True, "node": node, "created": bool(created)},
@@ -1219,6 +1295,10 @@ def _call_tool(name, arguments, ctx):
     email = ctx["email"]
     user_id = ctx.get("user_id") or email
 
+    if name == "get_daily_context":
+        return _get_daily_context_result(email, user_id, arguments)
+    if name == "upsert_daily_context":
+        return _upsert_daily_context_result(email, user_id, arguments)
     if name == "query_nodes":
         return _query_nodes(email, user_id, arguments)
     if name == "get_node":

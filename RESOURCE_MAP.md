@@ -41,7 +41,7 @@ AWS is the source of truth for user data, deployment artifacts, and deployed run
 | Environment | Account/Profile | Region | Resource | Owner | Managed By | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
 | production | `eh` | `us-east-2` | Lambda `efficienthypothesis-backend` | Backend runtime | `deploy.sh` | Flask app packaged as Lambda |
-| production | `eh` | `us-east-2` | S3 bucket `eh-app-data` | User data, assets, deploy artifact | App code and `deploy.sh` | Stores workspace JSON, project context JSON, assets, and Lambda zip |
+| production | `eh` | `us-east-2` | S3 bucket `eh-app-data` | User data, assets, deploy artifact | App code and `deploy.sh` | Stores workspace JSON, project context JSON, daily context JSON, assets, and Lambda zip |
 | production | `eh` | `us-east-2` | S3 object `admin/tasks.json` | Private admin task-board content | Authorized task-board updates | Read only after server-side admin session authorization |
 | production | `eh` | `us-east-2` | DynamoDB table `Users` | User records | Existing AWS state | Stores user metadata such as timezone |
 | production | `eh` | `us-east-2` | DynamoDB tables `Tasks`, `Actions`, `Drafts`, `TimeLogs`, `OAuthTokens` | Legacy cleanup and OAuth support | Existing AWS state | Retained for account deletion and token behavior |
@@ -166,6 +166,15 @@ After authorization, read handling follows these rules:
 - Any other `ClientError`, UTF-8 decode failure, or JSON parse failure returns `workspace_unavailable` (HTTP 503 from browser API) and blocks overwrite or tool operations.
 
 Run `tests/test_workspace_fail_closed.py` when read-error handling or workspace conflict behavior changes.
+
+## Daily Project Context Contract
+
+Daily project context is stored privately at `<email>/projects/<project_id>/daily-context/<YYYY-MM-DD>.json`.
+Each document contains `schemaVersion`, `userId`, `projectId`, `date`, `entries`, `createdAt`, and `updatedAt`.
+Each entry contains only `id`, optional `time`, `summary`, `createdAt`, and `updatedAt`.
+The Projects calendar shows each day's entry count and a raw JSON disclosure for each project.
+GPT accesses the same data through the authenticated MCP tools `get_daily_context` and `upsert_daily_context`.
+Daily context reads and writes are scoped to the authenticated user and validated by project and date.
 
 ## Browser Cache Contract
 

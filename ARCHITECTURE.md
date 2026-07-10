@@ -87,6 +87,10 @@ The backend owns:
 
 ## Data Boundary
 
+Daily project context is stored as private, user-scoped S3 JSON documents under each project's dated `daily-context/` prefix.
+The Projects calendar retrieves the seven-day window through the backend and shows entry counts with raw JSON disclosures.
+GPT reads and updates the same documents through authenticated MCP tools, keeping AWS access on the backend.
+
 Durable runtime data lives in AWS.
 GitHub is the source of truth for code and docs.
 AWS is the source of truth for user data and deployed runtime state.

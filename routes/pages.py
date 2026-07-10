@@ -18,6 +18,7 @@ from flask import (
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from config import s3, PRODUCTIVITY_BUCKET, GOOGLE_CLIENT_ID, _require_auth, user_table
 from routes.task_dashboard import TASK_BOARD_LOAD_ERRORS, is_admin_user, load_task_board
+from routes.projects import _project_calendar_days_for_user
 
 pages_bp = Blueprint('pages', __name__)
 logger = logging.getLogger(__name__)
@@ -143,7 +144,11 @@ def home():
         return render_template(
             "projects_app.html",
             user=session["user"],
-            project_days=_project_calendar_days(session["user"]),
+            project_days=_project_calendar_days_for_user(
+                session["user"]["email"],
+                session["user"].get("id") or session["user"]["email"],
+                _project_timezone(session["user"]),
+            ),
         )
     return render_template('index.html')
 

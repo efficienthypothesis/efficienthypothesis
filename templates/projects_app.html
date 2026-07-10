@@ -27,7 +27,18 @@
             <div class="projects-day-name">{{ day.weekday }}</div>
             <div class="projects-day-date">{{ day.date }}</div>
           </header>
-          <div class="projects-day-body"></div>
+          <div class="projects-day-body">
+            {% for project in day.projects %}
+              <article class="projects-context-summary">
+                <div class="projects-context-project">{{ project.name }}</div>
+                <div class="projects-context-count">{{ project.entry_count }} {% if project.entry_count == 1 %}entry{% else %}entries{% endif %}</div>
+                <details class="projects-context-raw">
+                  <summary>View JSON</summary>
+                  <pre>{{ project.raw_json }}</pre>
+                </details>
+              </article>
+            {% endfor %}
+          </div>
         </section>
       {% endfor %}
     </div>

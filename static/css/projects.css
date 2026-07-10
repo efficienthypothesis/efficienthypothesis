@@ -74,7 +74,54 @@ body.projects-page main {
 
 .projects-day-body {
   min-height: 0;
+  overflow: auto;
+  padding: 10px;
   background: #fbfcff;
+}
+
+.projects-context-summary {
+  padding: 9px 8px;
+  border-bottom: 1px solid #e5e9f0;
+}
+
+.projects-context-summary:last-child {
+  border-bottom: 0;
+}
+
+.projects-context-project {
+  color: #233a8b;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.projects-context-count {
+  margin-top: 3px;
+  color: #64748b;
+  font-size: 0.76rem;
+}
+
+.projects-context-raw {
+  margin-top: 6px;
+  color: #475569;
+  font-size: 0.7rem;
+}
+
+.projects-context-raw summary {
+  cursor: pointer;
+  color: #233a8b;
+  font-weight: 650;
+}
+
+.projects-context-raw pre {
+  max-height: 220px;
+  overflow: auto;
+  margin: 7px 0 0;
+  padding: 7px;
+  border: 1px solid #d8dee8;
+  background: #fff;
+  font: 0.65rem/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .projects-nav-arrow {
