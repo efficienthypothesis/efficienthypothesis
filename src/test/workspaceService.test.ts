@@ -194,4 +194,26 @@ describe("workspace service", () => {
       expect.any(String),
     );
   });
+
+  it("keeps a pending per-user cache when a save fails", async () => {
+    const state = createDefaultWorkspace("user_1");
+    const cache = new Map<string, string>();
+    vi.stubGlobal("localStorage", {
+      getItem: vi.fn((key: string) => cache.get(key) || null),
+      removeItem: vi.fn((key: string) => cache.delete(key)),
+      setItem: vi.fn((key: string, value: string) => cache.set(key, value)),
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: false,
+        status: 503,
+        json: async () => ({}),
+      })),
+    );
+
+    await expect(saveWorkspace(state, null)).rejects.toThrow("Workspace save failed: 503");
+
+    expect(cache.has("eh_workspace_pending_v1:user_1")).toBe(true);
+  });
 });

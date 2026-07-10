@@ -11,6 +11,7 @@ import {
 import { normalizeWorkspaceForClient } from "./nodeService";
 
 const LOCAL_CACHE_PREFIX = "eh_workspace_cache_v1:";
+const PENDING_CACHE_PREFIX = "eh_workspace_pending_v1:";
 const LEGACY_LOCAL_CACHE_KEY = "eh_workspace_cache_v1";
 
 export { WorkspaceLockedError, importWorkspaceKey };
@@ -79,7 +80,13 @@ export async function loadWorkspaceWithMetadata(
     return { state: createDefaultWorkspace(userId), shouldPersist: true };
   } catch (error) {
     if (error instanceof WorkspaceLockedError) throw error;
-    const cached = await readCachedWorkspace(userId);
+    const pending = await readCachedWorkspace(userId, true);
+    if (pending)
+      return {
+        state: normalizeWorkspaceForClient(pending),
+        shouldPersist: true,
+      };
+    const cached = await readCachedWorkspace(userId, false);
     if (cached)
       return {
         state: normalizeWorkspaceForClient(cached),
@@ -129,6 +136,7 @@ export async function saveWorkspace(
 ): Promise<{ updatedAt: string }> {
   const updatedAt = new Date().toISOString();
   const stateForStorage = { ...state, updatedAt };
+  cachePendingWorkspace(stateForStorage);
   const response = await fetch("/api/workspace", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
@@ -158,6 +166,7 @@ export async function saveWorkspace(
   }
   const payload = (await response.json()) as { updatedAt?: string };
   clearWorkspaceEncryptionArtifacts(state.userId);
+  clearPendingWorkspace(state.userId);
   cachePlaintextWorkspace({
     ...stateForStorage,
     updatedAt: payload.updatedAt || updatedAt,
@@ -167,10 +176,13 @@ export async function saveWorkspace(
 
 async function readCachedWorkspace(
   userId: string,
+  pendingOnly: boolean,
 ): Promise<WorkspaceState | null> {
   clearLegacyPlaintextWorkspaceCache();
   try {
-    const raw = localStorage.getItem(localCacheKey(userId));
+    const raw = localStorage.getItem(
+      pendingOnly ? pendingCacheKey(userId) : localCacheKey(userId),
+    );
     if (raw) {
       const cached = JSON.parse(raw) as WorkspaceState;
       if (cached.userId === userId) return cached;
@@ -211,6 +223,7 @@ export function clearWorkspaceCache(): void {
     if (userId) {
       clearWorkspaceEncryptionArtifacts(userId);
       clearPlaintextWorkspaceCache(userId);
+      clearPendingWorkspace(userId);
     }
     clearLegacyPlaintextWorkspaceCache();
   } catch {
@@ -221,6 +234,14 @@ export function clearWorkspaceCache(): void {
 function clearPlaintextWorkspaceCache(userId: string): void {
   try {
     localStorage.removeItem(localCacheKey(userId));
+  } catch {
+    // Local cache is best-effort only.
+  }
+}
+
+function clearPendingWorkspace(userId: string): void {
+  try {
+    localStorage.removeItem(pendingCacheKey(userId));
   } catch {
     // Local cache is best-effort only.
   }
@@ -242,8 +263,20 @@ function cachePlaintextWorkspace(state: WorkspaceState): void {
   }
 }
 
+function cachePendingWorkspace(state: WorkspaceState): void {
+  try {
+    localStorage.setItem(pendingCacheKey(state.userId), JSON.stringify(state));
+  } catch {
+    // Local cache is best-effort only.
+  }
+}
+
 function localCacheKey(userId: string): string {
   return `${LOCAL_CACHE_PREFIX}${userId}`;
+}
+
+function pendingCacheKey(userId: string): string {
+  return `${PENDING_CACHE_PREFIX}${userId}`;
 }
 
 export async function deleteAccount(confirmation: string): Promise<void> {
