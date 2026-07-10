@@ -16,11 +16,6 @@ Efficient Hypothesis is a personal productivity app with browser, OAuth, and MCP
 The main workspace runs at `home.efficienthypothesis.com`.
 The projects calendar runs at `projects.efficienthypothesis.com`.
 The public marketing, login, OAuth, legal, and app-selection pages run from `efficienthypothesis.com`.
-The private admin task board runs at `efficienthypothesis.com/tasks` and is restricted by the verified browser-session email allowlist in `routes/task_dashboard.py`, which currently contains only `neerkuchlous@gmail.com`.
-Email matching trims surrounding whitespace and ignores case while still requiring the exact allowlisted address.
-Its Apps entry is rendered only for allowlisted sessions, and direct requests from other authenticated users receive HTTP 403.
-OAuth bearer credentials do not grant access to this browser-session surface.
-Requests for `/tasks` on another app host redirect to the primary host before task data is loaded.
 
 The browser app is built with React, TypeScript, and Vite from `src/`.
 The backend is a Flask application in `app.py` and `routes/`.
@@ -36,7 +31,6 @@ This repo keeps the current React/Vite plus Flask/Lambda architecture until ther
 | --- | --- | --- | --- |
 | React workspace app | Main authenticated editor UI | `src/`, `index.html`, `vite.config.ts` | Browser assets under `static/react-app/` after build |
 | Server-rendered pages | Public pages, login, app menu, projects calendar shell | `templates/`, `static/css/`, `static/js/`, `routes/pages.py` | Flask templates and static files |
-| Admin task board | Private work queue and agent notices sourced from S3 | `routes/task_dashboard.py`, `templates/tasks.html`, `static/css/tasks.css` | Admin-only `/tasks` on the primary host |
 | Flask API | Authenticated API routes and privileged operations | `app.py`, `routes/`, `config.py` | AWS Lambda through `apig-wsgi` |
 | OAuth and MCP | ChatGPT connector authorization and workspace tool calls | `routes/oauth.py`, `routes/mcp.py`, `MCP_NOTES.md` | OAuth routes and `/mcp-v5` |
 | Workspace persistence | S3-backed workspace state and conflict handling | `routes/workspace.py`, `src/services/workspaceService.ts` | `s3://eh-app-data/<email>/workspace/state.json` |
@@ -79,7 +73,7 @@ The backend owns:
 - OAuth authorization-code and bearer-token validation for MCP.
 - OAuth client-registry reads from S3 for MCP and ChatGPT client metadata.
 - Access-token verification checks server-side revocation markers before permitting MCP operations.
-- S3 reads and writes for workspace state and project context files, plus private admin task-board reads.
+- S3 reads and writes for workspace state and project context files.
 - S3 workspace reads are fail-closed for browser and MCP surfaces: confirmed missing objects still allow first-write bootstrap, while non-missing read failures return temporary-unavailable and do not fabricate or overwrite state.
 - Browser-side plaintext workspace cache keys are scoped to the authenticated user ID.
 - The legacy shared plaintext cache key is removed and treated as stale storage during migration.
@@ -117,13 +111,9 @@ Recommendation generation context includes active research metadata plus the tar
 Durable runtime data lives in AWS.
 GitHub is the source of truth for code and docs.
 AWS is the source of truth for user data and deployed runtime state.
-The admin task board reads its private structured task payload from `s3://eh-app-data/admin/tasks.json` after server-side session authorization.
-The payload uses an explicit `schemaVersion` and is validated before rendering; invalid, unavailable, or oversized payloads produce a private, non-indexable HTTP 503 response without logging task content.
-`RESOURCE_MAP.md` documents the accepted payload contract.
 
 Current S3 data includes:
 
-- `s3://eh-app-data/admin/tasks.json`
 - `s3://eh-app-data/<email>/workspace/state.json`
 - `s3://eh-app-data/<email>/projects/acne/global-context.json`
 - `s3://eh-app-data/<email>/projects/fitness/global-context.json`
@@ -171,4 +161,3 @@ Frontend, Flask, template, static, MCP, persistence, auth, or deploy-script chan
 ## Open Questions
 
 Public product work, architecture questions, and decisions are tracked in `TASK_LIST.md`.
-Private operational tasks and agent notices are tracked separately in the S3-backed admin task board.

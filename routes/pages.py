@@ -1,14 +1,11 @@
 import datetime
-import logging
 import os
 from urllib.parse import urlencode, urlparse
 
 from flask import (
     Blueprint,
     Response,
-    abort,
     jsonify,
-    make_response,
     redirect,
     render_template,
     request,
@@ -17,11 +14,9 @@ from flask import (
 )
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from config import s3, PRODUCTIVITY_BUCKET, GOOGLE_CLIENT_ID, _require_auth, user_table
-from routes.task_dashboard import TASK_BOARD_LOAD_ERRORS, is_admin_user, load_task_board
 from routes.projects import _project_calendar_days_for_user
 
 pages_bp = Blueprint('pages', __name__)
-logger = logging.getLogger(__name__)
 
 APP_PAGES = {
     "workspace",
@@ -52,19 +47,8 @@ def _home_app_url(path="/"):
     return _external_url(HOME_APP_HOST, path)
 
 
-def _primary_url(path="/"):
-    return _external_url(PRIMARY_HOST, path)
-
-
 def _projects_app_url(path="/"):
     return _external_url(PROJECTS_APP_HOST, path)
-
-
-def _private_task_response(body, status=200):
-    response = make_response(body, status)
-    response.headers["Cache-Control"] = "private, no-store"
-    response.headers["X-Robots-Tag"] = "noindex, nofollow"
-    return response
 
 
 def _project_timezone(user):
@@ -164,36 +148,6 @@ def dynamic_page(page):
     return "<h1>404 - Page Not Found</h1>", 404
 
 
-@pages_bp.route('/tasks')
-def admin_tasks():
-    if _request_host() != PRIMARY_HOST:
-        return redirect(_primary_url("/tasks"), code=302)
-
-    user = session.get("user")
-    if not user:
-        return redirect(url_for('pages.login_page', next="/tasks"))
-    if not is_admin_user(user):
-        abort(403)
-
-    try:
-        task_board = load_task_board(s3, PRODUCTIVITY_BUCKET)
-    except TASK_BOARD_LOAD_ERRORS as exc:
-        logger.warning(
-            "Admin task board unavailable (error_type=%s)",
-            type(exc).__name__,
-        )
-        return _private_task_response(
-            "Task board is temporarily unavailable.",
-            status=503,
-        )
-
-    return _private_task_response(render_template(
-        "tasks.html",
-        user=user,
-        task_board=task_board,
-    ))
-
-
 @pages_bp.route('/home')
 def home_app():
     return redirect(_home_app_url("/"), code=302)
@@ -212,7 +166,6 @@ def app_menu():
         "app_menu.html",
         user=session["user"],
         home_app_url=_home_app_url("/"),
-        show_admin_tasks=is_admin_user(session["user"]),
     )
 
 

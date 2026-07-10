@@ -14,7 +14,7 @@ AWS is the source of truth for user data, deployment artifacts, and deployed run
 | --- | --- | --- | --- | --- |
 | `src/` | React workspace app | `npm run build`, `npm test` | Lambda bundle through `bash deploy.sh` | Browser source for the main app |
 | `index.html`, `vite.config.ts`, `tsconfig*.json`, `package*.json` | Frontend build config | `npm run build`, `npm test` | Lambda bundle through `bash deploy.sh` | Vite build outputs ignored files under `static/react-app/` |
-| `templates/` | Flask-rendered pages | Flask behavior tests and route smoke check | Lambda bundle through `bash deploy.sh` | Public, login, app menu, OAuth, projects, and admin tasks pages |
+| `templates/` | Flask-rendered pages | Flask behavior tests and route smoke check | Lambda bundle through `bash deploy.sh` | Public, login, app menu, OAuth, and projects pages |
 | `static/css/`, `static/js/` | Server-rendered page assets | Manual UI check when behavior changes | Lambda bundle through `bash deploy.sh` | Includes Projects Profile modal code |
 | `app.py`, `config.py`, `routes/` | Flask API and backend app | Flask compilation, behavior tests, and route smoke check | Lambda bundle through `bash deploy.sh` | Privileged AWS access stays here |
 | `requirements-lambda.txt` | Lambda Python dependencies | Route compile and import smoke check | Lambda bundle through `bash deploy.sh` | Deployment installs these into the zip |
@@ -22,7 +22,7 @@ AWS is the source of truth for user data, deployment artifacts, and deployed run
 | `infra/`, `scripts/deploy-infrastructure.sh` | CloudFormation infrastructure ownership and validation | `scripts/deploy-infrastructure.sh plan` | AWS resource adoption via explicit import change sets | Templates are import-ready; no resource adoption occurs by default |
 | `.github/workflows/` | CI | GitHub Actions | None directly | Checks pushes and pull requests |
 | `MCP_NOTES.md` | MCP connector docs | Documentation review | None unless MCP code changes | Keep connector URL and tool notes current |
-| `ARCHITECTURE.md`, `RESOURCE_MAP.md`, `TASK_LIST.md`, `review.md`, `ADRS/`, `AI_RESOURCES/` | Public AI workflow docs | Documentation review | None | Never store private admin task content in this public repository |
+| `ARCHITECTURE.md`, `RESOURCE_MAP.md`, `TASK_LIST.md`, `review.md`, `ADRS/`, `AI_RESOURCES/` | Public AI workflow docs | Documentation review | None | Never store private operational notes in this public repository |
 | `static/react-app/`, `dist/`, `node_modules/`, `.venv/`, `__pycache__/` | Generated or local files | Do not commit | None | Ignored local or generated artifacts |
 
 ## Deploy Targets
@@ -32,7 +32,6 @@ AWS is the source of truth for user data, deployment artifacts, and deployed run
 | `docs-only` | Repo workflow and documentation | Markdown docs, ADRs, task lists | No deploy required |
 | `frontend` | React source compiled into deployed static assets | `src/`, Vite and TypeScript config, package files | Load `home.efficienthypothesis.com` after deploy when practical |
 | `projects-static` | Projects page templates, CSS, and JavaScript | `templates/projects_app.html`, `templates/navbar.html`, `static/css/projects.css`, `static/js/navbar.js` | Load `projects.efficienthypothesis.com` after deploy when practical |
-| `admin-tasks` | Private task-board route, template, styles, and S3-backed task content | `routes/task_dashboard.py`, `routes/pages.py`, `templates/tasks.html`, `static/css/tasks.css`, `s3://eh-app-data/admin/tasks.json` | Verify anonymous denial and authenticated admin rendering at `efficienthypothesis.com/tasks` |
 | `api` | Flask routes and persistence behavior | `app.py`, `config.py`, `routes/`, `requirements-lambda.txt` | Call a representative public or authenticated route after deploy |
 | `mcp` | ChatGPT connector behavior | `routes/mcp.py`, `routes/oauth.py`, `MCP_NOTES.md` | Check OAuth metadata and `/mcp-v5` behavior after deploy |
 | `full` | Shared, unclear, or cross-cutting changes | Build, auth, deployment, or persistence changes | Run `bash deploy.sh` and a targeted production smoke check |
@@ -45,7 +44,6 @@ AWS is the source of truth for user data, deployment artifacts, and deployed run
 | production | `eh` | `us-east-2` | IAM role `efficienthypothesis-backend-role` | Backend AWS access | Existing AWS state | Inline policy must include app-owned S3 and DynamoDB resources |
 | production | `eh` | `us-east-2` | CloudFormation stacks `eh-runtime-data`, `eh-runtime-buckets`, `eh-api-hosting` | Infrastructure ownership | CloudFormation import and updates | Existing resources adopted without replacement |
 | production | `eh` | `us-east-2` | S3 bucket `eh-app-data` | User data, assets, deploy artifact | App code and `deploy.sh` | Stores workspace JSON, project context JSON, daily context JSON, assets, and Lambda zip |
-| production | `eh` | `us-east-2` | S3 object `admin/tasks.json` | Private admin task-board content | Authorized task-board updates | Read only after server-side admin session authorization |
 | production | `eh` | `us-east-2` | DynamoDB table `Users` | User records | Existing AWS state | Stores user metadata such as timezone |
 | production | `eh` | `us-east-2` | DynamoDB tables `Tasks`, `Actions`, `Drafts`, `TimeLogs`, `OAuthTokens` | Legacy cleanup and OAuth support | Existing AWS state | Retained for account deletion and token behavior |
 | production | `eh` | `us-east-2` | DynamoDB tables `ProjectDailyContextMetadata`, `ProjectResearchMetadata`, `ProjectInventoryItems` | Project discovery metadata and inventory | CloudFormation and app code | Indexes S3-backed daily context, research documents, and owned or completed inventory |
@@ -106,60 +104,12 @@ required = {
     "/api/projects/global-contexts",
     "/api/projects/<project_id>/global-context",
     "/mcp-v5",
-    "/tasks",
 }
 missing = sorted(required - rules)
 if missing:
     raise SystemExit(f"Missing routes: {missing}")
 PY
 ```
-
-## Admin Task Board Data Contract
-
-The private task board reads the current JSON object from `s3://eh-app-data/admin/tasks.json` only after the browser session passes the email allowlist in `routes/task_dashboard.py`.
-The schema itself is safe to document, but real task content must stay out of GitHub, browser assets, command output, and logs.
-
-```json
-{
-  "schemaVersion": 1,
-  "updatedOn": "2026-07-09",
-  "tasks": [
-    {
-      "id": "example-task",
-      "section": "to_do",
-      "title": "Example task",
-      "summary": "A non-sensitive example of the task summary.",
-      "status": "planned",
-      "priority": "medium",
-      "owner": "Unassigned",
-      "updatedOn": "2026-07-09",
-      "source": "example",
-      "actionRequired": "Optional next action."
-    }
-  ]
-}
-```
-
-Payload rules:
-
-- `schemaVersion` must be `1`, `updatedOn` must be a real calendar date in `YYYY-MM-DD` form, and `tasks` must be an array.
-- The UTF-8 JSON payload cannot exceed 256 KiB or 200 tasks.
-- Every task requires `id`, `section`, `title`, `summary`, `status`, `priority`, `owner`, `updatedOn`, and `source`; `actionRequired` is optional.
-- Task IDs must be unique lowercase slugs with at most 80 characters.
-- Sections are `working_on`, `to_do`, `tell_neer`, and `done`.
-- Sections render in that fixed order, while tasks retain their payload order within each section.
-- Statuses are `in_progress`, `planned`, `blocked`, `needs_decision`, `needs_attention`, `info`, and `done`.
-- Priorities are `critical`, `high`, `medium`, `low`, and `info`.
-- Tasks in `working_on` must use `in_progress`, tasks in `done` must use `done`, and `done` cannot be used outside the `done` section.
-- `title` is limited to 200 characters, `summary` to 1,000, `owner` and `source` to 120 each, and `actionRequired` to 500.
-- Required string values and a supplied `actionRequired` value must be non-empty.
-- Each task `updatedOn` value must also be a real calendar date in `YYYY-MM-DD` form.
-
-The route is read-only.
-Before an authorized operational workflow updates the S3 object, validate the candidate payload with `routes.task_dashboard.parse_task_board`.
-Run the focused tests in `tests/test_tasks_page.py` after changing the parser or route behavior.
-Successful task pages and storage or schema failure responses set `Cache-Control: private, no-store` and `X-Robots-Tag: noindex, nofollow`.
-Storage and schema failures return HTTP 503 without task content or sensitive storage details.
 
 ## Workspace Read/Write Contract
 
@@ -257,7 +207,6 @@ Run `scripts/deploy-infrastructure.sh plan` to validate templates without changi
 Do not import existing production resources until a reviewed CloudFormation change set confirms no replacement or destructive action.
 Frontend source changes should run frontend checks and deploy the Lambda bundle because built assets are served from the Flask package.
 Flask route, template, static asset, dependency, or deployment-script changes should run targeted backend checks and deploy the Lambda bundle.
-Private task-board payload changes update AWS runtime state and should never be copied into public repository files or logs.
 MCP, OAuth, auth, persistence, or workspace schema changes should receive broader review because they affect external clients and stored data.
 Unknown, shared, or cross-cutting changes should fall back to the full check and deploy path.
 

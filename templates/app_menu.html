@@ -44,20 +44,6 @@ block content %}
         <small>Self improvement and health workflows.</small>
       </span>
     </a>
-
-    {% if show_admin_tasks %}
-    <a class="app-option active" href="{{ url_for('pages.admin_tasks') }}">
-      <span class="material-symbols-outlined" aria-hidden="true"
-        >admin_panel_settings</span
-      >
-      <span>
-        <strong>Admin Tasks</strong>
-        <small
-          >Current work, planned follow-ups, and agent notes for Neer.</small
-        >
-      </span>
-    </a>
-    {% endif %}
   </div>
 </section>
 {% endblock %} {% block footer %} {% include "footer.html" %} {% endblock %}

@@ -3,14 +3,8 @@
 This is the shared public working list for agents and humans.
 Keep it lightweight.
 Use it for repository work that is safe to publish.
-Private operational tasks and agent notices live in the S3-backed admin task board.
 
 ## Active
-
-- [ ] Deploy and verify the private admin task board.
-  Owner: Codex.
-  Status: in progress.
-  Notes: The page is implemented at `/tasks` with server-side session authorization and private S3-backed content.
 
 - [ ] Publish the GPT app and produce the required public demo recording.
   Owner: Neer.

@@ -98,7 +98,6 @@ required = {
     "/api/projects/global-contexts",
     "/api/projects/<project_id>/global-context",
     "/mcp-v5",
-    "/tasks",
 }
 missing = sorted(required - rules)
 if missing:

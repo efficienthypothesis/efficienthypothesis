@@ -46,7 +46,6 @@ Keep direct AWS edits temporary and copy any durable code or configuration chang
 Projects currently means the Acne, Fitness, and Flexibility surfaces on `projects.efficienthypothesis.com`.
 Project global context files live in S3 under `<email>/projects/<project_id>/global-context.json`.
 `TASK_LIST.md` is the public repository backlog and must contain only work that is safe to publish.
-Private operational tasks and agent notices live in the S3 object `admin/tasks.json` and render only through the admin-authorized `/tasks` route.
-Do not copy private task-board content into this public repository.
+Do not copy private operational notes into this public repository.
 The AI workflow reference is stack-agnostic.
 Do not migrate away from the current React/Vite plus Flask/Lambda runtime unless there is a clear product or operational reason.
