@@ -13,7 +13,7 @@ os.environ.setdefault("FLASK_SECRET_KEY", "test")
 os.environ.setdefault("OAUTH_SIGNING_KEY", "test")
 
 from app import app
-from routes.projects import _normalize_daily_context, _project_calendar_days_for_user, _store_daily_context_image
+from routes.projects import _normalize_daily_context, _project_calendar_days_for_user, _read_recommendation_context, _store_daily_context_image, _write_research_item
 
 
 def s3_error(code):
@@ -48,7 +48,7 @@ class DailyContextTests(unittest.TestCase):
         self.assertEqual(response.get_json()["dailyContext"]["entries"], [])
 
     def test_daily_context_put_writes_user_scoped_document(self):
-        with patch("routes.projects.s3.put_object") as put_object:
+        with patch("routes.projects.s3.put_object") as put_object, patch("routes.projects.project_daily_context_metadata_table.put_item") as put_metadata:
             response = self.client.put(
                 "/api/projects/acne/daily-context/2026-07-10",
                 json={"entries": [{"id": "entry-1", "summary": "Did the thing."}]},
@@ -56,10 +56,14 @@ class DailyContextTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(put_object.call_args.kwargs["Key"], "user@example.com/projects/acne/daily-context/2026-07-10.json")
+        self.assertEqual(put_object.call_args.kwargs["ServerSideEncryption"], "AES256")
+        metadata = put_metadata.call_args.kwargs["Item"]
+        self.assertEqual(metadata["userProject"], "user-1#acne")
+        self.assertEqual(metadata["entryCount"], 1)
 
     def test_daily_context_image_is_stored_and_added_to_document(self):
         image_data = base64.b64encode(b"\x89PNG\r\n\x1a\npayload").decode("ascii")
-        with patch("routes.projects.s3.get_object", side_effect=s3_error("NoSuchKey")), patch("routes.projects.s3.put_object") as put_object:
+        with patch("routes.projects.s3.get_object", side_effect=s3_error("NoSuchKey")), patch("routes.projects.s3.put_object") as put_object, patch("routes.projects.project_daily_context_metadata_table.put_item"):
             entry = _store_daily_context_image("user@example.com", "acne", "user-1", "2026-07-10", image_data, "Screenshot", filename="nested/photo.png")
 
         self.assertEqual(entry["type"], "image")
@@ -295,6 +299,56 @@ class DailyContextTests(unittest.TestCase):
         self.assertIn(b"Evening routine", list_response.data)
         self.assertEqual(detail_response.status_code, 200)
         self.assertIn(b"benzoyl peroxide", detail_response.data)
+
+    def test_research_item_writes_s3_and_metadata(self):
+        research = {
+            "id": "research-1",
+            "topic": "benzoyl peroxide irritation",
+            "status": "active",
+            "source": {"title": "Acne guideline", "url": "https://example.com/acne", "publisher": "Example"},
+            "qualifiedStatements": [{
+                "statement": "Benzoyl peroxide can irritate skin.",
+                "qualification": "Risk varies by concentration and user sensitivity.",
+                "evidenceStrength": "medium",
+                "limitations": ["Does not establish user tolerance."],
+            }],
+            "takeaways": ["Start conservatively when irritation is likely."],
+            "recommendationImplications": ["Avoid stacking multiple irritating actives."],
+            "tags": ["benzoyl peroxide"],
+            "relatedTopics": ["irritation"],
+        }
+        with patch("routes.projects.s3.get_object", side_effect=s3_error("NoSuchKey")), patch("routes.projects.s3.put_object") as put_object, patch("routes.projects.project_research_metadata_table.put_item") as put_metadata:
+            item = _write_research_item("user@example.com", "acne", "user-1", research)
+
+        self.assertEqual(item["id"], "research-1")
+        self.assertEqual(put_object.call_args.kwargs["Key"], "user@example.com/projects/acne/research/items/research-1.json")
+        metadata = put_metadata.call_args.kwargs["Item"]
+        self.assertEqual(metadata["userProject"], "user-1#acne")
+        self.assertEqual(metadata["researchId"], "research-1")
+        self.assertEqual(metadata["tags"], ["benzoyl peroxide"])
+
+    def test_recommendation_context_includes_research_and_prior_recommendations(self):
+        metadata_rows = [{
+            "researchId": "research-1",
+            "topic": "benzoyl peroxide irritation",
+            "status": "active",
+            "tags": ["benzoyl peroxide"],
+            "s3Key": "user@example.com/projects/acne/research/items/research-1.json",
+        }]
+
+        def read_recommendations(_email, project_id, _user_id, date):
+            if date == "2026-07-09":
+                return {
+                    "href": f"/projects/{project_id}/recommendations/{date}",
+                    "recommendations": [{"id": "rec-1", "kind": "routine", "title": "Previous routine", "summary": "Older context."}],
+                }
+            return {"href": f"/projects/{project_id}/recommendations/{date}", "recommendations": []}
+
+        with patch("routes.projects._query_research_metadata", return_value=metadata_rows), patch("routes.projects._read_recommendations", side_effect=read_recommendations):
+            context = _read_recommendation_context("user@example.com", "acne", "user-1", "2026-07-10")
+
+        self.assertEqual(context["activeResearch"], metadata_rows)
+        self.assertEqual(context["recentRecommendations"][0]["date"], "2026-07-09")
 
 
 if __name__ == "__main__":

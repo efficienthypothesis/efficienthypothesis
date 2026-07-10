@@ -88,8 +88,17 @@ The backend owns:
 ## Data Boundary
 
 Daily project context is stored as private, user-scoped S3 JSON documents under each project's dated `daily-context/` prefix.
+DynamoDB stores per-project daily context metadata keyed by user/project and date so GPT can discover which dated files exist before reading a specific S3-backed file.
 The Projects calendar retrieves the seven-day window through the backend and shows entry counts with raw JSON disclosures.
 GPT reads and updates the same documents through authenticated MCP tools, keeping AWS access on the backend.
+
+Project research uses the same split-storage pattern.
+DynamoDB stores research discovery metadata, including topic, tags, related topics, source summary, and takeaway previews.
+S3 stores the full qualified statements, source details, takeaways, and recommendation implications.
+GPT should list research metadata first, then read the full S3-backed research item only when the metadata is relevant.
+
+Project recommendations are stored as dated manifests and linked files in S3.
+Recommendation generation context includes active research metadata plus the target date and previous 30 days of recommendations for the same project.
 
 Durable runtime data lives in AWS.
 GitHub is the source of truth for code and docs.

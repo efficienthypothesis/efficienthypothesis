@@ -23,6 +23,11 @@ from routes.projects import (
     _normalize_recommendations,
     _read_recommendations,
     _write_recommendations,
+    _query_daily_context_metadata,
+    _query_research_metadata,
+    _read_recommendation_context,
+    _read_research_item,
+    _write_research_item,
 )
 
 
@@ -293,12 +298,47 @@ TOOLS = [
         {"type": "object", "properties": {"project_id": {"type": "string", "enum": list(PROJECT_BY_ID)}, "date": {"type": "string"}}, "required": ["project_id", "date"], "additionalProperties": False},
         {"type": "object", "properties": {"recommendations": {"type": "object"}}, "required": ["recommendations"], "additionalProperties": False},
     ),
+    _read_only_tool(
+        "get_recommendation_context",
+        "Get recommendation context",
+        "Read active research metadata and up to 31 days of prior recommendations for one project/date before generating new recommendations.",
+        {"type": "object", "properties": {"project_id": {"type": "string", "enum": list(PROJECT_BY_ID)}, "date": {"type": "string"}}, "required": ["project_id", "date"], "additionalProperties": False},
+        {"type": "object", "properties": {"context": {"type": "object"}}, "required": ["context"], "additionalProperties": False},
+    ),
     _write_tool(
         "upsert_project_recommendations",
         "Store project recommendations",
         "Store dated routine recommendation files. Workout is temporarily disabled. Each routine must be a sequence of item/command steps.",
         {"type": "object", "properties": {"project_id": {"type": "string", "enum": list(PROJECT_BY_ID)}, "date": {"type": "string"}, "recommendations": {"type": "array", "items": {"type": "object", "properties": {"id": {"type": "string"}, "kind": {"type": "string", "enum": ["routine"]}, "title": {"type": "string"}, "summary": {"type": "string"}, "steps": {"type": "array", "items": {"type": "object", "properties": {"item": {"type": "string"}, "command": {"type": "string"}, "clarification": {"type": "string"}}, "required": ["item", "command"], "additionalProperties": False}}}, "required": ["id", "kind", "title", "summary", "steps"], "additionalProperties": False}}}, "required": ["project_id", "date", "recommendations"], "additionalProperties": False},
         {"type": "object", "properties": {"recommendations": {"type": "object"}}, "required": ["recommendations"], "additionalProperties": False},
+    ),
+    _read_only_tool(
+        "list_daily_context_metadata",
+        "List daily context metadata",
+        "List DynamoDB metadata for project daily context files so GPT can decide which dated S3-backed context to read.",
+        {"type": "object", "properties": {"project_id": {"type": "string", "enum": list(PROJECT_BY_ID)}, "date_from": {"type": "string"}, "date_to": {"type": "string"}}, "required": ["project_id"], "additionalProperties": False},
+        {"type": "object", "properties": {"items": {"type": "array", "items": {"type": "object"}}}, "required": ["items"], "additionalProperties": False},
+    ),
+    _read_only_tool(
+        "list_project_research",
+        "List project research metadata",
+        "List active project research metadata from DynamoDB. Use this first to decide which full S3-backed research items are relevant.",
+        {"type": "object", "properties": {"project_id": {"type": "string", "enum": list(PROJECT_BY_ID)}, "include_inactive": {"type": "boolean"}}, "required": ["project_id"], "additionalProperties": False},
+        {"type": "object", "properties": {"items": {"type": "array", "items": {"type": "object"}}}, "required": ["items"], "additionalProperties": False},
+    ),
+    _read_only_tool(
+        "get_project_research_item",
+        "Get project research item",
+        "Read one full S3-backed project research item by research ID after selecting it from metadata.",
+        {"type": "object", "properties": {"project_id": {"type": "string", "enum": list(PROJECT_BY_ID)}, "research_id": {"type": "string"}}, "required": ["project_id", "research_id"], "additionalProperties": False},
+        {"type": "object", "properties": {"researchItem": {"type": "object"}}, "required": ["researchItem"], "additionalProperties": False},
+    ),
+    _write_tool(
+        "upsert_project_research_item",
+        "Store project research item",
+        "Store one research item in S3 and its discovery metadata in DynamoDB.",
+        {"type": "object", "properties": {"project_id": {"type": "string", "enum": list(PROJECT_BY_ID)}, "research_item": {"type": "object"}}, "required": ["project_id", "research_item"], "additionalProperties": False},
+        {"type": "object", "properties": {"researchItem": {"type": "object"}}, "required": ["researchItem"], "additionalProperties": False},
     ),
     _read_only_tool(
         "query_nodes",
@@ -1317,6 +1357,15 @@ def _get_recommendations_result(email, user_id, arguments):
     return {"structuredContent": {"recommendations": recommendations}, "content": [{"type": "text", "text": f"Loaded recommendations for {project_id} on {date}."}]}
 
 
+def _get_recommendation_context_result(email, user_id, arguments):
+    project_id = _require_nonempty(arguments.get("project_id"), "project_id")
+    date = _require_nonempty(arguments.get("date"), "date")
+    if project_id not in PROJECT_BY_ID:
+        raise ValueError("unknown project")
+    context = _read_recommendation_context(email, project_id, user_id, date)
+    return {"structuredContent": {"context": context}, "content": [{"type": "text", "text": f"Loaded recommendation context for {project_id} on {date}."}]}
+
+
 def _upsert_recommendations_result(email, user_id, arguments):
     project_id = _require_nonempty(arguments.get("project_id"), "project_id")
     date = _require_nonempty(arguments.get("date"), "date")
@@ -1325,6 +1374,39 @@ def _upsert_recommendations_result(email, user_id, arguments):
     recommendations = _normalize_recommendations({"recommendations": arguments.get("recommendations")}, project_id, user_id, date, strict=True)
     recommendations = _write_recommendations(email, project_id, recommendations)
     return {"structuredContent": {"recommendations": recommendations}, "content": [{"type": "text", "text": f"Updated recommendations for {project_id} on {date}."}]}
+
+
+def _list_daily_context_metadata_result(email, user_id, arguments):
+    project_id = _require_nonempty(arguments.get("project_id"), "project_id")
+    if project_id not in PROJECT_BY_ID:
+        raise ValueError("unknown project")
+    items = _query_daily_context_metadata(email, user_id, project_id, arguments.get("date_from"), arguments.get("date_to"))
+    return {"structuredContent": {"items": items}, "content": [{"type": "text", "text": f"Loaded {len(items)} daily context metadata rows for {project_id}."}]}
+
+
+def _list_research_metadata_result(email, user_id, arguments):
+    project_id = _require_nonempty(arguments.get("project_id"), "project_id")
+    if project_id not in PROJECT_BY_ID:
+        raise ValueError("unknown project")
+    items = _query_research_metadata(email, user_id, project_id, bool(arguments.get("include_inactive")))
+    return {"structuredContent": {"items": items}, "content": [{"type": "text", "text": f"Loaded {len(items)} research metadata rows for {project_id}."}]}
+
+
+def _get_research_item_result(email, user_id, arguments):
+    project_id = _require_nonempty(arguments.get("project_id"), "project_id")
+    research_id = _require_nonempty(arguments.get("research_id"), "research_id")
+    if project_id not in PROJECT_BY_ID:
+        raise ValueError("unknown project")
+    item = _read_research_item(email, project_id, user_id, research_id)
+    return {"structuredContent": {"researchItem": item}, "content": [{"type": "text", "text": f"Loaded research item {research_id}."}]}
+
+
+def _upsert_research_item_result(email, user_id, arguments):
+    project_id = _require_nonempty(arguments.get("project_id"), "project_id")
+    if project_id not in PROJECT_BY_ID:
+        raise ValueError("unknown project")
+    item = _write_research_item(email, project_id, user_id, arguments.get("research_item"))
+    return {"structuredContent": {"researchItem": item}, "content": [{"type": "text", "text": f"Stored research item {item['id']}."}]}
 
 
 def _mutation_result(action, node, created):
@@ -1355,8 +1437,18 @@ def _call_tool(name, arguments, ctx):
         return _add_daily_context_image_result(email, user_id, arguments)
     if name == "get_project_recommendations":
         return _get_recommendations_result(email, user_id, arguments)
+    if name == "get_recommendation_context":
+        return _get_recommendation_context_result(email, user_id, arguments)
     if name == "upsert_project_recommendations":
         return _upsert_recommendations_result(email, user_id, arguments)
+    if name == "list_daily_context_metadata":
+        return _list_daily_context_metadata_result(email, user_id, arguments)
+    if name == "list_project_research":
+        return _list_research_metadata_result(email, user_id, arguments)
+    if name == "get_project_research_item":
+        return _get_research_item_result(email, user_id, arguments)
+    if name == "upsert_project_research_item":
+        return _upsert_research_item_result(email, user_id, arguments)
     if name == "query_nodes":
         return _query_nodes(email, user_id, arguments)
     if name == "get_node":

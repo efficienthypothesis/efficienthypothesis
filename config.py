@@ -31,6 +31,8 @@ actions_table = dynamodb.Table("Actions")
 drafts_table = dynamodb.Table("Drafts")
 timelogs_table = dynamodb.Table("TimeLogs")
 oauth_tokens_table = dynamodb.Table("OAuthTokens")
+project_daily_context_metadata_table = dynamodb.Table("ProjectDailyContextMetadata")
+project_research_metadata_table = dynamodb.Table("ProjectResearchMetadata")
 
 # === S3 setup ===
 s3 = boto3.client("s3", region_name="us-east-2")

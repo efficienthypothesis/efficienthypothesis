@@ -42,11 +42,13 @@ AWS is the source of truth for user data, deployment artifacts, and deployed run
 | Environment | Account/Profile | Region | Resource | Owner | Managed By | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
 | production | `eh` | `us-east-2` | Lambda `efficienthypothesis-backend` | Backend runtime | `deploy.sh` | Flask app packaged as Lambda |
+| production | `eh` | `us-east-2` | IAM role `efficienthypothesis-backend-role` | Backend AWS access | Existing AWS state | Inline policy must include app-owned S3 and DynamoDB resources |
 | production | `eh` | `us-east-2` | CloudFormation stacks `eh-runtime-data`, `eh-runtime-buckets`, `eh-api-hosting` | Infrastructure ownership | CloudFormation import and updates | Existing resources adopted without replacement |
 | production | `eh` | `us-east-2` | S3 bucket `eh-app-data` | User data, assets, deploy artifact | App code and `deploy.sh` | Stores workspace JSON, project context JSON, daily context JSON, assets, and Lambda zip |
 | production | `eh` | `us-east-2` | S3 object `admin/tasks.json` | Private admin task-board content | Authorized task-board updates | Read only after server-side admin session authorization |
 | production | `eh` | `us-east-2` | DynamoDB table `Users` | User records | Existing AWS state | Stores user metadata such as timezone |
 | production | `eh` | `us-east-2` | DynamoDB tables `Tasks`, `Actions`, `Drafts`, `TimeLogs`, `OAuthTokens` | Legacy cleanup and OAuth support | Existing AWS state | Retained for account deletion and token behavior |
+| production | `eh` | `us-east-2` | DynamoDB tables `ProjectDailyContextMetadata`, `ProjectResearchMetadata` | Project discovery metadata | CloudFormation and app code | Indexes S3-backed daily context and research documents |
 | production | `eh` | public DNS | `efficienthypothesis.com` | Public, auth, OAuth, app menu | Existing AWS edge/routing state | Primary public host |
 | production | `eh` | public DNS | `home.efficienthypothesis.com` | Main workspace app | Existing AWS edge/routing state | Requires session auth |
 | production | `eh` | public DNS | `projects.efficienthypothesis.com` | Projects calendar app | Existing AWS edge/routing state | Requires session auth |
@@ -172,6 +174,7 @@ Run `tests/test_workspace_fail_closed.py` when read-error handling or workspace 
 ## Daily Project Context Contract
 
 Daily project context is stored privately at `<email>/projects/<project_id>/daily-context/<YYYY-MM-DD>.json`.
+Daily project context metadata is indexed in DynamoDB table `ProjectDailyContextMetadata` by `userProject` and `date`.
 Each document contains `schemaVersion`, `userId`, `projectId`, `date`, `entries`, `createdAt`, and `updatedAt`.
 Text entries contain `id`, `type: "text"`, optional `time`, `summary`, `createdAt`, and `updatedAt`.
 Image entries contain `id`, `type: "image"`, optional `time`, `summary`, `imageUrl`, `contentType`, optional `filename`, `createdAt`, and `updatedAt`.
@@ -181,7 +184,19 @@ Image retrieval goes through the authenticated `/api/projects/<project_id>/daily
 The Projects calendar shows each day's entry count, image count, and a raw JSON disclosure for each project.
 GPT accesses text context through the authenticated MCP tools `get_daily_context` and `upsert_daily_context`.
 GPT uploads image context through the authenticated MCP tool `add_daily_context_image`.
+GPT can discover available dated context through the authenticated MCP tool `list_daily_context_metadata`.
 Daily context reads and writes are scoped to the authenticated user and validated by project and date.
+
+## Project Research Contract
+
+Project research item details are stored privately at `<email>/projects/<project_id>/research/items/<research_id>.json`.
+Project research metadata is indexed in DynamoDB table `ProjectResearchMetadata` by `userProject` and `researchId`.
+Research metadata includes `topic`, `status`, `tags`, `relatedTopics`, source metadata, evidence strengths, takeaway previews, timestamps, and the backing S3 key.
+Research item files contain `id`, `userId`, `projectId`, `topic`, `status`, `source`, `qualifiedStatements`, `takeaways`, `recommendationImplications`, `tags`, `relatedTopics`, `createdAt`, and `updatedAt`.
+Qualified statements must include both `statement` and `qualification`.
+Research item statuses are `active`, `superseded`, and `rejected`.
+GPT should call `list_project_research` first, then `get_project_research_item` only for relevant full details.
+GPT writes research through `upsert_project_research_item`.
 
 ## Recommendation Contract
 
@@ -192,6 +207,7 @@ Each recommendation file stores `id`, `projectId`, `date`, `kind`, `title`, `sum
 The only currently enabled recommendation kind is `routine`; `workout` is temporarily disabled.
 Routine `steps` are ordered objects with `item`, `command`, and optional `clarification`.
 GPT writes recommendations through `upsert_project_recommendations` and reads them through `get_project_recommendations`.
+GPT should use `get_recommendation_context` before generating recommendations because it returns active research metadata and up to 31 days of prior recommendations.
 The weekly Projects calendar always renders each project/date recommendation state as a link to the authenticated recommendation page.
 Legacy single-object recommendation files at `<email>/projects/<project_id>/recommendations/<YYYY-MM-DD>.json` are read as a fallback only.
 
