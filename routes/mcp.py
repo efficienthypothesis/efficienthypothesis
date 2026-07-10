@@ -327,7 +327,7 @@ TOOLS = [
     _read_only_tool(
         "get_recommendation_context",
         "Get recommendation context",
-        "Read active research metadata and up to 31 days of prior recommendations for one project/date before generating new recommendations.",
+        "Read active research metadata, non-archived project inventory, and up to 31 days of prior recommendations for one project/date before generating new recommendations.",
         {"type": "object", "properties": {"project_id": {"type": "string", "enum": list(PROJECT_BY_ID)}, "date": {"type": "string"}}, "required": ["project_id", "date"], "additionalProperties": False},
         {"type": "object", "properties": {"context": {"type": "object"}}, "required": ["context"], "additionalProperties": False},
     ),
