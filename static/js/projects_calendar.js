@@ -12,6 +12,7 @@
   const calendarCache = new Map();
   const dayCache = new Map();
   const dayResponseCache = new Map();
+  const dayResponseRequests = new Map();
   const pendingDays = new Set();
   let currentCalendar = null;
   const initialCalendar = parseInitialCalendar();
@@ -215,23 +216,33 @@
     if (dayResponseCache.has(cacheKey)) {
       return dayResponseCache.get(cacheKey);
     }
+    if (dayResponseRequests.has(cacheKey)) {
+      return dayResponseRequests.get(cacheKey);
+    }
     const url = new URL(calendarDayEndpoint, window.location.origin);
     url.searchParams.set("date", date);
     url.searchParams.set("window_start", windowStart);
-    const response = await fetch(url.toString(), {
+    const request = fetch(url.toString(), {
       credentials: "same-origin",
       headers: { Accept: "application/json" },
-    });
-    if (!response.ok) {
-      throw new Error(`calendar day request failed: ${response.status}`);
-    }
-    const payload = await response.json();
-    if (!payload || !payload.day || !payload.navigation) {
-      throw new Error("calendar day response missing payload");
-    }
-    cacheDay(payload.day);
-    dayResponseCache.set(cacheKey, payload);
-    return payload;
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error(`calendar day request failed: ${response.status}`);
+        }
+        const payload = await response.json();
+        if (!payload || !payload.day || !payload.navigation) {
+          throw new Error("calendar day response missing payload");
+        }
+        cacheDay(payload.day);
+        dayResponseCache.set(cacheKey, payload);
+        return payload;
+      })
+      .finally(() => {
+        dayResponseRequests.delete(cacheKey);
+      });
+    dayResponseRequests.set(cacheKey, request);
+    return request;
   }
 
   async function fetchShiftedCalendar(direction, start) {
