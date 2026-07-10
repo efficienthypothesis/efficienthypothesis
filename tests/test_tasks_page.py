@@ -128,8 +128,8 @@ class TasksPageTests(unittest.TestCase):
         response = self.get_tasks()
 
         self.assertEqual(response.status_code, 200)
-        self.assertIn(b"Tasks and agent notes", response.data)
-        self.assertIn(b"Things To Tell Neer", response.data)
+        self.assertIn(b"Work tracker", response.data)
+        self.assertIn(b"Features and security to address", response.data)
         self.assertIn(PRIVATE_TASK_TEXT, response.data)
         self.assertEqual(response.headers["Cache-Control"], "private, no-store")
         self.assertEqual(response.headers["X-Robots-Tag"], "noindex, nofollow")

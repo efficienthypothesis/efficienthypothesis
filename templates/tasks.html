@@ -1,128 +1,72 @@
-{% extends "base.html" %} {% block title %}Admin Tasks - Efficient Hypothesis{%
-endblock %} {% block head %}
-<link
-  rel="stylesheet"
-  href="{{ url_for('static', filename='css/base.css') }}"
-/>
-<link
-  rel="stylesheet"
-  href="{{ url_for('static', filename='css/navbar.css') }}"
-/>
-<link
-  rel="stylesheet"
-  href="{{ url_for('static', filename='css/footer.css') }}"
-/>
-<link
-  rel="stylesheet"
-  href="{{ url_for('static', filename='css/tasks.css') }}"
-/>
-{% endblock %} {% block bodyattrs %}class="tasks-page"{% endblock %} {% block
-navbar %} {% include "navbar.html" %} {% endblock %} {% block content %}
-<section class="tasks-board" aria-labelledby="tasks-title">
-  <header class="tasks-hero">
+{% extends "base.html" %}
+{% block title %}Admin Tasks - Efficient Hypothesis{% endblock %}
+{% block head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}" />
+<link rel="stylesheet" href="{{ url_for('static', filename='css/navbar.css') }}" />
+<link rel="stylesheet" href="{{ url_for('static', filename='css/footer.css') }}" />
+<link rel="stylesheet" href="{{ url_for('static', filename='css/tasks.css') }}" />
+{% endblock %}
+{% block bodyattrs %}class="tasks-page"{% endblock %}
+{% block navbar %}{% include "navbar.html" %}{% endblock %}
+{% block content %}
+<main class="tasks-board" aria-labelledby="tasks-title">
+  <header class="tasks-header">
     <div>
-      <div class="tasks-eyebrow">Admin workspace</div>
-      <h1 id="tasks-title">Tasks and agent notes</h1>
-      <p>
-        Current work, planned follow-ups, and information that needs your
-        attention.
-      </p>
+      <div class="tasks-eyebrow">Private admin view</div>
+      <h1 id="tasks-title">Work tracker</h1>
+      <p>What is active, what is next, and what is finished.</p>
     </div>
-    <div class="tasks-updated">
-      <span>Last updated</span>
-      <time datetime="{{ task_board.last_updated }}"
-        >{{ task_board.last_updated }}</time
-      >
-    </div>
+    <time class="tasks-updated" datetime="{{ task_board.last_updated }}">Updated {{ task_board.last_updated }}</time>
   </header>
 
-  <div class="tasks-summary" aria-label="Task totals">
-    <div class="tasks-summary-card active">
-      <strong>{{ task_board.counts.working_on }}</strong>
-      <span>Working on</span>
-    </div>
-    <div class="tasks-summary-card planned">
-      <strong>{{ task_board.counts.to_do }}</strong>
-      <span>To do</span>
-    </div>
-    <div class="tasks-summary-card attention">
-      <strong>{{ task_board.counts.tell_neer }}</strong>
-      <span>Things to tell you</span>
-    </div>
-    <div class="tasks-summary-card complete">
-      <strong>{{ task_board.counts.done }}</strong>
-      <span>Recently done</span>
-    </div>
-  </div>
+  {% set working = task_board.sections[0] %}
+  {% set actionable = task_board.sections[1]["items"] + task_board.sections[2]["items"] %}
+  {% set completed = task_board.sections[3] %}
+  {% set tables = [
+    {"key": "working", "heading": "Currently working on", "description": "One row per active workstream.", "items": working["items"]},
+    {"key": "next", "heading": "Features and security to address", "description": "Planned product work and risks worth fixing.", "items": actionable},
+    {"key": "completed", "heading": "Completed", "description": "Recently finished work.", "items": completed["items"]}
+  ] %}
 
-  <div class="task-sections">
-    {% for section in task_board.sections %}
-    <section
-      class="task-section task-section-{{ section.key }}"
-      aria-labelledby="section-{{ section.key }}"
-    >
-      <div class="task-section-heading">
+  <div class="task-tables">
+    {% for table in tables %}
+    <section class="task-table-section task-table-{{ table.key }}" aria-labelledby="{{ table.key }}-heading">
+      <div class="task-table-heading">
         <div>
-          <h2 id="section-{{ section.key }}">{{ section.heading }}</h2>
-          <p>{{ section.description }}</p>
+          <h2 id="{{ table.key }}-heading">{{ table.heading }}</h2>
+          <p>{{ table.description }}</p>
         </div>
-        <span class="task-section-count">{{ section.count }}</span>
+        <span class="task-table-count">{{ table["items"]|length }}</span>
       </div>
-
-      {% if section["items"] %}
-      <div class="task-grid">
-        {% for task in section["items"] %}
-        <article
-          class="task-card priority-{{ task.priority }}{% if task.completed %} completed{% endif %}"
-        >
-          <div class="task-card-top">
-            <h3>{{ task.title }}</h3>
-            <div class="task-badges" aria-label="Task classification">
-              <span class="task-badge priority">{{ task.priority_label }}</span>
-              <span class="task-badge status">{{ task.status_label }}</span>
-            </div>
-          </div>
-
-          <p class="task-notes">{{ task.notes }}</p>
-
-          {% if task.action_required %}
-          <div class="task-action">
-            <strong>Action</strong>
-            <span>{{ task.action_required }}</span>
-          </div>
-          {% endif %}
-
-          <dl class="task-meta">
-            <div>
-              <dt>Owner</dt>
-              <dd>{{ task.owner }}</dd>
-            </div>
-            <div>
-              <dt>Updated</dt>
-              <dd>
-                <time datetime="{{ task.updated_on }}"
-                  >{{ task.updated_on }}</time
-                >
-              </dd>
-            </div>
-            <div>
-              <dt>Source</dt>
-              <dd><code>{{ task.source }}</code></dd>
-            </div>
-          </dl>
-        </article>
-        {% endfor %}
+      {% if table["items"] %}
+      <div class="table-scroll">
+        <table class="tasks-table">
+          <thead>
+            <tr><th scope="col">Task</th><th scope="col">Status</th><th scope="col">Priority</th><th scope="col">Owner</th><th scope="col">Updated</th></tr>
+          </thead>
+          <tbody>
+            {% for task in table["items"] %}
+            <tr>
+              <th scope="row">
+                <span class="task-title">{{ task.title }}</span>
+                <span class="task-notes">{{ task.notes }}</span>
+                {% if task.action_required %}<span class="task-action">{{ task.action_required }}</span>{% endif %}
+              </th>
+              <td><span class="task-pill status-{{ task.status }}">{{ task.status_label }}</span></td>
+              <td><span class="task-pill priority-{{ task.priority }}">{{ task.priority_label }}</span></td>
+              <td>{{ task.owner }}</td>
+              <td><time datetime="{{ task.updated_on }}">{{ task.updated_on }}</time></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
       </div>
       {% else %}
-      <div class="task-empty">
-        <span class="material-symbols-outlined" aria-hidden="true"
-          >check_circle</span
-        >
-        <p>Nothing is marked as actively in progress.</p>
-      </div>
+      <p class="task-empty">Nothing listed here yet.</p>
       {% endif %}
     </section>
     {% endfor %}
   </div>
-</section>
-{% endblock %} {% block footer %} {% include "footer.html" %} {% endblock %}
+</main>
+{% endblock %}
+{% block footer %}{% include "footer.html" %}{% endblock %}
