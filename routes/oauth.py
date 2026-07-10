@@ -155,6 +155,25 @@ def _save_oauth_clients(email, clients):
     )
 
 
+def _revoke_client_tokens(client_id):
+    last_key = None
+    while True:
+        kwargs = {
+            "FilterExpression": "client_id = :cid",
+            "ExpressionAttributeValues": {":cid": client_id},
+        }
+        if last_key:
+            kwargs["ExclusiveStartKey"] = last_key
+        response = oauth_tokens_table.scan(**kwargs)
+        for item in response.get("Items", []):
+            token_hash = item.get("token_hash")
+            if token_hash:
+                oauth_tokens_table.delete_item(Key={"token_hash": token_hash})
+        last_key = response.get("LastEvaluatedKey")
+        if not last_key:
+            return
+
+
 @oauth_bp.route('/api/oauth/clients', methods=['GET'])
 def api_oauth_clients_list():
     ctx, err = _require_auth()
@@ -217,14 +236,9 @@ def api_oauth_clients_delete(cid):
     clients = _load_oauth_clients(email)
     clients = [c for c in clients if c["client_id"] != cid]
     _save_oauth_clients(email, clients)
-    # Revoke all tokens for this client
+    # Revoke all tokens for this client, including every scan page.
     try:
-        resp = oauth_tokens_table.scan(
-            FilterExpression="client_id = :cid",
-            ExpressionAttributeValues={":cid": cid},
-        )
-        for item in resp.get("Items", []):
-            oauth_tokens_table.delete_item(Key={"token_hash": item["token_hash"]})
+        _revoke_client_tokens(cid)
     except Exception:
         pass
     return jsonify({"ok": True})

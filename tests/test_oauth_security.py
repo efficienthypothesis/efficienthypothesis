@@ -10,7 +10,7 @@ os.environ.setdefault("OAUTH_SIGNING_KEY", "test")
 
 from app import app
 from config import _create_access_token, _hash_token, _verify_access_token
-from routes.oauth import OAuthRegistryUnavailable, _load_oauth_clients
+from routes.oauth import OAuthRegistryUnavailable, _load_oauth_clients, _revoke_client_tokens
 
 
 def s3_error(code):
@@ -60,6 +60,34 @@ class OAuthSecurityTests(unittest.TestCase):
     def test_missing_oauth_registry_is_an_empty_registry(self):
         with patch("routes.oauth.s3.get_object", side_effect=s3_error("NoSuchKey")):
             self.assertEqual(_load_oauth_clients("user@example.com"), [])
+
+    def test_client_token_cleanup_paginates(self):
+        table = Mock()
+        table.scan.side_effect = [
+            {
+                "Items": [{"token_hash": "one"}],
+                "LastEvaluatedKey": {"token_hash": "one"},
+            },
+            {"Items": [{"token_hash": "two"}]},
+        ]
+
+        with patch("routes.oauth.oauth_tokens_table", table):
+            _revoke_client_tokens("eh_client")
+
+        self.assertEqual(table.scan.call_count, 2)
+        table.scan.assert_any_call(
+            FilterExpression="client_id = :cid",
+            ExpressionAttributeValues={":cid": "eh_client"},
+        )
+        table.scan.assert_any_call(
+            FilterExpression="client_id = :cid",
+            ExpressionAttributeValues={":cid": "eh_client"},
+            ExclusiveStartKey={"token_hash": "one"},
+        )
+        self.assertEqual(
+            [call.kwargs["Key"] for call in table.delete_item.call_args_list],
+            [{"token_hash": "one"}, {"token_hash": "two"}],
+        )
 
 
 if __name__ == "__main__":
