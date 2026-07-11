@@ -33,13 +33,12 @@ Before making code changes, an agent should:
 After making code changes, an agent should:
 
 1. Review `git diff`.
-2. Update `AI_CHANGELOG.md` for meaningful LLM-authored changes.
-3. Use the A1, A2, and A3 gates in `review.md` for meaningful changes.
-4. Run quick practical checks before pushing and deploying when the change affects code, configuration, infrastructure, AWS data, or runtime behavior.
-5. Commit the corresponding code changes to Git with a clear message.
-6. Push the commit to GitHub.
-7. Deploy or apply the matching AWS change when the change affects deployed app behavior, infrastructure, AWS data, or AWS configuration.
-8. Provide a short explanation of:
+2. Use the A1, A2, and A3 gates in `review.md` for meaningful changes.
+3. Run quick practical checks before pushing and deploying when the change affects code, configuration, infrastructure, AWS data, or runtime behavior.
+4. Commit the corresponding code changes to Git with a clear message.
+5. Push the commit to GitHub.
+6. Deploy or apply the matching AWS change when the change affects deployed app behavior, infrastructure, AWS data, or AWS configuration.
+7. Provide a short explanation of:
    - files changed
    - behavior changed
    - quick tests/checks run, or why checks were intentionally skipped

@@ -9,7 +9,7 @@ function handleCredentialResponse(response) {
       if (data.redirect) {
         window.location.href = data.redirect;
       } else if (data.user) {
-        window.location.href = '/apps';
+        window.location.href = '/home';
       } else {
         throw new Error(data.error || 'Login failed');
       }

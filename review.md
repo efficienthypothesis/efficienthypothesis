@@ -78,6 +78,13 @@ AWS_EC2_METADATA_DISABLED=true FLASK_SECRET_KEY=test OAUTH_SIGNING_KEY=test \
   .venv/bin/python -m py_compile app.py routes/*.py
 ```
 
+Flask behavior tests:
+
+```bash
+AWS_EC2_METADATA_DISABLED=true FLASK_SECRET_KEY=test OAUTH_SIGNING_KEY=test \
+  .venv/bin/python -m unittest discover -s tests
+```
+
 Flask route-map smoke check:
 
 ```bash
@@ -88,8 +95,6 @@ from app import app
 rules = {rule.rule for rule in app.url_map.iter_rules()}
 required = {
     "/api/workspace",
-    "/api/projects/global-contexts",
-    "/api/projects/<project_id>/global-context",
     "/mcp-v5",
 }
 missing = sorted(required - rules)

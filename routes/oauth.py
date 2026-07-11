@@ -3,6 +3,7 @@ import datetime
 import secrets
 import time
 import json
+from botocore.exceptions import BotoCoreError, ClientError
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 from config import (
     s3, PRODUCTIVITY_BUCKET, oauth_tokens_table,
@@ -10,6 +11,24 @@ from config import (
 )
 
 oauth_bp = Blueprint('oauth', __name__)
+
+
+class OAuthRegistryUnavailable(Exception):
+    pass
+
+
+class OAuthRegistryBusy(Exception):
+    pass
+
+
+@oauth_bp.errorhandler(OAuthRegistryUnavailable)
+def oauth_registry_unavailable(_error):
+    return jsonify({"error": "oauth_registry_unavailable"}), 503
+
+
+@oauth_bp.errorhandler(OAuthRegistryBusy)
+def oauth_registry_busy(_error):
+    return jsonify({"error": "oauth_registry_busy"}), 409
 
 
 def _issuer():
@@ -97,17 +116,39 @@ def _global_oauth_clients_s3_key():
 def _load_global_oauth_clients():
     try:
         obj = s3.get_object(Bucket=PRODUCTIVITY_BUCKET, Key=_global_oauth_clients_s3_key())
-        return json.loads(obj["Body"].read().decode("utf-8"))
-    except Exception:
-        return []
+        with obj["Body"] as body:
+            clients = json.loads(body.read().decode("utf-8"))
+        if not isinstance(clients, list):
+            raise OAuthRegistryUnavailable()
+        return clients
+    except ClientError as exc:
+        code = str(exc.response.get("Error", {}).get("Code", ""))
+        if code in {"NoSuchKey", "404", "NotFound"}:
+            return []
+        raise OAuthRegistryUnavailable() from exc
+    except BotoCoreError as exc:
+        raise OAuthRegistryUnavailable() from exc
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise OAuthRegistryUnavailable() from exc
 
 
 def _load_oauth_clients(email):
     try:
         obj = s3.get_object(Bucket=PRODUCTIVITY_BUCKET, Key=_oauth_clients_s3_key(email))
-        return json.loads(obj["Body"].read().decode("utf-8"))
-    except Exception:
-        return []
+        with obj["Body"] as body:
+            clients = json.loads(body.read().decode("utf-8"))
+        if not isinstance(clients, list):
+            raise OAuthRegistryUnavailable()
+        return clients
+    except ClientError as exc:
+        code = str(exc.response.get("Error", {}).get("Code", ""))
+        if code in {"NoSuchKey", "404", "NotFound"}:
+            return []
+        raise OAuthRegistryUnavailable() from exc
+    except BotoCoreError as exc:
+        raise OAuthRegistryUnavailable() from exc
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise OAuthRegistryUnavailable() from exc
 
 
 def _load_registered_oauth_clients(email):
@@ -121,6 +162,64 @@ def _save_oauth_clients(email, clients):
         Body=json.dumps(clients, indent=2),
         ContentType="application/json",
     )
+
+
+def _oauth_registry_lock_key(email):
+    return f"oauth_registry_lock:{email}"
+
+
+def _update_oauth_clients(email, update):
+    lock_id = secrets.token_urlsafe(16)
+    lock_key = _oauth_registry_lock_key(email)
+    now = int(time.time())
+    try:
+        oauth_tokens_table.put_item(
+            Item={
+                "token_hash": lock_key,
+                "type": "oauth_registry_lock",
+                "lock_id": lock_id,
+                "lock_expires_at": now + 30,
+            },
+            ConditionExpression="attribute_not_exists(token_hash) OR lock_expires_at < :now",
+            ExpressionAttributeValues={":now": now},
+        )
+    except ClientError as exc:
+        if str(exc.response.get("Error", {}).get("Code", "")) == "ConditionalCheckFailedException":
+            raise OAuthRegistryBusy() from exc
+        raise OAuthRegistryUnavailable() from exc
+    try:
+        clients = _load_oauth_clients(email)
+        updated = update(clients)
+        _save_oauth_clients(email, updated)
+        return updated
+    finally:
+        try:
+            oauth_tokens_table.delete_item(
+                Key={"token_hash": lock_key},
+                ConditionExpression="lock_id = :lock_id",
+                ExpressionAttributeValues={":lock_id": lock_id},
+            )
+        except Exception:
+            pass
+
+
+def _revoke_client_tokens(client_id):
+    last_key = None
+    while True:
+        kwargs = {
+            "FilterExpression": "client_id = :cid",
+            "ExpressionAttributeValues": {":cid": client_id},
+        }
+        if last_key:
+            kwargs["ExclusiveStartKey"] = last_key
+        response = oauth_tokens_table.scan(**kwargs)
+        for item in response.get("Items", []):
+            token_hash = item.get("token_hash")
+            if token_hash:
+                oauth_tokens_table.delete_item(Key={"token_hash": token_hash})
+        last_key = response.get("LastEvaluatedKey")
+        if not last_key:
+            return
 
 
 @oauth_bp.route('/api/oauth/clients', methods=['GET'])
@@ -163,9 +262,7 @@ def api_oauth_clients_create():
         "scopes": ["full_access"],
         "created_at": datetime.datetime.utcnow().isoformat() + "Z",
     }
-    clients = _load_oauth_clients(ctx["email"])
-    clients.append(client)
-    _save_oauth_clients(ctx["email"], clients)
+    _update_oauth_clients(ctx["email"], lambda clients: [*clients, client])
     return jsonify({
         "client_id": client_id,
         "client_secret": client_secret,
@@ -182,17 +279,10 @@ def api_oauth_clients_delete(cid):
     if _is_programmatic(ctx):
         return jsonify({"error": "Requires browser session"}), 403
     email = ctx["email"]
-    clients = _load_oauth_clients(email)
-    clients = [c for c in clients if c["client_id"] != cid]
-    _save_oauth_clients(email, clients)
-    # Revoke all tokens for this client
+    _update_oauth_clients(email, lambda clients: [c for c in clients if c["client_id"] != cid])
+    # Revoke all tokens for this client, including every scan page.
     try:
-        resp = oauth_tokens_table.scan(
-            FilterExpression="client_id = :cid",
-            ExpressionAttributeValues={":cid": cid},
-        )
-        for item in resp.get("Items", []):
-            oauth_tokens_table.delete_item(Key={"token_hash": item["token_hash"]})
+        _revoke_client_tokens(cid)
     except Exception:
         pass
     return jsonify({"ok": True})
@@ -395,8 +485,15 @@ def oauth_revoke():
     if not token:
         return jsonify({"error": "invalid_request"}), 400
     token_hash = _hash_token(token)
-    try:
+    from config import _decode_access_token
+
+    payload = _decode_access_token(token)
+    if payload:
+        oauth_tokens_table.put_item(Item={
+            "token_hash": token_hash,
+            "type": "revoked_access_token",
+            "expires_at_epoch": payload["exp"],
+        })
+    else:
         oauth_tokens_table.delete_item(Key={"token_hash": token_hash})
-    except Exception:
-        pass
     return jsonify({"ok": True})

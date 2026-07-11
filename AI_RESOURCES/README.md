@@ -1,6 +1,7 @@
 # AI Resources
 
 This folder contains repo-specific reusable assets for agents working on Efficient Hypothesis.
+Keep project initialization guidance in `template.md`.
 Keep global setup guidance in the upstream AI workflow repo.
 Keep project-specific skills, scripts, and templates here only when they are useful across future sessions.
 

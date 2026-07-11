@@ -6,11 +6,13 @@ import {
   clearWorkspaceEncryptionArtifacts,
   decryptWorkspaceEnvelope,
   importWorkspaceKey,
-  readCachedEncryptedWorkspace
+  readCachedEncryptedWorkspace,
 } from "./encryptionService";
 import { normalizeWorkspaceForClient } from "./nodeService";
 
-const LOCAL_CACHE_KEY = "eh_workspace_cache_v1";
+const LOCAL_CACHE_PREFIX = "eh_workspace_cache_v1:";
+const PENDING_CACHE_PREFIX = "eh_workspace_pending_v1:";
+const LEGACY_LOCAL_CACHE_KEY = "eh_workspace_cache_v1";
 
 export { WorkspaceLockedError, importWorkspaceKey };
 
@@ -18,7 +20,10 @@ export class WorkspaceConflictError extends Error {
   serverState: WorkspaceState | null;
   serverUpdatedAt: string | null;
 
-  constructor(serverState: WorkspaceState | null, serverUpdatedAt: string | null) {
+  constructor(
+    serverState: WorkspaceState | null,
+    serverUpdatedAt: string | null,
+  ) {
     super("Workspace changed on the server before this browser saved.");
     this.name = "WorkspaceConflictError";
     this.serverState = serverState;
@@ -31,7 +36,9 @@ export type LoadWorkspaceResult = {
   shouldPersist: boolean;
 };
 
-export async function loadWorkspaceWithMetadata(userId: string): Promise<LoadWorkspaceResult> {
+export async function loadWorkspaceWithMetadata(
+  userId: string,
+): Promise<LoadWorkspaceResult> {
   try {
     const payload = await fetchWorkspacePayload();
     if (payload.state) {
@@ -40,26 +47,32 @@ export async function loadWorkspaceWithMetadata(userId: string): Promise<LoadWor
       cachePlaintextWorkspace(normalizedState);
       return {
         state: normalizedState,
-        shouldPersist: false
+        shouldPersist: false,
       };
     }
     if (payload.encryptedState) {
       const serverUpdatedAt = payload.encryptedState.updatedAt || null;
-      const serverState = await decryptWorkspaceEnvelope(userId, payload.encryptedState);
+      const serverState = await decryptWorkspaceEnvelope(
+        userId,
+        payload.encryptedState,
+      );
       const normalizedState = normalizeWorkspaceForClient(serverState);
       const migrationState = {
         ...normalizedState,
-        updatedAt: serverUpdatedAt || normalizedState.updatedAt
+        updatedAt: serverUpdatedAt || normalizedState.updatedAt,
       };
       try {
         const saved = await saveWorkspace(migrationState, serverUpdatedAt);
         return {
           state: { ...migrationState, updatedAt: saved.updatedAt },
-          shouldPersist: false
+          shouldPersist: false,
         };
       } catch (saveError) {
         if (import.meta.env.DEV) {
-          console.warn("Loaded legacy encrypted workspace but could not persist plaintext migration:", saveError);
+          console.warn(
+            "Loaded legacy encrypted workspace but could not persist plaintext migration:",
+            saveError,
+          );
         }
       }
       return { state: migrationState, shouldPersist: false };
@@ -67,8 +80,18 @@ export async function loadWorkspaceWithMetadata(userId: string): Promise<LoadWor
     return { state: createDefaultWorkspace(userId), shouldPersist: true };
   } catch (error) {
     if (error instanceof WorkspaceLockedError) throw error;
-    const cached = await readCachedWorkspace(userId);
-    if (cached) return { state: normalizeWorkspaceForClient(cached), shouldPersist: false };
+    const pending = await readCachedWorkspace(userId, true);
+    if (pending)
+      return {
+        state: normalizeWorkspaceForClient(pending),
+        shouldPersist: true,
+      };
+    const cached = await readCachedWorkspace(userId, false);
+    if (cached)
+      return {
+        state: normalizeWorkspaceForClient(cached),
+        shouldPersist: false,
+      };
     if (import.meta.env.DEV) {
       console.warn("Using local workspace fallback:", error);
     }
@@ -92,7 +115,7 @@ export async function fetchWorkspaceFromServer(): Promise<WorkspaceState | null>
   }
   if (payload.encryptedState) {
     const state = normalizeWorkspaceForClient(
-      await decryptWorkspaceEnvelope(userId, payload.encryptedState)
+      await decryptWorkspaceEnvelope(userId, payload.encryptedState),
     );
     return state;
   }
@@ -102,20 +125,22 @@ export async function fetchWorkspaceFromServer(): Promise<WorkspaceState | null>
 async function fetchWorkspacePayload(): Promise<WorkspacePayload> {
   const response = await fetch("/api/workspace");
   if (response.status === 401) throw new Error("Not authenticated");
-  if (!response.ok) throw new Error(`Workspace load failed: ${response.status}`);
+  if (!response.ok)
+    throw new Error(`Workspace load failed: ${response.status}`);
   return (await response.json()) as WorkspacePayload;
 }
 
 export async function saveWorkspace(
   state: WorkspaceState,
-  baseUpdatedAt: string | null
+  baseUpdatedAt: string | null,
 ): Promise<{ updatedAt: string }> {
   const updatedAt = new Date().toISOString();
   const stateForStorage = { ...state, updatedAt };
+  cachePendingWorkspace(stateForStorage);
   const response = await fetch("/api/workspace", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ state: stateForStorage, baseUpdatedAt })
+    body: JSON.stringify({ state: stateForStorage, baseUpdatedAt }),
   });
   if (response.status === 409) {
     const payload = (await response.json()) as {
@@ -123,15 +148,17 @@ export async function saveWorkspace(
       encryptedState?: EncryptedWorkspaceEnvelope | null;
       serverUpdatedAt?: string | null;
     };
-    let serverState = payload.state ? normalizeWorkspaceForClient(payload.state) : null;
+    let serverState = payload.state
+      ? normalizeWorkspaceForClient(payload.state)
+      : null;
     if (!serverState && payload.encryptedState) {
       serverState = normalizeWorkspaceForClient(
-        await decryptWorkspaceEnvelope(state.userId, payload.encryptedState)
+        await decryptWorkspaceEnvelope(state.userId, payload.encryptedState),
       );
     }
     throw new WorkspaceConflictError(
       serverState,
-      payload.serverUpdatedAt || null
+      payload.serverUpdatedAt || null,
     );
   }
   if (!response.ok) {
@@ -139,16 +166,30 @@ export async function saveWorkspace(
   }
   const payload = (await response.json()) as { updatedAt?: string };
   clearWorkspaceEncryptionArtifacts(state.userId);
-  cachePlaintextWorkspace({ ...stateForStorage, updatedAt: payload.updatedAt || updatedAt });
+  clearPendingWorkspace(state.userId);
+  cachePlaintextWorkspace({
+    ...stateForStorage,
+    updatedAt: payload.updatedAt || updatedAt,
+  });
   return { updatedAt: payload.updatedAt || updatedAt };
 }
 
-async function readCachedWorkspace(userId: string): Promise<WorkspaceState | null> {
+async function readCachedWorkspace(
+  userId: string,
+  pendingOnly: boolean,
+): Promise<WorkspaceState | null> {
+  clearLegacyPlaintextWorkspaceCache();
   try {
-    const raw = localStorage.getItem(LOCAL_CACHE_KEY);
-    if (raw) return JSON.parse(raw) as WorkspaceState;
+    const raw = localStorage.getItem(
+      pendingOnly ? pendingCacheKey(userId) : localCacheKey(userId),
+    );
+    if (raw) {
+      const cached = JSON.parse(raw) as WorkspaceState;
+      if (cached.userId === userId) return cached;
+      clearPlaintextWorkspaceCache(userId);
+    }
   } catch {
-    clearPlaintextWorkspaceCache();
+    clearPlaintextWorkspaceCache(userId);
   }
   try {
     const encrypted = readCachedEncryptedWorkspace(userId);
@@ -169,7 +210,7 @@ export async function ensureUserTimezone(): Promise<void> {
     await fetch("/api/user/timezone", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ timezone })
+      body: JSON.stringify({ timezone }),
     });
   } catch {
     // Timezone improves date rendering, but the editor should still load without it.
@@ -181,16 +222,34 @@ export function clearWorkspaceCache(): void {
     const userId = getCurrentUserId();
     if (userId) {
       clearWorkspaceEncryptionArtifacts(userId);
+      clearPlaintextWorkspaceCache(userId);
+      clearPendingWorkspace(userId);
     }
-    clearPlaintextWorkspaceCache();
+    clearLegacyPlaintextWorkspaceCache();
   } catch {
     // Local cache is best-effort only.
   }
 }
 
-function clearPlaintextWorkspaceCache(): void {
+function clearPlaintextWorkspaceCache(userId: string): void {
   try {
-    localStorage.removeItem(LOCAL_CACHE_KEY);
+    localStorage.removeItem(localCacheKey(userId));
+  } catch {
+    // Local cache is best-effort only.
+  }
+}
+
+function clearPendingWorkspace(userId: string): void {
+  try {
+    localStorage.removeItem(pendingCacheKey(userId));
+  } catch {
+    // Local cache is best-effort only.
+  }
+}
+
+function clearLegacyPlaintextWorkspaceCache(): void {
+  try {
+    localStorage.removeItem(LEGACY_LOCAL_CACHE_KEY);
   } catch {
     // Local cache is best-effort only.
   }
@@ -198,17 +257,33 @@ function clearPlaintextWorkspaceCache(): void {
 
 function cachePlaintextWorkspace(state: WorkspaceState): void {
   try {
-    localStorage.setItem(LOCAL_CACHE_KEY, JSON.stringify(state));
+    localStorage.setItem(localCacheKey(state.userId), JSON.stringify(state));
   } catch {
     // Local cache is best-effort only.
   }
+}
+
+function cachePendingWorkspace(state: WorkspaceState): void {
+  try {
+    localStorage.setItem(pendingCacheKey(state.userId), JSON.stringify(state));
+  } catch {
+    // Local cache is best-effort only.
+  }
+}
+
+function localCacheKey(userId: string): string {
+  return `${LOCAL_CACHE_PREFIX}${userId}`;
+}
+
+function pendingCacheKey(userId: string): string {
+  return `${PENDING_CACHE_PREFIX}${userId}`;
 }
 
 export async function deleteAccount(confirmation: string): Promise<void> {
   const response = await fetch("/api/account", {
     method: "DELETE",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ confirmation })
+    body: JSON.stringify({ confirmation }),
   });
   if (!response.ok) {
     let detail = "";

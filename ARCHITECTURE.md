@@ -14,7 +14,6 @@ Detailed companion docs:
 
 Efficient Hypothesis is a personal productivity app with browser, OAuth, and MCP surfaces.
 The main workspace runs at `home.efficienthypothesis.com`.
-The projects calendar runs at `projects.efficienthypothesis.com`.
 The public marketing, login, OAuth, legal, and app-selection pages run from `efficienthypothesis.com`.
 
 The browser app is built with React, TypeScript, and Vite from `src/`.
@@ -30,11 +29,10 @@ This repo keeps the current React/Vite plus Flask/Lambda architecture until ther
 | Component | Purpose | Owner Path | Runtime Surface |
 | --- | --- | --- | --- |
 | React workspace app | Main authenticated editor UI | `src/`, `index.html`, `vite.config.ts` | Browser assets under `static/react-app/` after build |
-| Server-rendered pages | Public pages, login, app menu, projects calendar shell | `templates/`, `static/css/`, `static/js/`, `routes/pages.py` | Flask templates and static files |
+| Server-rendered pages | Public pages, login, legal pages, and shared navigation | `templates/`, `static/css/`, `static/js/`, `routes/pages.py` | Flask templates and static files |
 | Flask API | Authenticated API routes and privileged operations | `app.py`, `routes/`, `config.py` | AWS Lambda through `apig-wsgi` |
 | OAuth and MCP | ChatGPT connector authorization and workspace tool calls | `routes/oauth.py`, `routes/mcp.py`, `MCP_NOTES.md` | OAuth routes and `/mcp-v5` |
 | Workspace persistence | S3-backed workspace state and conflict handling | `routes/workspace.py`, `src/services/workspaceService.ts` | `s3://eh-app-data/<email>/workspace/state.json` |
-| Project context persistence | S3-backed project global context files | `routes/projects.py`, `static/js/navbar.js`, `static/css/projects.css` | `s3://eh-app-data/<email>/projects/<project_id>/global-context.json` |
 | Deployment and CI | Build, package, Lambda update, and GitHub checks | `deploy.sh`, `.github/workflows/ci.yml`, `requirements-lambda.txt` | GitHub Actions and AWS Lambda |
 
 ## Frontend Boundary
@@ -43,10 +41,6 @@ The React source lives in `src/`.
 Vite builds it into `static/react-app/`, which is ignored by Git and regenerated during deployment.
 The React app receives public bootstrap data through `window.__EH_BOOTSTRAP__`.
 It calls Flask routes under `/api/*` and uses browser sessions for authenticated website traffic.
-
-The projects surface currently uses Flask-rendered HTML plus static JavaScript and CSS.
-The top-nav Profile modal reads project global contexts from `/api/projects/global-contexts`.
-It does not yet include an editing UI for those context files.
 
 Browser code is untrusted.
 It must not receive AWS credentials, OAuth client secrets, signing keys, database credentials, private keys, recovery keys, or plaintext server-side secrets.
@@ -69,7 +63,12 @@ The backend owns:
 
 - Google sign-in and session handling.
 - OAuth authorization-code and bearer-token validation for MCP.
-- S3 reads and writes for workspace state and project context files.
+- OAuth client-registry reads from S3 for MCP and ChatGPT client metadata.
+- Access-token verification checks server-side revocation markers before permitting MCP operations.
+- S3 reads and writes for workspace state.
+- S3 workspace reads are fail-closed for browser and MCP surfaces: confirmed missing objects still allow first-write bootstrap, while non-missing read failures return temporary-unavailable and do not fabricate or overwrite state.
+- Browser-side plaintext workspace cache keys are scoped to the authenticated user ID.
+- The legacy shared plaintext cache key is removed and treated as stale storage during migration.
 - DynamoDB user records and legacy cleanup tables.
 - Server-rendered pages and static asset responses for logo and favicon.
 - API validation, conflict handling, and user ownership checks.
@@ -83,21 +82,23 @@ AWS is the source of truth for user data and deployed runtime state.
 Current S3 data includes:
 
 - `s3://eh-app-data/<email>/workspace/state.json`
-- `s3://eh-app-data/<email>/projects/acne/global-context.json`
-- `s3://eh-app-data/<email>/projects/fitness/global-context.json`
-- `s3://eh-app-data/<email>/projects/flexibility/global-context.json`
 - `s3://eh-app-data/assets/circle_favicon.svg`
 - `s3://eh-app-data/assets/efficienthypothesis.svg`
 - `s3://eh-app-data/deploy/efficienthypothesis-build.zip`
 
 Current workspace writes store plaintext JSON.
+Browser-side workspace caches store plaintext state under user-scoped keys.
+The legacy shared plaintext cache key is removed and scrubbed when the authenticated user changes.
 Legacy encrypted workspace envelopes are retained only for migration compatibility.
 New encrypted workspace writes are rejected.
 
 DynamoDB currently owns user records in `Users`.
 Legacy tables such as `Tasks`, `Actions`, `Drafts`, `TimeLogs`, and `OAuthTokens` remain referenced for OAuth and account deletion cleanup.
-
 ## Infrastructure Boundary
+
+Efficient Hypothesis is transitioning from script-only resource management to CloudFormation-managed infrastructure.
+The import-ready templates in `infra/` describe the existing S3 bucket, DynamoDB tables, and Lambda without changing them by default.
+Application code deployment remains in `deploy.sh` until resource adoption is reviewed and completed.
 
 The current deployment path is script-based rather than full infrastructure-as-code.
 `deploy.sh` runs `npm run build`, installs Lambda Python dependencies from `requirements-lambda.txt`, builds a zip in `/tmp`, uploads it to S3, and updates the `efficienthypothesis-backend` Lambda in `us-east-2`.
@@ -114,15 +115,11 @@ The script uses AWS profile `eh`, region `us-east-2`, bucket `eh-app-data`, key 
 GitHub Actions currently runs two jobs on pushes to `main` and pull requests:
 
 - Frontend build and Vitest tests.
-- Flask route compile and route-map smoke checks.
+- Flask route compilation, behavior tests, and route-map smoke checks.
 
 Documentation-only changes do not require AWS deployment.
 Frontend, Flask, template, static, MCP, persistence, auth, or deploy-script changes should be deployed after quick checks unless the user asks for local-only work.
 
 ## Open Questions
 
-- [ ] Add an editing UI for project global context files.
-- [ ] Design daily context files for dated user activity logs.
-- [ ] Design AI-generated recommendation blocks for the projects calendar.
-- [ ] Decide whether durable AWS resources should move from script documentation into infrastructure-as-code.
-- [ ] Decide whether path-routed check and deploy selectors are worth adding before the repo grows further.
+Public product work, architecture questions, and decisions are tracked in `TASK_LIST.md`.

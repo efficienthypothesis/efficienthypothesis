@@ -33,7 +33,6 @@ Use the existing `.venv` for Flask app imports and local route smoke tests.
 System Python may not have Flask installed because Homebrew marks it as externally managed.
 Use `review.md` for the A1, A2, and A3 gates after meaningful changes.
 
-Update `AI_CHANGELOG.md` for meaningful AI-authored product, workflow, MCP, persistence, or deployment changes.
 Do not manually modify `CHANGELOG.md` files.
 
 ## Deployment
@@ -44,7 +43,7 @@ Keep direct AWS edits temporary and copy any durable code or configuration chang
 
 ## Project Notes
 
-Projects currently means the Acne, Fitness, and Flexibility surfaces on `projects.efficienthypothesis.com`.
-Project global context files live in S3 under `<email>/projects/<project_id>/global-context.json`.
+`TASK_LIST.md` is the public repository backlog and must contain only work that is safe to publish.
+Do not copy private operational notes into this public repository.
 The AI workflow reference is stack-agnostic.
 Do not migrate away from the current React/Vite plus Flask/Lambda runtime unless there is a clear product or operational reason.

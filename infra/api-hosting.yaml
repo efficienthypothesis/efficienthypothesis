@@ -1,0 +1,36 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Existing Efficient Hypothesis Lambda, prepared for CloudFormation import.
+
+Parameters:
+  FunctionName:
+    Type: String
+    Default: efficienthypothesis-backend
+  ExecutionRoleArn:
+    Type: String
+    Default: arn:aws:iam::444166848823:role/efficienthypothesis-backend-role
+  DeploymentBucket:
+    Type: String
+    Default: eh-app-data
+  DeploymentKey:
+    Type: String
+    Default: deploy/efficienthypothesis-build.zip
+  LayerArn:
+    Type: String
+    Default: arn:aws:lambda:us-east-2:444166848823:layer:python-web-deps:1
+
+Resources:
+  BackendFunction:
+    Type: AWS::Lambda::Function
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      FunctionName: !Ref FunctionName
+      Role: !Ref ExecutionRoleArn
+      Runtime: python3.13
+      Handler: app.handler
+      MemorySize: 256
+      Timeout: 90
+      Layers: [!Ref LayerArn]
+      Code:
+        S3Bucket: !Ref DeploymentBucket
+        S3Key: !Ref DeploymentKey
