@@ -62,8 +62,6 @@ jobs:
           rules = {rule.rule for rule in app.url_map.iter_rules()}
           required = {
               "/api/workspace",
-              "/api/projects/global-contexts",
-              "/api/projects/<project_id>/global-context",
               "/mcp-v5",
           }
           missing = sorted(required - rules)
@@ -71,4 +69,7 @@ jobs:
               raise SystemExit(f"Missing routes: {missing}")
           if "/tasks" in rules:
               raise SystemExit("/tasks route still exists")
+          project_routes = sorted(rule for rule in rules if "/projects" in rule)
+          if project_routes:
+              raise SystemExit(f"Projects routes still exist: {project_routes}")
           PY
