@@ -74,19 +74,24 @@ body.projects-page main {
 
 .projects-day-body {
   min-height: 0;
+  display: grid;
+  align-content: start;
+  gap: 12px;
   overflow: auto;
-  padding: 10px;
+  padding: 12px 10px;
   background: #fbfcff;
 }
 
 .projects-context-summary {
-  padding: 9px 8px;
-  border-bottom: 1px solid #e5e9f0;
+  min-width: 0;
+  padding: 11px 10px 12px;
+  border: 1px solid transparent;
+  border-radius: 6px;
 }
 
-.projects-context-summary:last-child {
-  border-bottom: 0;
-}
+.projects-context-acne { border-color: #f2c8cb; background: #fff1f2; }
+.projects-context-fitness { border-color: #c8d9f2; background: #eff6ff; }
+.projects-context-flexibility { border-color: #c8e5d0; background: #f0fdf4; }
 
 .projects-context-project {
   color: #233a8b;
@@ -101,9 +106,10 @@ body.projects-page main {
 }
 
 .projects-context-entry {
+  position: relative;
   display: block;
   min-width: 0;
-  padding: 6px 8px;
+  padding: 7px 30px 7px 8px;
   overflow: hidden;
   border: 1px solid #cbd5e1;
   border-radius: 4px;
@@ -115,6 +121,22 @@ body.projects-page main {
   text-decoration: none;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.projects-context-entry-icon {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  width: 15px;
+  height: 15px;
+  color: #334155;
+  transform: translateY(-50%);
+}
+
+.projects-context-entry-icon svg {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
 .projects-context-entry:hover,
@@ -130,29 +152,48 @@ body.projects-page main {
 }
 
 .projects-recommendation {
+  position: relative;
   display: block;
-  margin-top: 7px;
+  min-width: 0;
+  margin-top: 5px;
+  overflow: hidden;
+  padding: 7px 24px 7px 8px;
+  border: 1px solid #b8c2d2;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.8);
   color: #233a8b;
   font-size: 0.72rem;
+  font-weight: 650;
   line-height: 1.35;
   text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.projects-recommendation:hover {
+.projects-recommendation:hover,
+.projects-recommendation:focus-visible {
+  border-color: #233a8b;
+  background: #ffffff;
   text-decoration: underline;
 }
 
-.projects-recommendations-label {
-  margin-top: 10px;
-  color: #475569;
-  font-size: 0.68rem;
-  font-weight: 750;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+.projects-recommendation::before,
+.projects-recommendation::after {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: #111827;
+  content: "";
 }
 
+.projects-recommendation::before { right: 8px; }
+.projects-recommendation::after { right: 4px; }
+
+.projects-recommendations { margin-top: 9px; }
+
 .projects-recommendations-empty {
-  margin-top: 3px;
+  margin-top: 9px;
   color: #64748b;
   font-size: 0.72rem;
 }

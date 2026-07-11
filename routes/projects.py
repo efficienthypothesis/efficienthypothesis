@@ -1183,6 +1183,14 @@ def _project_calendar_day_for_user(email, user_id, timezone, date):
             ],
             "recommendations_href": recommendations["href"],
             "recommendations_count": len(recommendations["recommendations"]),
+            "recommendations": [
+                {
+                    "id": recommendation["id"],
+                    "display_name": recommendation.get("title") or f"Routine {index + 1}",
+                    "href": recommendation.get("href") or recommendations["href"],
+                }
+                for index, recommendation in enumerate(recommendations["recommendations"])
+            ],
         })
     return {
         "weekday": day.strftime("%A"),

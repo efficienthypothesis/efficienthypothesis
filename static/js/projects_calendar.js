@@ -68,19 +68,9 @@
     return node;
   }
 
-  function recommendationLabel(count) {
-    if (count === 0) {
-      return "No recommendations";
-    }
-    if (count === 1) {
-      return "1 recommendation";
-    }
-    return `${count} recommendations`;
-  }
-
   function renderProject(project) {
     const article = document.createElement("article");
-    article.className = "projects-context-summary";
+    article.className = `projects-context-summary projects-context-${project.id || "unknown"}`;
 
     article.appendChild(makeText("div", "projects-context-project", project.name || project.id || "Project"));
     const entries = document.createElement("div");
@@ -92,20 +82,35 @@
         link.href = entry.href || "#";
         link.target = "_blank";
         link.rel = "noopener noreferrer";
-        link.textContent = entry.display_name || "Entry";
+        const label = document.createElement("span");
+        label.textContent = entry.display_name || "Entry";
+        const icon = document.createElement("span");
+        icon.className = "projects-context-entry-icon";
+        icon.setAttribute("aria-hidden", "true");
+        icon.innerHTML = entry.type === "image"
+          ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m5 17 4-4 3 3 2-2 5 3"/></svg>'
+          : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 3h9l3 3v15H6z"/><path d="M15 3v4h4M9 11h6M9 15h6"/></svg>';
+        link.append(label, icon);
         entries.appendChild(link);
       });
     } else {
       entries.appendChild(makeText("div", "projects-context-empty", "No entries"));
     }
     article.appendChild(entries);
-    article.appendChild(makeText("div", "projects-recommendations-label", "Recommendations"));
-
-    const recommendationLink = document.createElement("a");
-    recommendationLink.className = "projects-recommendation";
-    recommendationLink.href = project.recommendations_href || "#";
-    recommendationLink.textContent = recommendationLabel(project.recommendations_count || 0);
-    article.appendChild(recommendationLink);
+    if (Array.isArray(project.recommendations) && project.recommendations.length) {
+      const recommendations = document.createElement("div");
+      recommendations.className = "projects-recommendations";
+      project.recommendations.forEach((item, index) => {
+        const recommendation = document.createElement("a");
+        recommendation.className = "projects-recommendation";
+        recommendation.href = item.href || project.recommendations_href || "#";
+        recommendation.textContent = item.display_name || `Routine ${index + 1}`;
+        recommendations.appendChild(recommendation);
+      });
+      article.appendChild(recommendations);
+    } else {
+      article.appendChild(makeText("div", "projects-recommendations-empty", "No recommendations"));
+    }
     return article;
   }
 

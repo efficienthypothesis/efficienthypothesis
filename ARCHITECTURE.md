@@ -87,6 +87,7 @@ Daily project context is stored as private, user-scoped S3 JSON documents under 
 DynamoDB stores per-project daily context metadata keyed by user/project and date so GPT can discover which dated files exist before reading a specific S3-backed file.
 The Projects calendar retrieves the seven-day window through the backend and shows each entry as a named link.
 Each authenticated entry link opens a focused detail page containing the entry summary and its image when applicable.
+The calendar uses distinct project-colored cards, note or photo icons for context entries, and individually named recommendation links.
 GPT reads and updates the same documents through authenticated MCP tools, keeping AWS access on the backend.
 
 Project research uses the same split-storage pattern.

@@ -13,7 +13,7 @@ os.environ.setdefault("FLASK_SECRET_KEY", "test")
 os.environ.setdefault("OAUTH_SIGNING_KEY", "test")
 
 from app import app
-from routes.projects import _PROJECT_ACTIVITY_DATES_CACHE, _default_global_context, _normalize_daily_context, _normalize_global_context, _project_calendar_days_for_user, _project_calendar_for_user, _project_calendar_navigation, _query_project_inventory, _read_recommendation_context, _store_daily_context_image, _write_inventory_item, _write_research_item
+from routes.projects import _PROJECT_ACTIVITY_DATES_CACHE, _default_global_context, _normalize_daily_context, _normalize_global_context, _project_calendar_day_for_user, _project_calendar_days_for_user, _project_calendar_for_user, _project_calendar_navigation, _query_project_inventory, _read_recommendation_context, _store_daily_context_image, _write_inventory_item, _write_research_item
 
 
 def s3_error(code):
@@ -232,6 +232,24 @@ class DailyContextTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn(b"Morning skin check", response.data)
         self.assertIn(b"Redness improved overnight.", response.data)
+
+    def test_calendar_exposes_named_recommendation_links(self):
+        with (
+            patch("routes.projects._read_daily_context", return_value=_normalize_daily_context({"entries": []}, "acne", "user-1", "2026-07-10")),
+            patch("routes.projects._read_recommendations", return_value={
+                "href": "/projects/acne/recommendations/2026-07-10",
+                "recommendations": [{
+                    "id": "morning-routine",
+                    "title": "Gentle morning routine",
+                    "href": "/projects/acne/recommendations/2026-07-10/morning-routine",
+                }],
+            }),
+        ):
+            day = _project_calendar_day_for_user("user@example.com", "user-1", datetime.timezone.utc, "2026-07-10")
+
+        recommendation = day["projects"][0]["recommendations"][0]
+        self.assertEqual(recommendation["display_name"], "Gentle morning routine")
+        self.assertEqual(recommendation["href"], "/projects/acne/recommendations/2026-07-10/morning-routine")
 
     def test_calendar_previous_navigation_jumps_to_earlier_file_day(self):
         empty_context = {"entries": []}

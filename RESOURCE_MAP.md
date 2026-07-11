@@ -143,6 +143,7 @@ Image uploads accept PNG, JPEG, and WebP content up to 5 MiB after base64 decodi
 Image retrieval goes through the authenticated `/api/projects/<project_id>/daily-context/<YYYY-MM-DD>/images/<image_id>` route.
 The Projects calendar shows each daily context entry as a named rectangular link without embedding full context JSON in each cell.
 Entry links open an authenticated detail page in a new tab with the summary content and image when applicable.
+Text links show a note icon, image links show a photo icon, and Acne, Fitness, and Flexibility use distinct card colors.
 The Projects calendar loads its initial seven-day window from the server-rendered page, then uses `/api/projects/calendar-day?date=YYYY-MM-DD&window_start=YYYY-MM-DD` to shift by one day without full page reloads.
 The browser reuses the six overlapping rendered days, fetches only the newly exposed edge day, caches fetched days in memory, and prefetches the adjacent edge days after each render.
 `/api/projects/calendar?start=YYYY-MM-DD` remains available for full-window fallback and browser history restoration.
@@ -195,7 +196,8 @@ GPT writes recommendations through `upsert_project_recommendations` and reads th
 Use `write_mode: "replace"` only when intentionally replacing the whole date manifest.
 GPT should use `get_recommendation_context` before generating recommendations because it returns active research metadata, non-archived project inventory, and up to 31 days of prior recommendations.
 GPT can bulk import dated recommendation sets through `bulk_upsert_project_history` with explicit `merge` or `replace` write mode.
-The weekly Projects calendar always renders each project/date recommendation state as a link to the authenticated recommendation page.
+The weekly Projects calendar renders every stored recommendation as an individually named link to its authenticated recommendation detail page.
+Recommendation links use the stored title and fall back to positional names such as `Routine 1` when needed.
 Legacy single-object recommendation files at `<email>/projects/<project_id>/recommendations/<YYYY-MM-DD>.json` are read as a fallback only.
 
 ## Browser Cache Contract
