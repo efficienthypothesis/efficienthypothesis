@@ -14,7 +14,6 @@ Detailed companion docs:
 
 Efficient Hypothesis is a personal productivity app with browser, OAuth, and MCP surfaces.
 The main workspace runs at `home.efficienthypothesis.com`.
-The projects calendar runs at `projects.efficienthypothesis.com`.
 The public marketing, login, OAuth, legal, and app-selection pages run from `efficienthypothesis.com`.
 
 The browser app is built with React, TypeScript, and Vite from `src/`.
@@ -30,12 +29,10 @@ This repo keeps the current React/Vite plus Flask/Lambda architecture until ther
 | Component | Purpose | Owner Path | Runtime Surface |
 | --- | --- | --- | --- |
 | React workspace app | Main authenticated editor UI | `src/`, `index.html`, `vite.config.ts` | Browser assets under `static/react-app/` after build |
-| Server-rendered pages | Public pages, login, app menu, projects calendar shell | `templates/`, `static/css/`, `static/js/`, `routes/pages.py` | Flask templates and static files |
+| Server-rendered pages | Public pages, login, legal pages, and shared navigation | `templates/`, `static/css/`, `static/js/`, `routes/pages.py` | Flask templates and static files |
 | Flask API | Authenticated API routes and privileged operations | `app.py`, `routes/`, `config.py` | AWS Lambda through `apig-wsgi` |
 | OAuth and MCP | ChatGPT connector authorization and workspace tool calls | `routes/oauth.py`, `routes/mcp.py`, `MCP_NOTES.md` | OAuth routes and `/mcp-v5` |
 | Workspace persistence | S3-backed workspace state and conflict handling | `routes/workspace.py`, `src/services/workspaceService.ts` | `s3://eh-app-data/<email>/workspace/state.json` |
-| Project context persistence | S3-backed project global context files | `routes/projects.py`, `static/js/navbar.js`, `static/css/projects.css` | `s3://eh-app-data/<email>/projects/<project_id>/global-context.json` |
-| Project inventory persistence | DynamoDB-backed owned products, completed treatments, and related assets | `routes/projects.py`, `routes/mcp.py` | DynamoDB table `ProjectInventoryItems` |
 | Deployment and CI | Build, package, Lambda update, and GitHub checks | `deploy.sh`, `.github/workflows/ci.yml`, `requirements-lambda.txt` | GitHub Actions and AWS Lambda |
 
 ## Frontend Boundary
@@ -44,11 +41,6 @@ The React source lives in `src/`.
 Vite builds it into `static/react-app/`, which is ignored by Git and regenerated during deployment.
 The React app receives public bootstrap data through `window.__EH_BOOTSTRAP__`.
 It calls Flask routes under `/api/*` and uses browser sessions for authenticated website traffic.
-
-The projects surface currently uses Flask-rendered HTML plus static JavaScript and CSS.
-The top-nav Profile modal reads project global contexts from `/api/projects/global-contexts`.
-The top-nav Research modal reads project research metadata from `/api/projects/research-metadata`.
-It does not yet include an editing UI for those context or research files.
 
 Browser code is untrusted.
 It must not receive AWS credentials, OAuth client secrets, signing keys, database credentials, private keys, recovery keys, or plaintext server-side secrets.
@@ -73,7 +65,7 @@ The backend owns:
 - OAuth authorization-code and bearer-token validation for MCP.
 - OAuth client-registry reads from S3 for MCP and ChatGPT client metadata.
 - Access-token verification checks server-side revocation markers before permitting MCP operations.
-- S3 reads and writes for workspace state and project context files.
+- S3 reads and writes for workspace state.
 - S3 workspace reads are fail-closed for browser and MCP surfaces: confirmed missing objects still allow first-write bootstrap, while non-missing read failures return temporary-unavailable and do not fabricate or overwrite state.
 - Browser-side plaintext workspace cache keys are scoped to the authenticated user ID.
 - The legacy shared plaintext cache key is removed and treated as stale storage during migration.
@@ -83,33 +75,6 @@ The backend owns:
 
 ## Data Boundary
 
-Daily project context is stored as private, user-scoped S3 JSON documents under each project's dated `daily-context/` prefix.
-DynamoDB stores per-project daily context metadata keyed by user/project and date so GPT can discover which dated files exist before reading a specific S3-backed file.
-The Projects calendar retrieves the seven-day window through the backend and shows each entry as a named link.
-Each authenticated entry link opens a focused detail page containing the entry summary and its image when applicable.
-The calendar uses distinct project-colored cards, note or photo icons for context entries, and individually named recommendation links.
-GPT reads and updates the same documents through authenticated MCP tools, keeping AWS access on the backend.
-
-Project research uses the same split-storage pattern.
-DynamoDB stores research discovery metadata, including topic, tags, related topics, source summary, and takeaway previews.
-S3 stores the full qualified statements, source details, takeaways, and recommendation implications.
-GPT should list research metadata first, then read the full S3-backed research item only when the metadata is relevant.
-
-Project inventory is stored in DynamoDB table `ProjectInventoryItems`.
-Each item is scoped by user and project and can represent a product, medication, supplement, device, treatment, surgery, procedure, or other owned or completed asset.
-Inventory status values are `available`, `completed`, `unavailable`, and `archived`.
-Inventory means the user has the item or completed the treatment; it does not imply the item is actively used.
-Recommendation context includes non-archived project inventory so GPT can account for what the user already owns or has completed before generating a new recommendation.
-
-New Acne project global context files include editable starter assessment fields for Baumann skin type, Fitzpatrick phototype, genetic scarring tendency, and anatomical pore size and distribution.
-They also include AI guidance asking GPT to learn those values from the user because they improve recommendation accuracy.
-These fields are starter context rather than locked schema, so GPT can overwrite or delete them when it replaces the global context file.
-New Acne daily context files include editable starter focus areas for physical friction habits, dietary triggers, sleep and cortisol load, and occupational or digital environments.
-Those starter focus areas live outside `entries` so they do not count as user observations.
-
-Project recommendations are stored as dated manifests and linked files in S3.
-Recommendation generation context includes active research metadata plus the target date and previous 30 days of recommendations for the same project.
-
 Durable runtime data lives in AWS.
 GitHub is the source of truth for code and docs.
 AWS is the source of truth for user data and deployed runtime state.
@@ -117,9 +82,6 @@ AWS is the source of truth for user data and deployed runtime state.
 Current S3 data includes:
 
 - `s3://eh-app-data/<email>/workspace/state.json`
-- `s3://eh-app-data/<email>/projects/acne/global-context.json`
-- `s3://eh-app-data/<email>/projects/fitness/global-context.json`
-- `s3://eh-app-data/<email>/projects/flexibility/global-context.json`
 - `s3://eh-app-data/assets/circle_favicon.svg`
 - `s3://eh-app-data/assets/efficienthypothesis.svg`
 - `s3://eh-app-data/deploy/efficienthypothesis-build.zip`
@@ -132,8 +94,6 @@ New encrypted workspace writes are rejected.
 
 DynamoDB currently owns user records in `Users`.
 Legacy tables such as `Tasks`, `Actions`, `Drafts`, `TimeLogs`, and `OAuthTokens` remain referenced for OAuth and account deletion cleanup.
-Project tables include `ProjectDailyContextMetadata`, `ProjectResearchMetadata`, and `ProjectInventoryItems`.
-
 ## Infrastructure Boundary
 
 Efficient Hypothesis is transitioning from script-only resource management to CloudFormation-managed infrastructure.

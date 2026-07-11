@@ -2,8 +2,6 @@
   <a href="/" class="logo-full"><img src="/logo.svg" alt="Efficient Hypothesis" style="height:28px"></a>
   <div class="nav-links">
     {% if session.get("user") %}
-      <button class="nav-action" type="button" data-modal-target="profile-modal">Profile</button>
-      <button class="nav-action" type="button" data-modal-target="research-modal">Research</button>
       <button class="nav-action" type="button" data-modal-target="navbar-instructions-modal">Instructions</button>
     {% else %}
       <a href="/login">Sign In</a>
@@ -12,56 +10,6 @@
 </nav>
 
 {% if session.get("user") %}
-  <div class="nav-modal-backdrop" id="profile-modal" hidden>
-    <div class="nav-modal" role="dialog" aria-modal="true" aria-labelledby="profile-modal-title">
-      <div class="nav-modal-top">
-        <div class="nav-modal-title" id="profile-modal-title">Profile</div>
-        <button class="nav-modal-close" type="button" data-modal-close>Close</button>
-      </div>
-      <div class="nav-modal-tabs" role="tablist" aria-label="Profile sections">
-        <button class="active" type="button" role="tab" aria-selected="true" data-profile-tab="acne">Acne</button>
-        <button type="button" role="tab" aria-selected="false" data-profile-tab="fitness">Fitness</button>
-        <button type="button" role="tab" aria-selected="false" data-profile-tab="flexibility">Flexibility</button>
-      </div>
-      <div class="nav-modal-body">
-        <section class="profile-tab-panel" data-profile-panel="acne" aria-live="polite">
-          <div class="project-context-status">Loading context...</div>
-        </section>
-        <section class="profile-tab-panel" data-profile-panel="fitness" aria-live="polite" hidden>
-          <div class="project-context-status">Loading context...</div>
-        </section>
-        <section class="profile-tab-panel" data-profile-panel="flexibility" aria-live="polite" hidden>
-          <div class="project-context-status">Loading context...</div>
-        </section>
-      </div>
-    </div>
-  </div>
-
-  <div class="nav-modal-backdrop" id="research-modal" hidden>
-    <div class="nav-modal" role="dialog" aria-modal="true" aria-labelledby="research-modal-title">
-      <div class="nav-modal-top">
-        <div class="nav-modal-title" id="research-modal-title">Research</div>
-        <button class="nav-modal-close" type="button" data-modal-close>Close</button>
-      </div>
-      <div class="nav-modal-tabs" role="tablist" aria-label="Research sections">
-        <button class="active" type="button" role="tab" aria-selected="true" data-research-tab="acne">Acne</button>
-        <button type="button" role="tab" aria-selected="false" data-research-tab="fitness">Fitness</button>
-        <button type="button" role="tab" aria-selected="false" data-research-tab="flexibility">Flexibility</button>
-      </div>
-      <div class="nav-modal-body">
-        <section class="research-tab-panel" data-research-panel="acne" aria-live="polite">
-          <div class="project-context-status">Loading research...</div>
-        </section>
-        <section class="research-tab-panel" data-research-panel="fitness" aria-live="polite" hidden>
-          <div class="project-context-status">Loading research...</div>
-        </section>
-        <section class="research-tab-panel" data-research-panel="flexibility" aria-live="polite" hidden>
-          <div class="project-context-status">Loading research...</div>
-        </section>
-      </div>
-    </div>
-  </div>
-
   <div class="nav-modal-backdrop" id="navbar-instructions-modal" hidden>
     <div class="nav-modal" role="dialog" aria-modal="true" aria-labelledby="navbar-instructions-title">
       <div class="nav-modal-top">
@@ -72,18 +20,6 @@
         <section>
           <h3>Home</h3>
           <p>Use Home for tasks, websites, subscriptions, tags, and entity references.</p>
-        </section>
-        <section>
-          <h3>Projects</h3>
-          <p>Use Projects for project planning. The calendar is blank until project functionality is added.</p>
-        </section>
-        <section>
-          <h3>Profile</h3>
-          <p>Use this top-nav Profile modal for Acne, Fitness, and Flexibility sections.</p>
-        </section>
-        <section>
-          <h3>Research</h3>
-          <p>Use Research to review project research metadata and inspect raw metadata JSON.</p>
         </section>
       </div>
     </div>

@@ -38,14 +38,6 @@ Read tools:
 
 - `query_nodes`
 - `get_node`
-- `get_daily_context`
-- `get_project_global_context`
-- `get_project_recommendations`
-- `get_recommendation_context`
-- `list_daily_context_metadata`
-- `list_project_research`
-- `get_project_research_item`
-- `list_project_inventory`
 
 Write tools:
 
@@ -53,13 +45,6 @@ Write tools:
 - `update_node`
 - `archive_node`
 - `restore_node`
-- `upsert_daily_context`
-- `upsert_project_global_context`
-- `add_daily_context_image`
-- `upsert_project_recommendations`
-- `upsert_project_research_item`
-- `upsert_project_inventory_item`
-- `bulk_upsert_project_history`
 
 The old DynamoDB/S3 item tools are intentionally retired from MCP:
 
@@ -131,55 +116,6 @@ and retired timetable documents before the cleaned workspace is saved again.
 - Existing archived tags can still be referenced by active nodes. The item keeps
   its `tagId`; the response includes `tagArchive` so clients can see that the
   referenced tag is archived.
-- GPT can write project daily context, daily context images, research items, and dated routine recommendation sets.
-- GPT can read and update project global context through `get_project_global_context` and `upsert_project_global_context`.
-- New Acne global context files include editable assessment starter fields and AI guidance asking GPT to learn those values from the user.
-- Those starter fields are not locked; `upsert_project_global_context` can overwrite or delete them.
-- New Acne daily context files include editable starter focus areas outside `entries`.
-- `upsert_daily_context` accepts shorthand `entries` or a full `daily_context` replacement.
-- Full `daily_context` replacement can remove Acne starter prompts.
-- `bulk_upsert_project_history` requires `write_mode` set to `merge` or `replace`.
-- In `merge` mode, bulk daily context and recommendation sets update matching IDs and append new IDs.
-- In `replace` mode, each submitted project/date daily context or recommendation set replaces that date's existing set.
-- `upsert_project_recommendations` defaults to merge mode.
-- Use `write_mode: "replace"` only when intentionally replacing every visible recommendation for that project/date.
-- Bulk image context always appends a new image entry because images receive backend-generated IDs.
-- Bulk imports return per-section counts and partial failures instead of failing the whole batch when one submitted item is invalid.
-
-## Project MCP Data
-
-Project daily context is dated by project and calendar date.
-Project global context is project-scoped and stores durable profile information for each project.
-New Acne global context includes editable starter assessment fields for Baumann skin type, Fitzpatrick phototype, genetic scarring tendency, and anatomical pore size and distribution.
-New Acne daily context includes editable starter focus areas for physical friction habits, dietary triggers, sleep and cortisol load, and occupational or digital environments.
-Text entries are written through `upsert_daily_context` or `bulk_upsert_project_history`.
-Images are written through `add_daily_context_image` or the bulk tool's `image_contexts` array.
-Daily context entries should include a concise `display_name` for the calendar.
-If it is omitted, the backend supplies a placeholder display name for compatibility with older entries.
-Image payloads must be base64 PNG, JPEG, or WebP and are limited to 5 MiB decoded.
-
-Research uses metadata for discovery and S3-backed details for full content.
-GPT should call `list_project_research` before `get_project_research_item`.
-Research writes use `upsert_project_research_item` or the bulk tool's `research_items` array.
-
-Inventory is project-scoped and stored in DynamoDB.
-Inventory items can represent products, medications, supplements, devices, treatments, surgeries, procedures, or other owned or completed assets.
-Use status `available` for owned or on-hand items and `completed` for completed treatments, surgeries, or procedures.
-Inventory does not imply active use.
-GPT should use `list_project_inventory` to see what the user has or has completed and `upsert_project_inventory_item` to store updates.
-Archived inventory is hidden from default lists and recommendation context.
-
-Recommendations are dated by project and calendar date.
-The only enabled recommendation kind is currently `routine`.
-Each recommendation must represent one project, one calendar date, and one routine slot.
-Routine `slot` must be `morning`, `night`, or `anytime`.
-Skincare plans that cover several days must be split into separate dated recommendation sets.
-Skincare plans for the same day should usually be split into separate `morning` and `night` routine recommendations.
-Routine recommendations must include ordered `steps`, each with `item`, `command`, and optional `clarification`.
-Do not put the full routine in `summary`.
-Use `summary` only for a short human-readable overview.
-GPT should call `get_recommendation_context` before generating a new recommendation because it returns active research metadata, non-archived project inventory, and up to 31 days of prior recommendations.
-
 ## Field Guidance
 
 Common fields:

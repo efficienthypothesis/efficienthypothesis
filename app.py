@@ -29,7 +29,6 @@ from routes.oauth import oauth_bp
 from routes.mcp import mcp_bp
 from routes.workspace import workspace_bp
 from routes.account import account_bp
-from routes.projects import projects_bp
 
 app.register_blueprint(pages_bp)
 app.register_blueprint(auth_bp)
@@ -37,7 +36,6 @@ app.register_blueprint(oauth_bp)
 app.register_blueprint(mcp_bp)
 app.register_blueprint(workspace_bp)
 app.register_blueprint(account_bp)
-app.register_blueprint(projects_bp)
 
 handler = make_lambda_handler(app, binary_support=True)
 

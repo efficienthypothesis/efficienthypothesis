@@ -43,8 +43,6 @@ Keep direct AWS edits temporary and copy any durable code or configuration chang
 
 ## Project Notes
 
-Projects currently means the Acne, Fitness, and Flexibility surfaces on `projects.efficienthypothesis.com`.
-Project global context files live in S3 under `<email>/projects/<project_id>/global-context.json`.
 `TASK_LIST.md` is the public repository backlog and must contain only work that is safe to publish.
 Do not copy private operational notes into this public repository.
 The AI workflow reference is stack-agnostic.

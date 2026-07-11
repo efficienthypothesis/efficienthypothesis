@@ -23,10 +23,6 @@ Use it for repository work that is safe to publish.
 
 ## Done
 
-- [x] Add private daily project context files, GPT tools, and weekly calendar entry counts with raw JSON views.
-- [x] Add project-and-date recommendation storage, GPT tools, and backend-owned calendar links.
-
-- [x] Add S3-backed project global context files for Acne, Fitness, and Flexibility.
 - [x] Disable active workspace encryption writes and keep legacy encrypted reads only for migration compatibility.
 - [x] Add repo-level agent workflow instructions and CI checks.
 - [x] Adopt the current AI workflow reference structure with architecture, resource map, task list, review, ADR, and AI resource docs.

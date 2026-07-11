@@ -95,8 +95,6 @@ from app import app
 rules = {rule.rule for rule in app.url_map.iter_rules()}
 required = {
     "/api/workspace",
-    "/api/projects/global-contexts",
-    "/api/projects/<project_id>/global-context",
     "/mcp-v5",
 }
 missing = sorted(required - rules)

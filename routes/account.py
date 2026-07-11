@@ -7,9 +7,6 @@ from config import (
     drafts_table,
     dynamodb,
     oauth_tokens_table,
-    project_daily_context_metadata_table,
-    project_inventory_table,
-    project_research_metadata_table,
     s3,
     tasks_table,
     timelogs_table,
@@ -52,9 +49,6 @@ def api_account_delete():
             "feedback_id",
             Attr("user_id").eq(email),
         ),
-        "project_daily_context_metadata": _delete_project_metadata(project_daily_context_metadata_table, email, user_id, "date"),
-        "project_research_metadata": _delete_project_metadata(project_research_metadata_table, email, user_id, "researchId"),
-        "project_inventory": _delete_project_metadata(project_inventory_table, email, user_id, "inventoryItemId"),
         "users": _delete_user_records(email, user_id),
     }
     session.clear()
@@ -106,13 +100,6 @@ def _delete_oauth_tokens(email, user_id):
     if user_id:
         token_filter = token_filter | Attr("user_id").eq(user_id)
     return _delete_by_filter(oauth_tokens_table, "token_hash", token_filter)
-
-
-def _delete_project_metadata(table, email, user_id, range_key):
-    metadata_filter = Attr("email").eq(email)
-    if user_id:
-        metadata_filter = metadata_filter | Attr("userId").eq(user_id)
-    return _delete_by_filter(table, ["userProject", range_key], metadata_filter)
 
 
 def _delete_user_records(email, user_id):
